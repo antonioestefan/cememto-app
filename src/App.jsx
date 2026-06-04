@@ -1,0 +1,427 @@
+import { useState, useMemo } from "react";
+import * as XLSX from "xlsx";
+ 
+const fmt = (n) => new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(n || 0);
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const addDays = (iso, n) => { const d = new Date(iso + "T12:00"); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+const tomorrowISO = () => addDays(todayISO(), 1);
+const diaLabel = (iso) => iso ? new Date(iso + "T12:00").toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "short" }) : "—";
+ 
+const initialClientes = [
+  { id: "C1", nombre: "Constructora Hernández", precio_ton: 2200, anticipo: 60000 },
+  { id: "C2", nombre: "Granjas Avícolas del Valle", precio_ton: 2350, anticipo: 150000 },
+  { id: "C3", nombre: "CMIC Hidalgo", precio_ton: 2150, anticipo: 0 },
+  { id: "C4", nombre: "Obra Torres Cuautitlán", precio_ton: 2250, anticipo: 40000 },
+];
+ 
+/* Ciclo de vida de la OV */
+const STATUSES = [
+  { key: "ov_asignada", label: "OV asignada", color: "#7c3aed", bg: "#f5f3ff", hint: "Permiso de carga de corporativo" },
+  { key: "fletera_planta", label: "Fletera en planta", color: "#d97706", bg: "#fffbeb", hint: "Tráiler formándose para cargar" },
+  { key: "remisionada", label: "Remisionada", color: "#0891b2", bg: "#ecfeff", hint: "Cargó y se pesó: ya hay folio y tonelaje" },
+  { key: "en_camino", label: "En camino", color: "#2563eb", bg: "#eff6ff", hint: "En ruta al cliente" },
+  { key: "entregado", label: "Entregado", color: "#16a34a", bg: "#f0fdf4", hint: "Recibido por el cliente" },
+];
+const NEXT = { ov_asignada: "fletera_planta", fletera_planta: "remisionada", remisionada: "en_camino", en_camino: "entregado" };
+const NEXT_LABEL = { ov_asignada: "→ Mandar fletera a planta", fletera_planta: "→ Registrar remisión (cargó)", remisionada: "→ Marcar en camino", en_camino: "→ Confirmar entrega" };
+const getS = (k) => STATUSES.find((s) => s.key === k) || STATUSES[0];
+ 
+const CONFIRM = {
+  por_confirmar: { label: "Por confirmar", color: "#d97706", bg: "#fffbeb" },
+  confirmado: { label: "Confirmado", color: "#16a34a", bg: "#f0fdf4" },
+  reprogramado: { label: "Reprogramado", color: "#dc2626", bg: "#fef2f2" },
+};
+const MOTIVOS = ["Sin dotación en planta", "Contratiempo del cliente", "Contratiempo de la fletera", "Otro"];
+ 
+const initialOVs = [
+  { id: "OV1", num_ov: "OV-88012", clienteId: "C1", serie: "A", folio: "1042", toneladas: 10.2, fecha_carga: "2026-06-02", fecha_entrega: "2026-06-02", status: "entregado", confirm: "confirmado", motivo: "", remision_firmada: true, notas: "Obra km 14" },
+  { id: "OV2", num_ov: "OV-88013", clienteId: "C2", serie: "A", folio: "1043", toneladas: 24.8, fecha_carga: "2026-06-03", fecha_entrega: "2026-06-04", status: "en_camino", confirm: "confirmado", motivo: "", remision_firmada: false, notas: "Confirmar acceso granja" },
+  { id: "OV3", num_ov: "OV-88020", clienteId: "", serie: "A", folio: "1044", toneladas: 30.5, fecha_carga: "2026-06-04", fecha_entrega: "", status: "remisionada", confirm: "confirmado", motivo: "", remision_firmada: false, notas: "Pendiente asignar cliente" },
+  { id: "OV4", num_ov: "OV-88021", clienteId: "", serie: "", folio: "", toneladas: 0, fecha_carga: tomorrowISO(), fecha_entrega: "", status: "ov_asignada", confirm: "por_confirmar", motivo: "", remision_firmada: false, notas: "" },
+  { id: "OV5", num_ov: "OV-88022", clienteId: "C4", serie: "", folio: "", toneladas: 0, fecha_carga: tomorrowISO(), fecha_entrega: tomorrowISO(), status: "ov_asignada", confirm: "por_confirmar", motivo: "", remision_firmada: false, notas: "Cliente probable" },
+];
+ 
+function getWeekRange(offset = 0) {
+  const d = new Date(); d.setDate(d.getDate() + offset * 7);
+  const day = d.getDay(); const monday = new Date(d); monday.setDate(d.getDate() - ((day + 6) % 7));
+  const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+  return { start: monday.toISOString().slice(0, 10), end: sunday.toISOString().slice(0, 10) };
+}
+ 
+function Badge({ status }) {
+  const s = getS(status);
+  return <span style={{ background: s.bg, color: s.color, border: `1px solid ${s.color}30`, borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>{s.label}</span>;
+}
+function ConfirmBadge({ c }) {
+  const s = CONFIRM[c] || CONFIRM.por_confirmar;
+  return <span style={{ background: s.bg, color: s.color, border: `1px solid ${s.color}30`, borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>{s.label}</span>;
+}
+ 
+const emptyOV = { id: "", num_ov: "", clienteId: "", serie: "A", folio: "", toneladas: 0, fecha_carga: todayISO(), fecha_entrega: "", status: "ov_asignada", confirm: "por_confirmar", motivo: "", remision_firmada: false, notas: "" };
+const emptyCliente = { id: "", nombre: "", precio_ton: 2200, anticipo: 0 };
+ 
+export default function App() {
+  const [clientes, setClientes] = useState(initialClientes);
+  const [ovs, setOVs] = useState(initialOVs);
+  const [tab, setTab] = useState("ordenes");
+  const [selected, setSelected] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [showCliForm, setShowCliForm] = useState(false);
+  const [form, setForm] = useState(emptyOV);
+  const [cliForm, setCliForm] = useState(emptyCliente);
+  const [weekOffset, setWeekOffset] = useState(1);
+ 
+  const cliById = (id) => clientes.find((c) => c.id === id) || null;
+  const valorOV = (p) => { const c = cliById(p.clienteId); return c ? (p.toneladas || 0) * c.precio_ton : 0; };
+ 
+  const estadoCuenta = useMemo(() => clientes.map((c) => {
+    const entregado = ovs.filter((p) => p.clienteId === c.id && p.status === "entregado");
+    const ton = entregado.reduce((s, p) => s + p.toneladas, 0);
+    const valor = ton * c.precio_ton;
+    return { ...c, ton_entregadas: ton, valor_entregado: valor, saldo: c.anticipo - valor, num_entregas: entregado.length };
+  }), [clientes, ovs]);
+ 
+  const totales = useMemo(() => {
+    const ton_sem = ovs.filter((p) => p.status === "entregado").reduce((s, p) => s + p.toneladas, 0);
+    const entregado_total = estadoCuenta.reduce((s, c) => s + c.valor_entregado, 0);
+    const anticipo_total = clientes.reduce((s, c) => s + c.anticipo, 0);
+    const sin_cliente = ovs.filter((p) => p.status === "remisionada" && !p.clienteId).length;
+    const sin_remision = ovs.filter((p) => p.status === "entregado" && !p.remision_firmada).length;
+    const por_confirmar = ovs.filter((p) => p.fecha_carga === tomorrowISO() && p.confirm === "por_confirmar").length;
+    return { ton_sem, entregado_total, anticipo_total, saldo_total: anticipo_total - entregado_total, sin_cliente, sin_remision, por_confirmar };
+  }, [ovs, clientes, estadoCuenta]);
+ 
+  const upd = (id, patch) => {
+    setOVs((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+    setSelected((s) => (s && s.id === id ? { ...s, ...patch } : s));
+  };
+  const advance = (id) => { const p = ovs.find((x) => x.id === id); if (p && NEXT[p.status]) upd(id, { status: NEXT[p.status] }); };
+  const confirmar = (id) => upd(id, { confirm: "confirmado", motivo: "" });
+  const reprogramar = (id) => {
+    const m0 = prompt(`Motivo:\n${MOTIVOS.map((m, i) => `${i + 1}. ${m}`).join("\n")}\n\nEscribe número o texto:`);
+    if (m0 === null) return;
+    let m = m0.trim(); if (["1", "2", "3", "4"].includes(m)) m = MOTIVOS[+m - 1];
+    if (m === "Otro" || m === "") { const l = prompt("Describe el motivo:"); m = l || "Otro"; }
+    const f = prompt("Nueva fecha de carga (AAAA-MM-DD):", addDays(todayISO(), 2));
+    if (!f) return;
+    upd(id, { confirm: "reprogramado", motivo: m, fecha_carga: f });
+  };
+  const asignarCliente = (id, clienteId) => upd(id, { clienteId });
+  const save = () => {
+    const id = form.id || `OV${ovs.length + 1}-${Date.now() % 1000}`;
+    const n = { ...form, id, toneladas: +form.toneladas };
+    setOVs((prev) => (prev.find((p) => p.id === id) ? prev.map((p) => (p.id === id ? n : p)) : [...prev, n]));
+    setShowForm(false); setForm(emptyOV); setSelected(null);
+  };
+  const saveCliente = () => {
+    const id = cliForm.id || `C${clientes.length + 1}-${Date.now() % 1000}`;
+    const nc = { ...cliForm, id, precio_ton: +cliForm.precio_ton, anticipo: +cliForm.anticipo };
+    setClientes((prev) => (prev.find((c) => c.id === id) ? prev.map((c) => (c.id === id ? nc : c)) : [...prev, nc]));
+    setShowCliForm(false); setCliForm(emptyCliente);
+  };
+  const addAnticipo = (id, m) => setClientes((prev) => prev.map((c) => (c.id === id ? { ...c, anticipo: c.anticipo + m } : c)));
+ 
+  const semana = getWeekRange(weekOffset);
+  const ovsSemana = ovs.filter((p) => p.fecha_carga >= semana.start && p.fecha_carga <= semana.end).sort((a, b) => a.fecha_carga.localeCompare(b.fecha_carga));
+  const porConfirmar = ovs.filter((p) => p.fecha_carga === tomorrowISO()).sort((a, b) => (a.confirm === "por_confirmar" ? -1 : 1));
+  const sinCliente = ovs.filter((p) => !p.clienteId && p.status !== "entregado");
+ 
+  const exportExcel = () => {
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(ovs.map((p) => ({
+      "No. OV": p.num_ov, Cliente: cliById(p.clienteId)?.nombre || "(sin asignar)", Serie: p.serie, Folio: p.folio,
+      Toneladas: p.toneladas, "Precio/ton": cliById(p.clienteId)?.precio_ton || "", Valor: valorOV(p),
+      "Fecha carga": p.fecha_carga, "Fecha entrega": p.fecha_entrega, Estatus: getS(p.status).label,
+      "Confirmación": (CONFIRM[p.confirm] || {}).label, Motivo: p.motivo, "Remisión firmada": p.remision_firmada ? "Sí" : "No", Notas: p.notas,
+    })));
+    XLSX.utils.book_append_sheet(wb, ws, "Órdenes de venta");
+    const wc = XLSX.utils.json_to_sheet(estadoCuenta.map((c) => ({
+      Cliente: c.nombre, "Precio/ton": c.precio_ton, "Ton entregadas": c.ton_entregadas, "Valor entregado": c.valor_entregado,
+      "Anticipo": c.anticipo, "Saldo a favor": c.saldo > 0 ? c.saldo : 0, "Adeudo": c.saldo < 0 ? -c.saldo : 0,
+    })));
+    XLSX.utils.book_append_sheet(wb, wc, "Estado de cuenta");
+    XLSX.writeFile(wb, `Reporte_CruzAzul_${todayISO()}.xlsx`);
+  };
+  const reporteWhatsApp = () => {
+    let t = `*REPORTE SEMANAL — ${todayISO()}*\n_Distribuidora Cruz Azul_\n\n`;
+    estadoCuenta.forEach((c) => {
+      t += `*${c.nombre}*\nEntregado: ${c.ton_entregadas} ton (${fmt(c.valor_entregado)})\nAnticipo: ${fmt(c.anticipo)}\n`;
+      t += c.saldo >= 0 ? `Saldo a favor: ${fmt(c.saldo)}\n\n` : `*Adeudo: ${fmt(-c.saldo)}*\n\n`;
+    });
+    t += `_Total entregado: ${fmt(totales.entregado_total)}_`;
+    if (navigator.clipboard) navigator.clipboard.writeText(t);
+    window.open(`https://wa.me/?text=${encodeURIComponent(t)}`, "_blank");
+  };
+ 
+  const inS = { width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: 14, boxSizing: "border-box", outline: "none" };
+ 
+  const ClienteSelect = ({ p }) => (
+    <select value={p.clienteId} onChange={(e) => asignarCliente(p.id, e.target.value)} onClick={(e) => e.stopPropagation()} style={{ ...inS, padding: "5px 8px", fontSize: 12, marginTop: 6 }}>
+      <option value="">— Asignar cliente —</option>
+      {clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre} ({fmt(c.precio_ton)}/ton)</option>)}
+    </select>
+  );
+ 
+  return (
+    <div style={{ fontFamily: "'IBM Plex Sans','Segoe UI',sans-serif", background: "#f8fafc", minHeight: "100vh", color: "#1e293b", paddingBottom: selected ? 360 : 40 }}>
+      <div style={{ background: "#1e3a5f", color: "white", padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 2px 12px #00000030", flexWrap: "wrap", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ background: "#e63946", borderRadius: 8, padding: "6px 10px", fontWeight: 900, fontSize: 13 }}>CA</div>
+          <div><div style={{ fontWeight: 700, fontSize: 16 }}>Distribuidora Cruz Azul</div><div style={{ fontSize: 11, opacity: 0.7 }}>Panel de Operaciones — Antonio</div></div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={exportExcel} style={{ background: "#16a34a", color: "white", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>⬇ Excel</button>
+          <button onClick={() => { setForm(emptyOV); setShowForm(true); }} style={{ background: "#e63946", color: "white", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>+ OV</button>
+        </div>
+      </div>
+ 
+      <div style={{ background: "white", borderBottom: "2px solid #e2e8f0", padding: "0 16px", display: "flex", overflowX: "auto" }}>
+        {[["ordenes", "📋 Órdenes de Venta"], ["confirmar", `✅ Confirmar mañana${totales.por_confirmar ? ` (${totales.por_confirmar})` : ""}`], ["clientes", "👥 Clientes"], ["programacion", "📅 Programación"], ["reporte", "📊 Reporte"]].map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} style={{ background: "none", border: "none", borderBottom: tab === k ? "3px solid #1e3a5f" : "3px solid transparent", padding: "12px 14px", cursor: "pointer", fontWeight: tab === k ? 700 : 500, color: tab === k ? "#1e3a5f" : "#64748b", fontSize: 13, whiteSpace: "nowrap" }}>{l}</button>
+        ))}
+      </div>
+ 
+      <div style={{ padding: 18, maxWidth: 980, margin: "0 auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginBottom: 18 }}>
+          {[
+            { l: "Por confirmar mañana", v: totales.por_confirmar, a: totales.por_confirmar > 0 ? "#d97706" : "#16a34a" },
+            { l: "Remisionadas sin cliente", v: totales.sin_cliente, a: totales.sin_cliente > 0 ? "#0891b2" : "#16a34a" },
+            { l: "Ton entregadas", v: totales.ton_sem.toFixed(1), a: "#1e3a5f" },
+            { l: "Valor entregado", v: fmt(totales.entregado_total), a: "#2563eb" },
+            { l: "Saldo neto clientes", v: fmt(totales.saldo_total), a: totales.saldo_total >= 0 ? "#16a34a" : "#ef4444" },
+          ].map((c) => (
+            <div key={c.l} style={{ background: "white", borderRadius: 10, padding: "13px 15px", boxShadow: "0 1px 4px #00000010", borderLeft: `4px solid ${c.a}` }}>
+              <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>{c.l}</div>
+              <div style={{ fontWeight: 800, fontSize: 18, color: c.a }}>{c.v}</div>
+            </div>
+          ))}
+        </div>
+ 
+        {/* ÓRDENES DE VENTA */}
+        {tab === "ordenes" && (
+          <>
+            {sinCliente.length > 0 && (
+              <div style={{ background: "#ecfeff", borderRadius: 10, padding: "12px 16px", marginBottom: 14, fontSize: 13, color: "#155e75" }}>
+                💡 Tienes <b>{sinCliente.length}</b> OV sin cliente asignado. Asígnalas desde cada tarjeta.
+              </div>
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {ovs.map((p) => {
+                const c = cliById(p.clienteId);
+                return (
+                  <div key={p.id} onClick={() => setSelected(p)} style={{ background: "white", borderRadius: 10, padding: "14px 16px", boxShadow: "0 1px 4px #00000010", cursor: "pointer", border: selected?.id === p.id ? "2px solid #1e3a5f" : "2px solid transparent" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                      <div style={{ flex: 1, minWidth: 200 }}>
+                        <div style={{ fontWeight: 800, fontSize: 14, color: "#7c3aed" }}>{p.num_ov}</div>
+                        <div style={{ fontWeight: 700, fontSize: 15, color: c ? "#1e293b" : "#94a3b8" }}>{c ? c.nombre : "Sin cliente asignado"}</div>
+                        <div style={{ fontSize: 12, color: "#64748b" }}>
+                          {p.folio ? `Rem. ${p.serie}-${p.folio} · ` : ""}{p.toneladas > 0 ? `${p.toneladas} ton` : "ton pendiente"}{c ? ` · ${fmt(valorOV(p))}` : ""}
+                        </div>
+                        <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>🏭 Carga: {p.fecha_carga} {p.fecha_entrega ? `· 🚚 Entrega: ${p.fecha_entrega}` : ""}</div>
+                        {!c && ["remisionada", "en_camino"].includes(p.status) && <ClienteSelect p={p} />}
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                        <Badge status={p.status} />
+                        {["ov_asignada", "fletera_planta"].includes(p.status) && <ConfirmBadge c={p.confirm} />}
+                        {p.status === "entregado" && <span style={{ fontSize: 11, color: p.remision_firmada ? "#16a34a" : "#d97706", fontWeight: 700 }}>{p.remision_firmada ? "✓ Remisión firmada" : "⚠ Falta remisión"}</span>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+ 
+        {/* CONFIRMAR MAÑANA */}
+        {tab === "confirmar" && (
+          <>
+            <div style={{ background: "#fffbeb", borderRadius: 10, padding: "12px 16px", marginBottom: 14, fontSize: 13, color: "#92400e" }}>
+              ✅ <b>Confirmar cargas de mañana</b> ({diaLabel(tomorrowISO())}) — un día antes confirma cada OV o repórgramala si hubo contratiempo.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {porConfirmar.length === 0 && <div style={{ textAlign: "center", color: "#94a3b8", padding: 30 }}>No hay cargas programadas para mañana.</div>}
+              {porConfirmar.map((p) => {
+                const c = cliById(p.clienteId);
+                return (
+                  <div key={p.id} style={{ background: "white", borderRadius: 10, padding: "14px 16px", boxShadow: "0 1px 4px #00000010", borderLeft: `4px solid ${(CONFIRM[p.confirm] || {}).color}` }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                      <div>
+                        <div style={{ fontWeight: 800, fontSize: 13, color: "#7c3aed" }}>{p.num_ov}</div>
+                        <div style={{ fontWeight: 700 }}>{c ? c.nombre : "Sin cliente aún"}</div>
+                        <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>🏭 Carga: {diaLabel(p.fecha_carga)}</div>
+                        {p.motivo && <div style={{ fontSize: 11, color: "#dc2626", marginTop: 3 }}>↻ {p.motivo}</div>}
+                      </div>
+                      <ConfirmBadge c={p.confirm} />
+                    </div>
+                    {p.confirm !== "confirmado" && (
+                      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                        <button onClick={() => confirmar(p.id)} style={{ background: "#16a34a", color: "white", border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>✓ Confirmar</button>
+                        <button onClick={() => reprogramar(p.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 6, padding: "7px 14px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>↻ Reprogramar</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+ 
+        {/* CLIENTES */}
+        {tab === "clientes" && (
+          <>
+            <button onClick={() => { setCliForm(emptyCliente); setShowCliForm(true); }} style={{ background: "#1e3a5f", color: "white", border: "none", borderRadius: 8, padding: "8px 16px", fontWeight: 700, cursor: "pointer", fontSize: 13, marginBottom: 14 }}>+ Nuevo cliente</button>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {estadoCuenta.map((c) => (
+                <div key={c.id} style={{ background: "white", borderRadius: 10, padding: "16px", boxShadow: "0 1px 4px #00000010", borderLeft: `4px solid ${c.saldo >= 0 ? "#16a34a" : "#ef4444"}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                    <div><div style={{ fontWeight: 700, fontSize: 16 }}>{c.nombre}</div><div style={{ fontSize: 12, color: "#64748b" }}>Precio: {fmt(c.precio_ton)}/ton · {c.num_entregas} entregas</div></div>
+                    <button onClick={() => { setCliForm(c); setShowCliForm(true); }} style={{ background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 6, padding: "5px 10px", fontSize: 12, cursor: "pointer", color: "#1e3a5f", height: 30 }}>✏️</button>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginTop: 12 }}>
+                    <div style={{ background: "#f8fafc", borderRadius: 8, padding: "8px 10px" }}><div style={{ fontSize: 10, color: "#94a3b8" }}>Entregado</div><div style={{ fontWeight: 700 }}>{c.ton_entregadas} ton</div><div style={{ fontSize: 11, color: "#64748b" }}>{fmt(c.valor_entregado)}</div></div>
+                    <div style={{ background: "#f0fdf4", borderRadius: 8, padding: "8px 10px" }}><div style={{ fontSize: 10, color: "#94a3b8" }}>Anticipo</div><div style={{ fontWeight: 700, color: "#16a34a" }}>{fmt(c.anticipo)}</div></div>
+                    <div style={{ background: c.saldo >= 0 ? "#eff6ff" : "#fef2f2", borderRadius: 8, padding: "8px 10px" }}><div style={{ fontSize: 10, color: "#94a3b8" }}>{c.saldo >= 0 ? "Saldo a favor" : "Adeudo"}</div><div style={{ fontWeight: 800, color: c.saldo >= 0 ? "#2563eb" : "#ef4444" }}>{fmt(Math.abs(c.saldo))}</div></div>
+                  </div>
+                  <button onClick={() => { const m = +prompt(`Registrar depósito de anticipo para ${c.nombre}:`, "0"); if (m > 0) addAnticipo(c.id, m); }} style={{ marginTop: 10, background: "#16a34a", color: "white", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>+ Registrar anticipo</button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+ 
+        {/* PROGRAMACIÓN */}
+        {tab === "programacion" && (
+          <>
+            <div style={{ background: "#f5f3ff", borderRadius: 10, padding: "12px 16px", marginBottom: 14, fontSize: 13, color: "#5b21b6" }}>📋 <b>Programación de cargas</b> — agenda por fecha de carga de la OV.</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 14, alignItems: "center" }}>
+              <button onClick={() => setWeekOffset((w) => w - 1)} style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>←</button>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>{weekOffset === 0 ? "Esta semana" : weekOffset === 1 ? "Próxima semana" : `${semana.start} → ${semana.end}`}</div>
+              <button onClick={() => setWeekOffset((w) => w + 1)} style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>→</button>
+              <div style={{ marginLeft: "auto", fontSize: 13, color: "#64748b" }}>{ovsSemana.length} OV</div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {ovsSemana.length === 0 && <div style={{ textAlign: "center", color: "#94a3b8", padding: 30 }}>Sin cargas programadas.</div>}
+              {ovsSemana.map((p) => {
+                const c = cliById(p.clienteId);
+                return (
+                  <div key={p.id} onClick={() => setSelected(p)} style={{ background: "white", borderRadius: 10, padding: "12px 14px", boxShadow: "0 1px 4px #00000010", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                    <div>
+                      <div style={{ fontSize: 12, color: "#7c3aed", fontWeight: 700, textTransform: "capitalize" }}>{diaLabel(p.fecha_carga)} · {p.num_ov}</div>
+                      <div style={{ fontWeight: 700 }}>{c ? c.nombre : "Sin cliente"}</div>
+                      <div style={{ fontSize: 12, color: "#64748b" }}>{p.toneladas > 0 ? `${p.toneladas} ton` : "ton pendiente"}</div>
+                    </div>
+                    <ConfirmBadge c={p.confirm} />
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+ 
+        {/* REPORTE */}
+        {tab === "reporte" && (
+          <>
+            <div style={{ background: "#f0fdf4", borderRadius: 10, padding: "12px 16px", marginBottom: 14, fontSize: 13, color: "#15803d" }}>📊 <b>Reporte semanal</b> — entregado vs. anticipo/saldo por cliente.</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+              <button onClick={exportExcel} style={{ background: "#16a34a", color: "white", border: "none", borderRadius: 8, padding: "10px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>⬇ Descargar Excel</button>
+              <button onClick={reporteWhatsApp} style={{ background: "#25D366", color: "white", border: "none", borderRadius: 8, padding: "10px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>💬 Enviar por WhatsApp</button>
+            </div>
+            <div style={{ background: "white", borderRadius: 10, overflow: "hidden", boxShadow: "0 1px 4px #00000010" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", background: "#1e3a5f", color: "white", padding: "10px 14px", fontSize: 11, fontWeight: 700 }}><div>Cliente</div><div style={{ textAlign: "right" }}>Entregado</div><div style={{ textAlign: "right" }}>Anticipo</div><div style={{ textAlign: "right" }}>Saldo</div></div>
+              {estadoCuenta.map((c, i) => (
+                <div key={c.id} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", padding: "11px 14px", fontSize: 12, borderTop: "1px solid #f1f5f9", background: i % 2 ? "#fafafa" : "white" }}>
+                  <div style={{ fontWeight: 600 }}>{c.nombre}<div style={{ fontSize: 10, color: "#94a3b8" }}>{c.ton_entregadas} ton</div></div>
+                  <div style={{ textAlign: "right" }}>{fmt(c.valor_entregado)}</div>
+                  <div style={{ textAlign: "right", color: "#16a34a" }}>{fmt(c.anticipo)}</div>
+                  <div style={{ textAlign: "right", fontWeight: 700, color: c.saldo >= 0 ? "#2563eb" : "#ef4444" }}>{c.saldo >= 0 ? fmt(c.saldo) : `-${fmt(-c.saldo)}`}</div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+ 
+      {/* DETAIL PANEL */}
+      {selected && !showForm && (() => {
+        const c = cliById(selected.clienteId);
+        return (
+          <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "white", borderTop: "2px solid #e2e8f0", padding: "18px 20px", boxShadow: "0 -4px 20px #00000015", maxHeight: "62vh", overflowY: "auto", zIndex: 100 }}>
+            <div style={{ maxWidth: 700, margin: "0 auto" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 14, color: "#7c3aed" }}>{selected.num_ov}</div>
+                  <div style={{ fontWeight: 800, fontSize: 16 }}>{c ? c.nombre : "Sin cliente asignado"}</div>
+                  <div style={{ fontSize: 12, color: "#64748b" }}>{selected.folio ? `Rem. ${selected.serie}-${selected.folio} · ` : ""}{selected.toneladas > 0 ? `${selected.toneladas} ton` : "ton pendiente"}{c ? ` · ${fmt(valorOV(selected))}` : ""}</div>
+                  <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 3 }}>🏭 Carga: {diaLabel(selected.fecha_carga)}{selected.fecha_entrega ? ` · 🚚 Entrega: ${diaLabel(selected.fecha_entrega)}` : ""}</div>
+                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, fontStyle: "italic" }}>{getS(selected.status).hint}</div>
+                  {selected.motivo && <div style={{ fontSize: 12, color: "#dc2626", marginTop: 3 }}>↻ {selected.motivo}</div>}
+                </div>
+                <button onClick={() => setSelected(null)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#94a3b8" }}>✕</button>
+              </div>
+              {!c && <div style={{ marginBottom: 10 }}><label style={{ fontSize: 11, color: "#64748b" }}>Asignar cliente</label><ClienteSelect p={selected} /></div>}
+              {selected.notas && <div style={{ background: "#fffbeb", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#92400e", margin: "10px 0" }}>📝 {selected.notas}</div>}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {selected.confirm !== "confirmado" && ["ov_asignada", "fletera_planta"].includes(selected.status) && <button onClick={() => confirmar(selected.id)} style={{ background: "#16a34a", color: "white", border: "none", borderRadius: 8, padding: "9px 16px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>✓ Confirmar</button>}
+                {NEXT[selected.status] && <button onClick={() => advance(selected.id)} style={{ background: "#1e3a5f", color: "white", border: "none", borderRadius: 8, padding: "9px 16px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>{NEXT_LABEL[selected.status]}</button>}
+                <button onClick={() => reprogramar(selected.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 8, padding: "9px 16px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>↻ Reprogramar</button>
+                {selected.status === "entregado" && <button onClick={() => upd(selected.id, { remision_firmada: !selected.remision_firmada })} style={{ background: selected.remision_firmada ? "#f1f5f9" : "#7c3aed", color: selected.remision_firmada ? "#64748b" : "white", border: "none", borderRadius: 8, padding: "9px 16px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>{selected.remision_firmada ? "↩ Quitar remisión" : "✓ Remisión firmada"}</button>}
+                <button onClick={() => { setForm(selected); setShowForm(true); setSelected(null); }} style={{ background: "#f1f5f9", color: "#1e3a5f", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 16px", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>✏️ Editar</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+ 
+      {/* OV FORM */}
+      {showForm && (
+        <div style={{ position: "fixed", inset: 0, background: "#00000060", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div style={{ background: "white", borderRadius: "16px 16px 0 0", width: "100%", maxWidth: 600, padding: "22px 20px", maxHeight: "92vh", overflowY: "auto" }}>
+            <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 16 }}>{form.id ? "Editar OV" : "Nueva Orden de Venta"}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div style={{ marginBottom: 4 }}><label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>No. de OV (corporativo)</label><input value={form.num_ov} onChange={(e) => setForm((f) => ({ ...f, num_ov: e.target.value }))} style={inS} placeholder="OV-XXXXX" /></div>
+              <div style={{ marginBottom: 4 }}><label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>Fecha de carga objetivo</label><input type="date" value={form.fecha_carga} onChange={(e) => setForm((f) => ({ ...f, fecha_carga: e.target.value }))} style={inS} /></div>
+            </div>
+            <div style={{ marginBottom: 10, marginTop: 6 }}>
+              <label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>Cliente (opcional hasta tener remisión)</label>
+              <select value={form.clienteId} onChange={(e) => setForm((f) => ({ ...f, clienteId: e.target.value }))} style={inS}>
+                <option value="">— Sin asignar —</option>
+                {clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre} ({fmt(c.precio_ton)}/ton)</option>)}
+              </select>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+              {[["serie", "Serie"], ["folio", "Folio remisión"], ["toneladas", "Ton (pesado)"]].map(([k, l]) => (
+                <div key={k} style={{ marginBottom: 10 }}><label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>{l}</label><input type={k === "toneladas" ? "number" : "text"} step="0.01" value={form[k]} onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))} style={inS} /></div>
+              ))}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div style={{ marginBottom: 10 }}><label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>Fecha de entrega</label><input type="date" value={form.fecha_entrega} onChange={(e) => setForm((f) => ({ ...f, fecha_entrega: e.target.value }))} style={inS} /></div>
+              <div style={{ marginBottom: 10 }}><label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>Estatus</label><select value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))} style={inS}>{STATUSES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}</select></div>
+            </div>
+            <div style={{ marginBottom: 16 }}><label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>Notas</label><input value={form.notas} onChange={(e) => setForm((f) => ({ ...f, notas: e.target.value }))} style={inS} /></div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={save} disabled={!form.num_ov} style={{ flex: 1, background: form.num_ov ? "#1e3a5f" : "#cbd5e1", color: "white", border: "none", borderRadius: 8, padding: "11px", fontWeight: 700, cursor: form.num_ov ? "pointer" : "default", fontSize: 14 }}>Guardar</button>
+              <button onClick={() => setShowForm(false)} style={{ flex: 1, background: "#f1f5f9", color: "#64748b", border: "none", borderRadius: 8, padding: "11px", fontWeight: 600, cursor: "pointer", fontSize: 14 }}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+ 
+      {/* CLIENTE FORM */}
+      {showCliForm && (
+        <div style={{ position: "fixed", inset: 0, background: "#00000060", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div style={{ background: "white", borderRadius: "16px 16px 0 0", width: "100%", maxWidth: 500, padding: "22px 20px" }}>
+            <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 16 }}>{cliForm.id ? "Editar cliente" : "Nuevo cliente"}</div>
+            {[["nombre", "Nombre del cliente", "text"], ["precio_ton", "Precio por tonelada ($)", "number"], ["anticipo", "Anticipo inicial ($)", "number"]].map(([k, l, t]) => (
+              <div key={k} style={{ marginBottom: 12 }}><label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>{l}</label><input type={t} value={cliForm[k]} onChange={(e) => setCliForm((f) => ({ ...f, [k]: e.target.value }))} style={inS} /></div>
+            ))}
+            <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+              <button onClick={saveCliente} disabled={!cliForm.nombre} style={{ flex: 1, background: cliForm.nombre ? "#1e3a5f" : "#cbd5e1", color: "white", border: "none", borderRadius: 8, padding: "11px", fontWeight: 700, cursor: cliForm.nombre ? "pointer" : "default", fontSize: 14 }}>Guardar</button>
+              <button onClick={() => setShowCliForm(false)} style={{ flex: 1, background: "#f1f5f9", color: "#64748b", border: "none", borderRadius: 8, padding: "11px", fontWeight: 600, cursor: "pointer", fontSize: 14 }}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
