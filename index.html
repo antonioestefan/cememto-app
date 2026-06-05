@@ -198,9 +198,10 @@ function App() {
     await saveToDb("clientes",id,nc);
     setShowCliForm(false); setCliForm(emptyCliente);
   };
-  const addAnticipo = async (id,m)=>{
+  const addAnticipo = async (id,monto,fecha)=>{
     const c=clientes.find(x=>x.id===id); if(!c) return;
-    const updated={...c,anticipo:(parseFloat(c.anticipo)||0)+m};
+    const historial=[...(c.historial_anticipos||[]),{fecha,monto}];
+    const updated={...c,anticipo:(parseFloat(c.anticipo)||0)+monto,historial_anticipos:historial};
     setClientes(prev=>prev.map(x=>x.id===id?updated:x));
     await saveToDb("clientes",id,updated);
   };
@@ -450,7 +451,24 @@ function App() {
                       <div style={{background:"#f0fdf4",borderRadius:8,padding:"8px 10px"}}><div style={{fontSize:10,color:"#94a3b8"}}>Anticipo</div><div style={{fontWeight:700,color:"#16a34a"}}>{fmt(c.anticipo)}</div></div>
                       <div style={{background:c.saldo>=0?"#eff6ff":"#fef2f2",borderRadius:8,padding:"8px 10px"}}><div style={{fontSize:10,color:"#94a3b8"}}>{c.saldo>=0?"Saldo a favor":"Adeudo"}</div><div style={{fontWeight:800,color:c.saldo>=0?"#2563eb":"#ef4444"}}>{fmt(Math.abs(c.saldo))}</div></div>
                     </div>
-                    <button onClick={()=>{const m=+prompt(`Anticipo para ${c.nombre} ($):`,0); if(m>0) addAnticipo(c.id,m);}} style={{marginTop:10,background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"6px 14px",fontSize:12,cursor:"pointer",fontWeight:600}}>+ Registrar anticipo</button>
+                    <button onClick={()=>{
+                      const m=parseFloat(prompt(`Monto del depósito para ${c.nombre} ($):`));
+                      if(!m||m<=0) return;
+                      const f=prompt("Fecha del depósito (AAAA-MM-DD):",todayISO());
+                      if(!f) return;
+                      addAnticipo(c.id,m,f);
+                    }} style={{marginTop:10,background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"6px 14px",fontSize:12,cursor:"pointer",fontWeight:600}}>+ Registrar anticipo</button>
+                    {(c.historial_anticipos||[]).length>0&&(
+                      <div style={{marginTop:10,borderTop:"1px solid #f1f5f9",paddingTop:8}}>
+                        <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:4}}>HISTORIAL DE ANTICIPOS</div>
+                        {[...(c.historial_anticipos||[])].reverse().map((a,i)=>(
+                          <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"3px 0",borderTop:i>0?"1px solid #f1f5f9":"none"}}>
+                            <span style={{color:"#64748b"}}>{a.fecha}</span>
+                            <span style={{fontWeight:700,color:"#16a34a"}}>{fmt(a.monto)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
