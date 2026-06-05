@@ -75,7 +75,7 @@ function PlantaBadge({serie}) { const p=plantaDeSerie(serie); return <span style
 function EmptyState({icon,msg,btn,onClick}) { return <div style={{textAlign:"center",padding:"48px 20px",color:"#94a3b8"}}><div style={{fontSize:40,marginBottom:12}}>{icon}</div><div style={{fontSize:14,marginBottom:20}}>{msg}</div>{btn&&<button onClick={onClick} style={{background:"#1e3a5f",color:"white",border:"none",borderRadius:8,padding:"10px 20px",fontWeight:700,cursor:"pointer",fontSize:14}}>{btn}</button>}</div>; }
 
 const emptyOV = {id:"",num_ov:"",clienteId:"",serie:"",folio:"",toneladas:0,fecha_carga:todayISO(),fecha_entrega:"",status:"ov_asignada",confirm:"por_confirmar",motivo:"",remision_firmada:false,notas:""};
-const emptyCliente = {id:"",nombre:"",precio_ton:"",anticipo:0};
+const emptyCliente = {id:"",nombre:"",precio_ton:"",anticipo:0,telefono:""};
 
 function getWeekRange(offset=0) {
   const d=new Date(); d.setDate(d.getDate()+offset*7);
@@ -442,7 +442,7 @@ function App() {
                 {estadoCuenta.map(c=>(
                   <div key={c.id} style={{background:"white",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px #00000010",borderLeft:`4px solid ${c.saldo>=0?"#16a34a":"#ef4444"}`}}>
                     <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-                      <div><div style={{fontWeight:700,fontSize:16}}>{c.nombre}</div><div style={{fontSize:12,color:"#64748b"}}>Precio: {fmt(c.precio_ton)}/ton · {c.num_entregas} entregas</div></div>
+                      <div><div style={{fontWeight:700,fontSize:16}}>{c.nombre}</div><div style={{fontSize:12,color:"#64748b"}}>Precio: {fmt(c.precio_ton)}/ton · {c.num_entregas} entregas{c.telefono?` · 📞 ${c.telefono}`:""}</div></div>
                       <button onClick={()=>{setCliForm(c);setShowCliForm(true);}} style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"#1e3a5f"}}>✏️</button>
                     </div>
                     <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginTop:12}}>
@@ -672,7 +672,7 @@ function App() {
         <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
           <div style={{background:"white",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:500,padding:"22px 20px"}}>
             <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>{cliForm.id?"Editar cliente":"Nuevo cliente"}</div>
-            {[["nombre","Nombre del cliente","text"],["precio_ton","Precio por tonelada ($)","number"],["anticipo","Anticipo inicial ($)","number"]].map(([k,l,t])=>(
+            {[["nombre","Nombre del cliente","text"],["telefono","Teléfono (opcional)","tel"],["precio_ton","Precio por tonelada ($)","number"],["anticipo","Anticipo inicial ($)","number"]].map(([k,l,t])=>(
               <div key={k} style={{marginBottom:12}}>
                 <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>{l}</label>
                 <input type={t} value={cliForm[k]} onChange={e=>setCliForm(f=>({...f,[k]:e.target.value}))} style={inS}/>
