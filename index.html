@@ -183,6 +183,9 @@ function App() {
   };
   const saveOV = async ()=>{
     const id=form.id||`OV-${Date.now()}`;
+    const otros=ovs.filter(p=>p.id!==id);
+    if(otros.some(p=>p.num_ov&&p.num_ov===form.num_ov)){alert(`Ya existe otra OV con el número "${form.num_ov}".`);return;}
+    if(form.folio&&otros.some(p=>p.folio&&p.folio===form.folio)){alert(`Ya existe otra OV con el folio de remisión "${form.folio}".`);return;}
     const n={...form,id,toneladas:parseFloat(form.toneladas)||0};
     setOVs(prev=>prev.find(p=>p.id===id)?prev.map(p=>p.id===id?n:p):[n,...prev]);
     await saveToDb("ovs",id,n);
@@ -225,7 +228,9 @@ function App() {
     setEditingAnticipo(null);
   };
 
-  const ovsFiltrados = filtroCliente?ovs.filter(p=>p.clienteId===filtroCliente):ovs;
+  const ovsFiltrados = filtroCliente
+    ? ovs.filter(p=>p.clienteId===filtroCliente).slice().sort((a,b)=>(parseInt(b.folio)||0)-(parseInt(a.folio)||0))
+    : ovs;
   const semana       = getWeekRange(weekOffset);
   const ovsSemana    = ovs.filter(p=>p.fecha_carga>=semana.start&&p.fecha_carga<=semana.end).sort((a,b)=>(a.fecha_carga||"").localeCompare(b.fecha_carga||""));
   const porConfirmar = ovs.filter(p=>p.fecha_carga===tomorrowISO()).sort((a,b)=>a.confirm==="por_confirmar"?-1:1);
