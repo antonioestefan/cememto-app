@@ -98,7 +98,8 @@ function App() {
   const [form,setForm]               = useState(emptyOV);
   const [cliForm,setCliForm]         = useState(emptyCliente);
   const [weekOffset,setWeekOffset]   = useState(1);
-  const [filtroCliente,setFiltroCliente]       = useState("");
+  const [busqueda,setBusqueda]                   = useState("");
+  const [filtroCliente,setFiltroCliente]         = useState("");
   const [filtroSinRemision,setFiltroSinRemision] = useState(false);
   const [filtroSinCliente,setFiltroSinCliente]   = useState(false);
   const [reporteCliente,setReporteCliente]     = useState("");
@@ -238,6 +239,14 @@ function App() {
       : [...ovs];
     if(filtroSinRemision) list=list.filter(p=>p.clienteId&&!p.folio&&p.status!=="entregado");
     if(filtroSinCliente)  list=list.filter(p=>!p.clienteId);
+    if(busqueda.trim()){
+      const q=busqueda.trim().toLowerCase();
+      list=list.filter(p=>
+        (p.num_ov||"").toLowerCase().includes(q)||
+        (p.folio||"").toLowerCase().includes(q)||
+        (cliById(p.clienteId)?.nombre||"").toLowerCase().includes(q)
+      );
+    }
     return list;
   })();
   const semana       = getWeekRange(weekOffset);
@@ -497,6 +506,10 @@ function App() {
               ?<EmptyState icon="📋" msg="Aún no tienes órdenes de venta." btn="+ Capturar primera OV" onClick={()=>{setForm({...emptyOV,fecha_carga:todayISO()});setShowForm(true);}}/>
               :<>
                 <div style={{marginBottom:12}}>
+                  <div style={{position:"relative",marginBottom:8}}>
+                    <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",fontSize:15,pointerEvents:"none",color:"#94a3b8"}}>🔍</span>
+                    <input value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="Buscar OV, folio o cliente..." style={{...inS,paddingLeft:34,background:"white"}}/>
+                  </div>
                   <select value={filtroCliente} onChange={e=>{setFiltroCliente(e.target.value);if(e.target.value)setFiltroSinCliente(false);}} style={{...inS,background:"white",marginBottom:8}}>
                     <option value="">— Todos los clientes —</option>
                     {clientes.map(c=><option key={c.id} value={c.id}>{c.nombre}</option>)}
