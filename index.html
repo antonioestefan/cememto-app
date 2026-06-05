@@ -8,6 +8,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -237,10 +238,9 @@ function App() {
   const sinCliente   = ovs.filter(p=>!p.clienteId&&p.status!=="entregado");
 
   const exportExcel = (clienteId)=>{
-    const ovsExp=clienteId?ovs.filter(p=>p.clienteId===clienteId):ovs;
-    const c=clienteId?cliById(clienteId):null;
+    if(clienteId){ const c=estadoCuenta.find(ec=>ec.id===clienteId); if(c) exportExcelCliente(c); return; }
     const wb=XLSX.utils.book_new();
-    const ws=XLSX.utils.json_to_sheet(ovsExp.map(p=>({
+    const ws=XLSX.utils.json_to_sheet(ovs.map(p=>({
       "No. OV":p.num_ov, Cliente:cliById(p.clienteId)?.nombre||"(sin asignar)",
       Planta:plantaDeSerie(p.serie), Serie:p.serie, Folio:p.folio,
       Toneladas:p.toneladas, "Precio/ton":cliById(p.clienteId)?.precio_ton||"", Valor:valorOV(p),
@@ -248,16 +248,127 @@ function App() {
       Estatus:getS(p.status).label, "Remisión firmada":p.remision_firmada?"Sí":"No", Notas:p.notas,
     })));
     XLSX.utils.book_append_sheet(wb,ws,"Órdenes de venta");
-    if(!clienteId){
-      const wc=XLSX.utils.json_to_sheet(estadoCuenta.map(c=>({
-        Cliente:c.nombre,"Precio/ton":c.precio_ton,"Ton entregadas":c.ton_entregadas,
-        "Valor entregado":c.valor_entregado,Anticipo:c.anticipo,
-        "Saldo a favor":c.saldo>0?c.saldo:0,Adeudo:c.saldo<0?-c.saldo:0,
-      })));
-      XLSX.utils.book_append_sheet(wb,wc,"Estado de cuenta");
+    const wc=XLSX.utils.json_to_sheet(estadoCuenta.map(c=>({
+      Cliente:c.nombre,"Precio/ton":c.precio_ton,"Ton entregadas":c.ton_entregadas,
+      "Valor entregado":c.valor_entregado,Anticipo:c.anticipo,
+      "Saldo a favor":c.saldo>0?c.saldo:0,Adeudo:c.saldo<0?-c.saldo:0,
+    })));
+    XLSX.utils.book_append_sheet(wb,wc,"Estado de cuenta");
+    XLSX.writeFile(wb,`Reporte_Todos_${todayISO()}.xlsx`);
+  };
+
+  const exportExcelCliente = async (cuenta)=>{
+    const clienteData=cliById(cuenta.id);
+    const remisiones=ovs.filter(p=>p.clienteId===cuenta.id&&p.status==="entregado").sort((a,b)=>(a.fecha_entrega||"").localeCompare(b.fecha_entrega||""));
+    const historial=clienteData?.historial_anticipos||[];
+
+    const wb=new ExcelJS.Workbook();
+    wb.creator="Cruz Azul — Antonio";
+    const ws=wb.addWorksheet(cuenta.nombre.slice(0,31));
+    ws.columns=[{width:22},{width:14},{width:14},{width:12},{width:14},{width:15}];
+
+    const N=6;
+    const mergeRow=(rn)=>ws.mergeCells(rn,1,rn,N);
+    const fill=(hex)=>({type:"pattern",pattern:"solid",fgColor:{argb:"FF"+hex}});
+    const fw=(hex,sz=10,bold=false)=>({bold,color:{argb:"FF"+hex},size:sz});
+    const mid={horizontal:"center",vertical:"middle"};
+    const NAVY="1E3A5F",BLUE="1D4ED8",LGRAY="E2E8F0",ALTGRAY="F1F5F9",
+          GBG="DCFCE7",GFG="166534",RBG="FEE2E2",RFG="991B1B";
+
+    // Título
+    let r=ws.addRow([`REPORTE — ${cuenta.nombre.toUpperCase()}`]);
+    mergeRow(r.number); r.height=30;
+    Object.assign(r.getCell(1),{value:`REPORTE — ${cuenta.nombre.toUpperCase()}`,font:fw("FFFFFF",14,true),fill:fill(NAVY),alignment:mid});
+
+    r=ws.addRow([`Distribuidora Cruz Azul — ${todayISO()}`]);
+    mergeRow(r.number); r.height=18;
+    Object.assign(r.getCell(1),{font:fw("475569",10),fill:fill(LGRAY),alignment:mid});
+
+    ws.addRow([]);
+
+    // Sección remisiones
+    r=ws.addRow(["REMISIONES ENTREGADAS"]);
+    mergeRow(r.number); r.height=20;
+    Object.assign(r.getCell(1),{font:fw("FFFFFF",11,true),fill:fill(BLUE),alignment:mid});
+
+    r=ws.addRow(["Serie-Folio","Fecha carga","Fecha entrega","Toneladas","Precio/ton","Monto"]);
+    r.height=18;
+    for(let c=1;c<=N;c++) Object.assign(r.getCell(c),{font:fw("FFFFFF",10,true),fill:fill(NAVY),alignment:mid});
+
+    if(remisiones.length===0){
+      r=ws.addRow(["Sin remisiones entregadas"]); mergeRow(r.number);
+      Object.assign(r.getCell(1),{font:{...fw("94A3B8",10),italic:true},alignment:mid});
+    } else {
+      let totalTon=0;
+      remisiones.forEach((p,i)=>{
+        const ton=parseFloat(p.toneladas)||0, precio=parseFloat(cuenta.precio_ton)||0, monto=ton*precio;
+        totalTon+=ton;
+        r=ws.addRow([`${p.serie||"—"}-${p.folio||"s/f"}`,p.fecha_carga||"—",p.fecha_entrega||"—",ton,precio,monto]);
+        const bg=i%2===1?ALTGRAY:"FFFFFF";
+        for(let c=1;c<=N;c++){
+          r.getCell(c).fill=fill(bg);
+          if(c===4){r.getCell(c).numFmt="0.00"; r.getCell(c).alignment={horizontal:"right"};}
+          if(c===5||c===6){r.getCell(c).numFmt='"$"#,##0'; r.getCell(c).alignment={horizontal:"right"};}
+        }
+      });
+      r=ws.addRow(["","","TOTAL",totalTon,"",cuenta.valor_entregado]); r.height=18;
+      for(let c=1;c<=N;c++){
+        r.getCell(c).font=fw("1E293B",10,true); r.getCell(c).fill=fill(LGRAY);
+        if(c===4){r.getCell(c).numFmt="0.00"; r.getCell(c).alignment={horizontal:"right"};}
+        if(c===6){r.getCell(c).numFmt='"$"#,##0'; r.getCell(c).alignment={horizontal:"right"};}
+      }
     }
-    const nombre=c?c.nombre.replace(/ /g,"_"):"Todos";
-    XLSX.writeFile(wb,`Reporte_${nombre}_${todayISO()}.xlsx`);
+
+    ws.addRow([]);
+
+    // Sección anticipos
+    r=ws.addRow(["ANTICIPOS / PAGOS"]);
+    mergeRow(r.number); r.height=20;
+    Object.assign(r.getCell(1),{font:fw("FFFFFF",11,true),fill:fill(BLUE),alignment:mid});
+
+    r=ws.addRow(["Fecha","Monto"]); r.height=18;
+    for(let c=1;c<=2;c++) Object.assign(r.getCell(c),{font:fw("FFFFFF",10,true),fill:fill(NAVY),alignment:mid});
+
+    if(historial.length===0){
+      r=ws.addRow(["Sin anticipos registrados"]); mergeRow(r.number);
+      Object.assign(r.getCell(1),{font:{...fw("94A3B8",10),italic:true},alignment:mid});
+    } else {
+      historial.forEach((a,i)=>{
+        const bg=i%2===1?ALTGRAY:"FFFFFF";
+        r=ws.addRow([a.fecha||"—",parseFloat(a.monto)||0]);
+        r.getCell(1).fill=fill(bg);
+        r.getCell(2).fill=fill(bg); r.getCell(2).numFmt='"$"#,##0'; r.getCell(2).alignment={horizontal:"right"};
+      });
+    }
+
+    ws.addRow([]); ws.addRow([]);
+
+    // Resumen
+    r=ws.addRow(["RESUMEN"]);
+    mergeRow(r.number); r.height=20;
+    Object.assign(r.getCell(1),{font:fw("FFFFFF",11,true),fill:fill(BLUE),alignment:mid});
+
+    const addR=(label,val,fmt)=>{
+      const row=ws.addRow([label,val]); row.height=18;
+      row.getCell(1).font=fw("1E293B",10,true); row.getCell(1).fill=fill(LGRAY);
+      row.getCell(2).fill=fill(LGRAY); if(fmt) row.getCell(2).numFmt=fmt;
+      row.getCell(2).alignment={horizontal:"right"};
+    };
+    addR("Total entregado (ton):",parseFloat(cuenta.ton_entregadas)||0,"0.00");
+    addR("Total entregado ($):",cuenta.valor_entregado,'"$"#,##0');
+    addR("Total pagado (anticipos):",parseFloat(cuenta.anticipo)||0,'"$"#,##0');
+
+    const pos=cuenta.saldo>=0;
+    r=ws.addRow([pos?"✓ Saldo a favor":"⚠ Adeudo",Math.abs(cuenta.saldo)]); r.height=24;
+    const sc=pos?[GFG,GBG]:[RFG,RBG];
+    r.getCell(1).font=fw(sc[0],12,true); r.getCell(1).fill=fill(sc[1]);
+    r.getCell(2).font=fw(sc[0],12,true); r.getCell(2).fill=fill(sc[1]); r.getCell(2).numFmt='"$"#,##0'; r.getCell(2).alignment={horizontal:"right"};
+
+    const buf=await wb.xlsx.writeBuffer();
+    const blob=new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a"); a.href=url; a.download=`Reporte_${cuenta.nombre.replace(/ /g,"_")}_${todayISO()}.xlsx`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
   };
 
   const exportExcelPlanta = ()=>{
@@ -279,7 +390,12 @@ function App() {
     const cuentas=clienteId?estadoCuenta.filter(c=>c.id===clienteId):estadoCuenta;
     let t=`*REPORTE SEMANAL — ${todayISO()}*\n_Distribuidora Cruz Azul_\n\n`;
     cuentas.forEach(c=>{
-      t+=`*${c.nombre}*\nEntregado: ${fmtT(c.ton_entregadas)} ton (${fmt(c.valor_entregado)})\nAnticipo: ${fmt(c.anticipo)}\n`;
+      t+=`*${c.nombre}*\nEntregado: ${fmtT(c.ton_entregadas)} ton (${fmt(c.valor_entregado)})\n`;
+      if(clienteId){
+        const entregas=ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado").sort((a,b)=>(a.fecha_entrega||"").localeCompare(b.fecha_entrega||""));
+        entregas.forEach(p=>{ t+=`  • ${p.serie||"—"}-${p.folio||"s/f"} | ${p.fecha_entrega||"—"} | ${fmtT(p.toneladas)} ton | ${fmt(valorOV(p))}\n`; });
+      }
+      t+=`Anticipo: ${fmt(c.anticipo)}\n`;
       t+=c.saldo>=0?`Saldo a favor: ${fmt(c.saldo)}\n\n`:`*Adeudo: ${fmt(-c.saldo)}*\n\n`;
     });
     t+=`_Total entregado: ${fmt(cuentas.reduce((s,c)=>s+c.valor_entregado,0))}_`;
