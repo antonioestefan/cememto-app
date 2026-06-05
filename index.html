@@ -100,6 +100,7 @@ function App() {
   const [reporteCliente,setReporteCliente]     = useState("");
   const [reporteMes,setReporteMes]             = useState(currentYM());
   const [plantaExpandida,setPlantaExpandida]   = useState({});
+  const [editingAnticipo,setEditingAnticipo]   = useState(null); // {cliId,realIdx,fecha,monto}
 
   useEffect(()=>{
     if(!dbReady){window.addEventListener("dbReady",()=>setDbReady(true)); return;}
@@ -126,11 +127,12 @@ function App() {
     const ton      =ovs.filter(p=>p.status==="entregado").reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
     const entVal   =estadoCuenta.reduce((s,c)=>s+c.valor_entregado,0);
     const antVal   =clientes.reduce((s,c)=>s+(parseFloat(c.anticipo)||0),0);
-    const sinCli   =ovs.filter(p=>p.status==="remisionada"&&!p.clienteId).length;
-    const porConf  =ovs.filter(p=>p.fecha_carga===tomorrowISO()&&p.confirm==="por_confirmar").length;
+    const sinCli      =ovs.filter(p=>p.status==="remisionada"&&!p.clienteId).length;
+    const porConf     =ovs.filter(p=>p.fecha_carga===tomorrowISO()&&p.confirm==="por_confirmar").length;
+    const sinRemision =ovs.filter(p=>p.clienteId&&!p.folio&&p.status!=="entregado").length;
     const anticipoBajo=estadoCuenta.filter(c=>c.saldo<200000&&c.saldo>=0&&c.anticipo>0);
     const adeudos     =estadoCuenta.filter(c=>c.saldo<0);
-    return {ton,entVal,antVal,saldo:antVal-entVal,sinCli,porConf,anticipoBajo,adeudos};
+    return {ton,entVal,antVal,saldo:antVal-entVal,sinCli,porConf,sinRemision,anticipoBajo,adeudos};
   },[ovs,clientes,estadoCuenta]);
 
   /* reporte mensual por planta */
@@ -204,6 +206,23 @@ function App() {
     const updated={...c,anticipo:(parseFloat(c.anticipo)||0)+monto,historial_anticipos:historial};
     setClientes(prev=>prev.map(x=>x.id===id?updated:x));
     await saveToDb("clientes",id,updated);
+  };
+  const deleteAnticipo = async (cliId,realIdx)=>{
+    const c=clientes.find(x=>x.id===cliId); if(!c) return;
+    const historial=(c.historial_anticipos||[]).filter((_,i)=>i!==realIdx);
+    const anticipo=historial.reduce((s,a)=>s+(parseFloat(a.monto)||0),0);
+    const updated={...c,anticipo,historial_anticipos:historial};
+    setClientes(prev=>prev.map(x=>x.id===cliId?updated:x));
+    await saveToDb("clientes",cliId,updated);
+  };
+  const editAnticipo = async (cliId,realIdx,newFecha,newMonto)=>{
+    const c=clientes.find(x=>x.id===cliId); if(!c) return;
+    const historial=(c.historial_anticipos||[]).map((a,i)=>i===realIdx?{fecha:newFecha,monto:parseFloat(newMonto)||0}:a);
+    const anticipo=historial.reduce((s,a)=>s+(parseFloat(a.monto)||0),0);
+    const updated={...c,anticipo,historial_anticipos:historial};
+    setClientes(prev=>prev.map(x=>x.id===cliId?updated:x));
+    await saveToDb("clientes",cliId,updated);
+    setEditingAnticipo(null);
   };
 
   const ovsFiltrados = filtroCliente?ovs.filter(p=>p.clienteId===filtroCliente):ovs;
@@ -318,8 +337,9 @@ function App() {
         {/* KPIs */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:18}}>
           {[
-            {l:"Por confirmar mañana",v:totales.porConf,        a:totales.porConf>0?"#d97706":"#16a34a"},
-            {l:"Sin cliente asignado",v:totales.sinCli,         a:totales.sinCli>0?"#0891b2":"#16a34a"},
+            {l:"Por confirmar mañana",v:totales.porConf,           a:totales.porConf>0?"#d97706":"#16a34a"},
+            {l:"Sin cliente asignado",v:totales.sinCli,            a:totales.sinCli>0?"#0891b2":"#16a34a"},
+            {l:"Sin remisión",        v:totales.sinRemision,        a:totales.sinRemision>0?"#d97706":"#16a34a"},
             {l:"Ton entregadas",      v:fmtT(totales.ton),      a:"#1e3a5f"},
             {l:"Valor entregado",     v:fmt(totales.entVal),    a:"#2563eb"},
             {l:"Saldo neto clientes", v:fmt(totales.saldo),     a:totales.saldo>=0?"#16a34a":"#ef4444"},
@@ -461,12 +481,26 @@ function App() {
                     {(c.historial_anticipos||[]).length>0&&(
                       <div style={{marginTop:10,borderTop:"1px solid #f1f5f9",paddingTop:8}}>
                         <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:4}}>HISTORIAL DE ANTICIPOS</div>
-                        {[...(c.historial_anticipos||[])].reverse().map((a,i)=>(
-                          <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"3px 0",borderTop:i>0?"1px solid #f1f5f9":"none"}}>
-                            <span style={{color:"#64748b"}}>{a.fecha}</span>
-                            <span style={{fontWeight:700,color:"#16a34a"}}>{fmt(a.monto)}</span>
-                          </div>
-                        ))}
+                        {[...(c.historial_anticipos||[])].reverse().map((a,i)=>{
+                          const realIdx=(c.historial_anticipos.length-1-i);
+                          const isEditing=editingAnticipo&&editingAnticipo.cliId===c.id&&editingAnticipo.realIdx===realIdx;
+                          if(isEditing) return(
+                            <div key={i} style={{display:"flex",gap:4,alignItems:"center",padding:"4px 0",borderTop:i>0?"1px solid #f1f5f9":"none",flexWrap:"wrap"}}>
+                              <input type="date" value={editingAnticipo.fecha} onChange={e=>setEditingAnticipo(p=>({...p,fecha:e.target.value}))} style={{...inS,fontSize:11,padding:"3px 6px",flex:"1 1 90px"}}/>
+                              <input type="number" value={editingAnticipo.monto} onChange={e=>setEditingAnticipo(p=>({...p,monto:e.target.value}))} style={{...inS,fontSize:11,padding:"3px 6px",flex:"1 1 80px"}} placeholder="Monto"/>
+                              <button onClick={()=>editAnticipo(c.id,realIdx,editingAnticipo.fecha,editingAnticipo.monto)} style={{background:"#16a34a",color:"white",border:"none",borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",fontWeight:700}}>✓</button>
+                              <button onClick={()=>setEditingAnticipo(null)} style={{background:"#f1f5f9",color:"#64748b",border:"none",borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer"}}>✕</button>
+                            </div>
+                          );
+                          return(
+                            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"3px 0",borderTop:i>0?"1px solid #f1f5f9":"none",gap:4}}>
+                              <span style={{color:"#64748b",flex:1}}>{a.fecha}</span>
+                              <span style={{fontWeight:700,color:"#16a34a",flex:1,textAlign:"right"}}>{fmt(a.monto)}</span>
+                              <button onClick={()=>setEditingAnticipo({cliId:c.id,realIdx,fecha:a.fecha,monto:a.monto})} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,padding:"0 2px",color:"#94a3b8"}} title="Editar">✏️</button>
+                              <button onClick={()=>{if(confirm(`¿Eliminar anticipo de ${fmt(a.monto)} del ${a.fecha}?`))deleteAnticipo(c.id,realIdx);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,padding:"0 2px",color:"#94a3b8"}} title="Eliminar">🗑️</button>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
