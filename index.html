@@ -39,7 +39,8 @@ const fmt  = (n) => new Intl.NumberFormat("es-MX",{style:"currency",currency:"MX
 const fmtT = (n) => (parseFloat(n)||0).toFixed(2);
 const todayISO   = () => new Date().toISOString().slice(0,10);
 const addDays    = (iso,n) => { const d=new Date((iso||todayISO())+"T12:00"); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
-const tomorrowISO= () => addDays(todayISO(),1);
+const tomorrowISO   = () => addDays(todayISO(),1);
+const nextWorkdayISO= () => new Date().getDay()===6 ? addDays(todayISO(),2) : addDays(todayISO(),1);
 const diaLabel   = (iso) => iso ? new Date(iso+"T12:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"short"}) : "—";
 const mesLabel   = (ym)  => { const [y,m]=ym.split("-"); return new Date(+y,+m-1,1).toLocaleDateString("es-MX",{month:"long",year:"numeric"}); };
 const currentYM  = () => todayISO().slice(0,7);
@@ -165,7 +166,7 @@ function App() {
     const entVal   =estadoCuenta.reduce((s,c)=>s+c.valor_entregado,0);
     const antVal   =clientes.reduce((s,c)=>s+(parseFloat(c.anticipo)||0),0);
     const sinCli      =ovs.filter(p=>p.status==="remisionada"&&!p.clienteId).length;
-    const porConf     =ovs.filter(p=>p.fecha_carga===tomorrowISO()&&p.confirm==="por_confirmar").length;
+    const porConf     =ovs.filter(p=>p.fecha_carga===nextWorkdayISO()&&p.confirm==="por_confirmar").length;
     const sinRemision =ovs.filter(p=>p.clienteId&&!p.folio&&p.status!=="entregado").length;
     const anticipoBajo=estadoCuenta.filter(c=>c.saldo<200000&&c.saldo>=0&&c.anticipo>0);
     const adeudos     =estadoCuenta.filter(c=>c.saldo<0);
@@ -302,7 +303,7 @@ function App() {
   })();
   const semana       = getWeekRange(weekOffset);
   const ovsSemana    = ovs.filter(p=>p.fecha_carga>=semana.start&&p.fecha_carga<=semana.end).sort((a,b)=>(a.fecha_carga||"").localeCompare(b.fecha_carga||""));
-  const porConfirmar = ovs.filter(p=>p.fecha_carga===tomorrowISO()).sort((a,b)=>a.confirm==="por_confirmar"?-1:1);
+  const porConfirmar = ovs.filter(p=>p.fecha_carga===nextWorkdayISO()).sort((a,b)=>a.confirm==="por_confirmar"?-1:1);
   const sinCliente   = ovs.filter(p=>!p.clienteId&&p.status!=="entregado");
 
   const exportExcel = (clienteId)=>{
@@ -653,9 +654,9 @@ function App() {
         {/* ---- CONFIRMAR MAÑANA ---- */}
         {tab==="confirmar"&&(
           <>
-            <div style={{background:"#fffbeb",borderRadius:10,padding:"12px 16px",marginBottom:14,fontSize:13,color:"#92400e"}}>✅ <b>Confirmar cargas de mañana</b> ({diaLabel(tomorrowISO())})</div>
+            <div style={{background:"#fffbeb",borderRadius:10,padding:"12px 16px",marginBottom:14,fontSize:13,color:"#92400e"}}>✅ <b>{new Date().getDay()===6?"Confirmar cargas del lunes":"Confirmar cargas de mañana"}</b> ({diaLabel(nextWorkdayISO())})</div>
             {porConfirmar.length===0
-              ?<EmptyState icon="✅" msg="No hay cargas programadas para mañana."/>
+              ?<EmptyState icon="✅" msg={new Date().getDay()===6?"No hay cargas programadas para el lunes.":"No hay cargas programadas para mañana."}/>
               :<div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {porConfirmar.map(p=>{
                   const c=cliById(p.clienteId);
