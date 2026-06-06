@@ -418,7 +418,8 @@ function App() {
 
     const wb=new ExcelJS.Workbook();
     wb.creator="Cruz Azul — Antonio";
-    const ws=wb.addWorksheet(cuenta.nombre.slice(0,31));
+    const nombreSafeSheet=cuenta.nombre.replace(/[/\\*?:\[\]]/g,"-").slice(0,31);
+    const ws=wb.addWorksheet(nombreSafeSheet);
     ws.columns=[{width:22},{width:14},{width:14},{width:12},{width:14},{width:15}];
 
     const N=6;
