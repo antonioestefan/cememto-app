@@ -305,6 +305,8 @@ function App() {
   const semana       = getWeekRange(weekOffset);
   const ovsSemana    = ovs.filter(p=>p.fecha_carga>=semana.start&&p.fecha_carga<=semana.end).sort((a,b)=>(a.fecha_carga||"").localeCompare(b.fecha_carga||""));
   const porConfirmar = ovs.filter(p=>p.fecha_carga===nextWorkdayISO()).sort((a,b)=>a.confirm==="por_confirmar"?-1:1);
+  const entregasHoy  = ovs.filter(p=>p.fecha_entrega===todayISO()&&["listo_para_envio","en_camino","entregado"].includes(p.status)&&!p.remision_firmada);
+  const enEspera     = ovs.filter(p=>p.status==="listo_para_envio"&&p.fecha_entrega!==todayISO());
   const sinCliente   = ovs.filter(p=>!p.clienteId&&p.status!=="entregado");
 
   const exportExcel = (clienteId)=>{
@@ -561,7 +563,7 @@ function App() {
 
       {/* TABS */}
       <div style={{background:"white",borderBottom:"2px solid #e2e8f0",padding:"0 16px",display:"flex",overflowX:"auto"}}>
-        {[["ordenes","📋 Órdenes"],["confirmar",`✅ Mañana${totales.porConf?` (${totales.porConf})`:""}`],["clientes","👥 Clientes"],["programacion","📅 Semana"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"]].map(([k,l])=>(
+        {[["ordenes","📋 Órdenes"],["confirmar",`📌 Hoy${totales.porConf?` (${totales.porConf})`:""}`],["clientes","👥 Clientes"],["programacion","📅 Semana"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"]].map(([k,l])=>(
           <button key={k} onClick={()=>setTab(k)} style={{background:"none",border:"none",borderBottom:tab===k?"3px solid #1e3a5f":"3px solid transparent",padding:"12px 14px",cursor:"pointer",fontWeight:tab===k?700:500,color:tab===k?"#1e3a5f":"#64748b",fontSize:13,whiteSpace:"nowrap"}}>{l}</button>
         ))}
       </div>
@@ -652,37 +654,112 @@ function App() {
           </>
         )}
 
-        {/* ---- CONFIRMAR MAÑANA ---- */}
+        {/* ---- HOY ---- */}
         {tab==="confirmar"&&(
           <>
-            <div style={{background:"#fffbeb",borderRadius:10,padding:"12px 16px",marginBottom:14,fontSize:13,color:"#92400e"}}>✅ <b>{new Date().getDay()===6?"Confirmar cargas del lunes":"Confirmar cargas de mañana"}</b> ({diaLabel(nextWorkdayISO())})</div>
-            {porConfirmar.length===0
-              ?<EmptyState icon="✅" msg={new Date().getDay()===6?"No hay cargas programadas para el lunes.":"No hay cargas programadas para mañana."}/>
-              :<div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {porConfirmar.map(p=>{
-                  const c=cliById(p.clienteId);
-                  return(
-                    <div key={p.id} style={{background:"white",borderRadius:10,padding:"14px 16px",boxShadow:"0 1px 4px #00000010",borderLeft:`4px solid ${(CONFIRM[p.confirm]||{}).color}`}}>
-                      <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-                        <div>
-                          <div style={{fontWeight:800,fontSize:13,color:"#7c3aed"}}>{p.num_ov}</div>
-                          <div style={{fontWeight:700}}>{c?c.nombre:"Sin cliente aún"}</div>
-                          <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>🏭 {diaLabel(p.fecha_carga)}</div>
-                          {p.motivo&&<div style={{fontSize:11,color:"#dc2626",marginTop:3}}>↻ {p.motivo}</div>}
-                        </div>
-                        <ConfirmBadge c={p.confirm}/>
-                      </div>
-                      {p.confirm!=="confirmado"&&(
-                        <div style={{display:"flex",gap:8,marginTop:10}}>
-                          <button onClick={()=>confirmar(p.id)} style={{background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"7px 14px",fontSize:12,cursor:"pointer",fontWeight:700}}>✓ Confirmar</button>
-                          <button onClick={()=>reprogramar(p.id)} style={{background:"#fef2f2",color:"#dc2626",border:"1px solid #fecaca",borderRadius:6,padding:"7px 14px",fontSize:12,cursor:"pointer",fontWeight:700}}>↻ Reprogramar</button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+            {/* SECCIÓN 1 — CONFIRMAR MAÑANA */}
+            <div style={{marginBottom:22}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,paddingBottom:8,borderBottom:"2px solid #fde68a"}}>
+                <div style={{background:"#d97706",borderRadius:4,width:4,height:20,flexShrink:0}}/>
+                <div style={{fontWeight:800,fontSize:14,color:"#92400e"}}>{new Date().getDay()===6?"Confirmar cargas del lunes":"Confirmar cargas de mañana"}</div>
+                <div style={{fontSize:12,color:"#b45309",marginLeft:2}}>— {diaLabel(nextWorkdayISO())}</div>
+                {porConfirmar.length>0&&<span style={{marginLeft:"auto",background:"#fffbeb",color:"#d97706",borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700}}>{porConfirmar.length}</span>}
               </div>
-            }
+              {porConfirmar.length===0
+                ?<div style={{background:"#f0fdf4",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#15803d",fontWeight:600}}>✓ Todo en orden</div>
+                :<div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  {porConfirmar.map(p=>{
+                    const c=cliById(p.clienteId);
+                    return(
+                      <div key={p.id} style={{background:"white",borderRadius:10,padding:"14px 16px",boxShadow:"0 1px 4px #00000010",borderLeft:`4px solid ${(CONFIRM[p.confirm]||{}).color}`}}>
+                        <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+                          <div>
+                            <div style={{fontWeight:800,fontSize:13,color:"#7c3aed"}}>{p.num_ov}</div>
+                            <div style={{fontWeight:700}}>{c?c.nombre:"Sin cliente aún"}</div>
+                            <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>🏭 {diaLabel(p.fecha_carga)}</div>
+                            {p.motivo&&<div style={{fontSize:11,color:"#dc2626",marginTop:3}}>↻ {p.motivo}</div>}
+                          </div>
+                          <ConfirmBadge c={p.confirm}/>
+                        </div>
+                        {p.confirm!=="confirmado"&&(
+                          <div style={{display:"flex",gap:8,marginTop:10}}>
+                            <button onClick={()=>confirmar(p.id)} style={{background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"7px 14px",fontSize:12,cursor:"pointer",fontWeight:700}}>✓ Confirmar</button>
+                            <button onClick={()=>reprogramar(p.id)} style={{background:"#fef2f2",color:"#dc2626",border:"1px solid #fecaca",borderRadius:6,padding:"7px 14px",fontSize:12,cursor:"pointer",fontWeight:700}}>↻ Reprogramar</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              }
+            </div>
+
+            {/* SECCIÓN 2 — ENTREGAS DE HOY */}
+            <div style={{marginBottom:22}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,paddingBottom:8,borderBottom:"2px solid #bfdbfe"}}>
+                <div style={{background:"#2563eb",borderRadius:4,width:4,height:20,flexShrink:0}}/>
+                <div style={{fontWeight:800,fontSize:14,color:"#1d4ed8"}}>Entregas de hoy</div>
+                <div style={{fontSize:12,color:"#3b82f6",marginLeft:2}}>— {diaLabel(todayISO())}</div>
+                {entregasHoy.length>0&&<span style={{marginLeft:"auto",background:"#eff6ff",color:"#2563eb",borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700}}>{entregasHoy.length}</span>}
+              </div>
+              {entregasHoy.length===0
+                ?<div style={{background:"#f0fdf4",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#15803d",fontWeight:600}}>✓ Todo en orden</div>
+                :<div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  {entregasHoy.map(p=>{
+                    const c=cliById(p.clienteId);
+                    return(
+                      <div key={p.id} style={{background:"white",borderRadius:10,padding:"14px 16px",boxShadow:"0 1px 4px #00000010",borderLeft:`4px solid ${getS(p.status).color}`}}>
+                        <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+                          <div>
+                            <div style={{fontWeight:800,fontSize:13,color:"#7c3aed"}}>{p.num_ov}</div>
+                            <div style={{fontWeight:700}}>{c?c.nombre:"Sin cliente"}</div>
+                            <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>🚚 entrega: {diaLabel(p.fecha_entrega)}</div>
+                          </div>
+                          <Badge status={p.status}/>
+                        </div>
+                        <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+                          {NEXT[p.status]&&<button onClick={()=>advance(p.id)} style={{background:"#1e3a5f",color:"white",border:"none",borderRadius:6,padding:"7px 14px",fontSize:12,cursor:"pointer",fontWeight:700}}>{NEXT_LABEL[p.status]}</button>}
+                          {p.status==="entregado"&&<button onClick={()=>upd(p.id,{remision_firmada:true})} style={{background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"7px 14px",fontSize:12,cursor:"pointer",fontWeight:700}}>✓ Remisión firmada</button>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              }
+            </div>
+
+            {/* SECCIÓN 3 — EN ESPERA DE SALIDA */}
+            <div style={{marginBottom:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,paddingBottom:8,borderBottom:"2px solid #fde68a"}}>
+                <div style={{background:"#b45309",borderRadius:4,width:4,height:20,flexShrink:0}}/>
+                <div style={{fontWeight:800,fontSize:14,color:"#92400e"}}>En espera de salida</div>
+                {enEspera.length>0&&<span style={{marginLeft:"auto",background:"#fefce8",color:"#b45309",borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700}}>{enEspera.length}</span>}
+              </div>
+              {enEspera.length===0
+                ?<div style={{background:"#f0fdf4",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#15803d",fontWeight:600}}>✓ Todo en orden</div>
+                :<div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  {enEspera.map(p=>{
+                    const c=cliById(p.clienteId);
+                    const dias=Math.max(0,Math.floor((new Date(todayISO()+"T12:00")-new Date((p.fecha_carga||todayISO())+"T12:00"))/86400000));
+                    return(
+                      <div key={p.id} style={{background:"white",borderRadius:10,padding:"14px 16px",boxShadow:"0 1px 4px #00000010",borderLeft:"4px solid #b45309"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+                          <div>
+                            <div style={{fontWeight:800,fontSize:13,color:"#7c3aed"}}>{p.num_ov}</div>
+                            <div style={{fontWeight:700}}>{c?c.nombre:"Sin cliente"}</div>
+                            <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>🏭 cargó: {diaLabel(p.fecha_carga)}</div>
+                          </div>
+                          <div style={{textAlign:"right",display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6}}>
+                            <Badge status={p.status}/>
+                            <span style={{fontSize:12,fontWeight:700,color:dias>=2?"#dc2626":dias===1?"#d97706":"#64748b"}}>{dias===0?"Hoy mismo":dias===1?"1 día en espera":`${dias} días en espera`}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              }
+            </div>
           </>
         )}
 
