@@ -411,7 +411,6 @@ function App() {
   };
 
   const exportExcelCliente = async (cuenta)=>{ try {
-    console.log("[exportExcelCliente] inicio", cuenta);
     const clienteData=cliById(cuenta.id);
     const remisiones=ovs.filter(p=>p.clienteId===cuenta.id&&p.status==="entregado").sort((a,b)=>(a.fecha_entrega||"").localeCompare(b.fecha_entrega||""));
     const historial=clienteData?.historial_anticipos||[];
@@ -525,7 +524,7 @@ function App() {
     const nombreSafe=cuenta.nombre.replace(/[/\\*?:<>|"]/g,"-").replace(/ /g,"_");
     const a=document.createElement("a"); a.href=url; a.download=`Reporte_${nombreSafe}_${todayISO()}.xlsx`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-  } catch(e){ console.error("[exportExcelCliente] error", e); alert(`Error al generar Excel: ${e.message}`); } };
+  } catch(e){ alert(`Error al generar Excel: ${e.message}`); } };
 
   const exportExcelPlanta = async ()=>{
     const wb=new ExcelJS.Workbook(); wb.creator="Cruz Azul — Antonio";
