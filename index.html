@@ -45,15 +45,17 @@ const mesLabel   = (ym)  => { const [y,m]=ym.split("-"); return new Date(+y,+m-1
 const currentYM  = () => todayISO().slice(0,7);
 
 /* planta por serie */
-const PLANTAS = {PU:"Puebla",AG:"Aguascalientes"};
+const PLANTAS = {PU:"Puebla",AG:"Aguascalientes",BQ:"Bodega Querétaro"};
 const plantaDeSerie = (serie) => {
   if(!serie) return "Sin planta";
   const prefix = serie.toUpperCase();
   for (const key of Object.keys(PLANTAS)) { if(prefix.startsWith(key)) return PLANTAS[key]; }
   return "Otra";
 };
-const plantaColor = {Puebla:"#7c3aed",Aguascalientes:"#0891b2","Sin planta":"#94a3b8",Otra:"#64748b"};
-const plantaBg    = {Puebla:"#f5f3ff",Aguascalientes:"#ecfeff","Sin planta":"#f8fafc",Otra:"#f1f5f9"};
+const plantaColor = {Puebla:"#7c3aed",Aguascalientes:"#0891b2","Bodega Querétaro":"#15803d","Sin planta":"#94a3b8",Otra:"#64748b"};
+const plantaBg    = {Puebla:"#f5f3ff",Aguascalientes:"#ecfeff","Bodega Querétaro":"#f0fdf4","Sin planta":"#f8fafc",Otra:"#f1f5f9"};
+const GRANEL_CONFIG = [{label:"Puebla",color:"#7c3aed"},{label:"Aguascalientes",color:"#0891b2"}];
+const SACO_CONFIG   = [{label:"Bodega Querétaro",color:"#15803d"}];
 
 const STATUSES = [
   {key:"ov_asignada",    label:"OV asignada",       color:"#7c3aed",bg:"#f5f3ff",hint:"Permiso de carga de corporativo"},
@@ -77,7 +79,7 @@ function ConfirmBadge({c}) { const s=CONFIRM[c]||CONFIRM.por_confirmar; return <
 function PlantaBadge({serie}) { const p=plantaDeSerie(serie); return <span style={{background:plantaBg[p]||"#f1f5f9",color:plantaColor[p]||"#64748b",border:`1px solid ${plantaColor[p]||"#64748b"}30`,borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>🏭 {p}</span>; }
 function EmptyState({icon,msg,btn,onClick}) { return <div style={{textAlign:"center",padding:"48px 20px",color:"#94a3b8"}}><div style={{fontSize:40,marginBottom:12}}>{icon}</div><div style={{fontSize:14,marginBottom:20}}>{msg}</div>{btn&&<button onClick={onClick} style={{background:"#1e3a5f",color:"white",border:"none",borderRadius:8,padding:"10px 20px",fontWeight:700,cursor:"pointer",fontSize:14}}>{btn}</button>}</div>; }
 
-function GraficaPlantas({meses,data}){
+function GraficaPlantas({meses,data,plantasConfig}){
   const canvasRef=useRef(null);
   const chartRef=useRef(null);
   useEffect(()=>{
@@ -87,10 +89,7 @@ function GraficaPlantas({meses,data}){
       type:"bar",
       data:{
         labels:meses.map(ym=>{const[y,m]=ym.split("-");return new Date(+y,+m-1,1).toLocaleDateString("es-MX",{month:"short",year:"2-digit"});}),
-        datasets:[
-          {label:"Puebla",data:data["Puebla"]||[],backgroundColor:"#7c3aed",borderRadius:6,borderSkipped:false},
-          {label:"Aguascalientes",data:data["Aguascalientes"]||[],backgroundColor:"#0891b2",borderRadius:6,borderSkipped:false},
-        ],
+        datasets:plantasConfig.map(({label,color})=>({label,data:data[label]||[],backgroundColor:color,borderRadius:6,borderSkipped:false})),
       },
       options:{
         responsive:true,
@@ -109,7 +108,7 @@ function GraficaPlantas({meses,data}){
   return <canvas ref={canvasRef} style={{maxHeight:260}}/>;
 }
 
-const emptyOV = {id:"",num_ov:"",clienteId:"",serie:"",folio:"",toneladas:0,fecha_carga:todayISO(),fecha_entrega:"",status:"ov_asignada",confirm:"por_confirmar",motivo:"",remision_firmada:false,notas:""};
+const emptyOV = {id:"",num_ov:"",clienteId:"",serie:"",folio:"",toneladas:0,fecha_carga:todayISO(),fecha_entrega:"",status:"ov_asignada",confirm:"por_confirmar",motivo:"",remision_firmada:false,notas:"",tipo:"granel"};
 const emptyCliente = {id:"",nombre:"",precio_ton:"",anticipo:0,telefono:""};
 
 function getWeekRange(offset=0) {
@@ -204,9 +203,8 @@ function App() {
   const graficaPlantas = useMemo(()=>{
     const today=new Date();
     const meses=Array.from({length:6},(_,i)=>{const d=new Date(today.getFullYear(),today.getMonth()-5+i,1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
-    const plantas=["Puebla","Aguascalientes"];
     const data={};
-    plantas.forEach(planta=>{
+    ["Puebla","Aguascalientes","Bodega Querétaro"].forEach(planta=>{
       data[planta]=meses.map(ym=>ovs.filter(p=>(p.fecha_carga||"").startsWith(ym)&&plantaDeSerie(p.serie)===planta&&p.status!=="ov_asignada"&&p.status!=="fletera_planta").reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0));
     });
     return {meses,data};
@@ -216,8 +214,8 @@ function App() {
   const acumuladoAnual = useMemo(()=>{
     const yr=new Date().getFullYear().toString();
     const calc=planta=>ovs.filter(p=>(p.fecha_carga||"").startsWith(yr)&&plantaDeSerie(p.serie)===planta&&p.status!=="ov_asignada"&&p.status!=="fletera_planta").reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
-    const pu=calc("Puebla"), ag=calc("Aguascalientes");
-    return {Puebla:pu,Aguascalientes:ag,total:pu+ag};
+    const pu=calc("Puebla"), ag=calc("Aguascalientes"), bq=calc("Bodega Querétaro");
+    return {Puebla:pu,Aguascalientes:ag,"Bodega Querétaro":bq,totalGranel:pu+ag,totalSaco:bq,total:pu+ag+bq};
   },[ovs]);
 
   const upd = async (id,patch)=>{
@@ -449,15 +447,17 @@ function App() {
     const thin={style:"thin",color:{argb:"FFD1D5DB"}};
     const brd={top:thin,bottom:thin,left:thin,right:thin};
     const NAVY="1E3A5F", ALTGRAY="F8FAFC";
+    const plantaHeaderHex={"Puebla":"4C1D95","Aguascalientes":"0369A1","Bodega Querétaro":"15803D"};
 
     for(const {planta,remisiones,total_ton} of reportePlanta){
+      const headerColor=plantaHeaderHex[planta]||NAVY;
       const ws=wb.addWorksheet(planta.slice(0,31));
       ws.columns=[{width:14},{width:18},{width:14},{width:12}];
 
       // Encabezado
       let r=ws.addRow([`CA  ·  ${planta.toUpperCase()}  ·  ${mesLabel(reporteMes).toUpperCase()}  ·  ${todayISO()}`]);
       ws.mergeCells(r.number,1,r.number,4); r.height=34;
-      Object.assign(r.getCell(1),{font:fw("FFFFFF",13,true),fill:fill(NAVY),alignment:mid});
+      Object.assign(r.getCell(1),{font:fw("FFFFFF",13,true),fill:fill(headerColor),alignment:mid});
 
       ws.addRow([]).height=6;
 
@@ -465,7 +465,7 @@ function App() {
       r=ws.addRow(["No. OV","Serie-Folio","Fecha remisión","Toneladas"]); r.height=22;
       for(let c=1;c<=4;c++){
         const cell=r.getCell(c);
-        cell.font=fw("FFFFFF",11,true); cell.fill=fill(NAVY);
+        cell.font=fw("FFFFFF",11,true); cell.fill=fill(headerColor);
         cell.alignment={...mid,wrapText:false}; cell.border=brd;
       }
 
@@ -484,7 +484,7 @@ function App() {
       // Fila TOTAL
       r=ws.addRow(["","TOTAL","",total_ton]); r.height=26;
       for(let c=1;c<=4;c++){
-        r.getCell(c).font=fw("FFFFFF",13,true); r.getCell(c).fill=fill(NAVY); r.getCell(c).border=brd;
+        r.getCell(c).font=fw("FFFFFF",13,true); r.getCell(c).fill=fill(headerColor); r.getCell(c).border=brd;
         if(c===2) r.getCell(c).alignment=mid;
         if(c===4){r.getCell(c).numFmt="0.00";r.getCell(c).alignment={horizontal:"right",vertical:"middle"};}
       }
@@ -634,6 +634,7 @@ function App() {
                             </div>
                             <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
                               <Badge status={p.status}/>
+                              {p.tipo==="saco"&&<span style={{background:"#f0fdf4",color:"#15803d",border:"1px solid #15803d30",borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700}}>Saco</span>}
                               {p.serie&&<PlantaBadge serie={p.serie}/>}
                               {["ov_asignada","fletera_planta"].includes(p.status)&&<ConfirmBadge c={p.confirm}/>}
                               {p.status==="entregado"&&<span style={{fontSize:11,color:p.remision_firmada?"#16a34a":"#d97706",fontWeight:700}}>{p.remision_firmada?"✓ Firmada":"⚠ Falta firma"}</span>}
@@ -820,7 +821,7 @@ function App() {
         {tab==="plantas"&&(
           <>
             {/* TARJETAS MES SELECCIONADO */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
               {["Puebla","Aguascalientes"].map(planta=>{
                 const entry=reportePlanta.find(r=>r.planta===planta);
                 const ton=entry?entry.total_ton:0;
@@ -834,16 +835,32 @@ function App() {
                 );
               })}
             </div>
+            {(()=>{
+              const bqEntry=reportePlanta.find(r=>r.planta==="Bodega Querétaro");
+              const bqTon=bqEntry?bqEntry.total_ton:0;
+              return(
+                <div style={{background:"linear-gradient(135deg,#14532d,#15803d)",borderRadius:14,padding:"20px 16px",color:"white",marginBottom:12}}>
+                  <div style={{fontSize:10,opacity:.7,marginBottom:6,fontWeight:700,textTransform:"uppercase",letterSpacing:.8}}>📦 Bodega Querétaro — Saco</div>
+                  <div style={{fontSize:38,fontWeight:900,lineHeight:1,letterSpacing:-1}}>{fmtT(bqTon)}</div>
+                  <div style={{fontSize:11,opacity:.6,marginTop:6}}>{mesLabel(reporteMes)}</div>
+                </div>
+              );
+            })()}
 
             {/* GRÁFICA ÚLTIMOS 6 MESES */}
+            <div style={{background:"white",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000010",marginBottom:10}}>
+              <div style={{fontWeight:700,fontSize:13,color:"#1e293b",marginBottom:12}}>📈 Granel — últimos 6 meses (Puebla + Aguascalientes)</div>
+              <GraficaPlantas meses={graficaPlantas.meses} data={graficaPlantas.data} plantasConfig={GRANEL_CONFIG}/>
+            </div>
             <div style={{background:"white",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000010",marginBottom:12}}>
-              <div style={{fontWeight:700,fontSize:13,color:"#1e293b",marginBottom:12}}>📈 Toneladas retiradas — últimos 6 meses</div>
-              <GraficaPlantas meses={graficaPlantas.meses} data={graficaPlantas.data}/>
+              <div style={{fontWeight:700,fontSize:13,color:"#1e293b",marginBottom:12}}>📦 Saco — últimos 6 meses (Bodega Querétaro)</div>
+              <GraficaPlantas meses={graficaPlantas.meses} data={graficaPlantas.data} plantasConfig={SACO_CONFIG}/>
             </div>
 
             {/* ACUMULADO ANUAL */}
             <div style={{marginBottom:16}}>
               <div style={{fontWeight:700,fontSize:11,color:"#94a3b8",marginBottom:8,textTransform:"uppercase",letterSpacing:.8}}>Acumulado {new Date().getFullYear()}</div>
+              <div style={{fontWeight:700,fontSize:10,color:"#7c3aed",marginBottom:6,textTransform:"uppercase",letterSpacing:.8}}>Granel</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
                 <div style={{background:"linear-gradient(135deg,#4c1d95,#7c3aed)",borderRadius:12,padding:"18px 14px",color:"white"}}>
                   <div style={{fontSize:10,opacity:.75,marginBottom:6,fontWeight:700,textTransform:"uppercase",letterSpacing:.8}}>🏭 Puebla</div>
@@ -856,17 +873,23 @@ function App() {
                   <div style={{fontSize:11,opacity:.6,marginTop:4}}>toneladas</div>
                 </div>
               </div>
+              <div style={{fontWeight:700,fontSize:10,color:"#15803d",marginBottom:6,textTransform:"uppercase",letterSpacing:.8}}>Saco</div>
+              <div style={{background:"linear-gradient(135deg,#14532d,#15803d)",borderRadius:12,padding:"18px 14px",color:"white",marginBottom:10}}>
+                <div style={{fontSize:10,opacity:.75,marginBottom:6,fontWeight:700,textTransform:"uppercase",letterSpacing:.8}}>📦 Bodega Querétaro</div>
+                <div style={{fontSize:34,fontWeight:900,lineHeight:1,letterSpacing:-1}}>{fmtT(acumuladoAnual["Bodega Querétaro"])}</div>
+                <div style={{fontSize:11,opacity:.6,marginTop:4}}>toneladas</div>
+              </div>
               <div style={{background:"linear-gradient(135deg,#1e3a5f,#1e40af)",borderRadius:14,padding:"20px",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
                   <div style={{fontSize:10,opacity:.6,marginBottom:6,fontWeight:700,textTransform:"uppercase",letterSpacing:.8}}>⚡ Total combinado</div>
                   <div style={{fontSize:44,fontWeight:900,lineHeight:1,letterSpacing:-2}}>{fmtT(acumuladoAnual.total)}</div>
-                  <div style={{fontSize:11,opacity:.55,marginTop:6}}>toneladas · ambas plantas</div>
+                  <div style={{fontSize:11,opacity:.55,marginTop:6}}>toneladas · granel + saco</div>
                 </div>
                 <div style={{fontSize:52,opacity:.18}}>🏗️</div>
               </div>
             </div>
 
-            <div style={{background:"#f5f3ff",borderRadius:10,padding:"12px 16px",marginBottom:14,fontSize:13,color:"#5b21b6"}}>🏭 <b>Reporte mensual por planta</b> — cemento retirado a pagar a Cruz Azul. La planta se detecta automáticamente por la serie (PU = Puebla, AG = Aguascalientes).</div>
+            <div style={{background:"#f5f3ff",borderRadius:10,padding:"12px 16px",marginBottom:14,fontSize:13,color:"#5b21b6"}}>🏭 <b>Reporte mensual por planta</b> — cemento retirado a pagar a Cruz Azul. La planta se detecta automáticamente por la serie (PU = Puebla, AG = Aguascalientes, BQ = Bodega Querétaro).</div>
 
             {/* SELECTOR MES */}
             <div style={{marginBottom:14}}>
@@ -981,6 +1004,13 @@ function App() {
               <select value={form.clienteId} onChange={e=>setForm(f=>({...f,clienteId:e.target.value}))} style={inS}>
                 <option value="">— Sin asignar —</option>
                 {clientes.map(c=><option key={c.id} value={c.id}>{c.nombre} ({fmt(c.precio_ton)}/ton)</option>)}
+              </select>
+            </div>
+            <div style={{marginTop:10}}>
+              <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Tipo de cemento</label>
+              <select value={form.tipo||"granel"} onChange={e=>setForm(f=>({...f,tipo:e.target.value}))} style={inS}>
+                <option value="granel">Granel</option>
+                <option value="saco">Saco</option>
               </select>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginTop:10}}>
