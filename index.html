@@ -80,6 +80,17 @@ const PRIORIDAD = {
   media:{label:"Media", color:"#d97706",bg:"#fffbeb"},
   baja: {label:"Baja",  color:"#64748b",bg:"#f8fafc"},
 };
+const ETAPAS = [
+  {key:"contacto",   label:"Contacto inicial",  color:"#7c3aed",bg:"#f5f3ff"},
+  {key:"cotizacion", label:"Cotización enviada", color:"#0891b2",bg:"#ecfeff"},
+  {key:"negociacion",label:"Negociación",        color:"#d97706",bg:"#fffbeb"},
+  {key:"cerrado",    label:"Cerrado",            color:"#16a34a",bg:"#f0fdf4"},
+  {key:"perdido",    label:"Perdido",            color:"#dc2626",bg:"#fef2f2"},
+];
+const ETAPA_NEXT       = {contacto:"cotizacion",cotizacion:"negociacion",negociacion:"cerrado"};
+const ETAPA_NEXT_LABEL = {contacto:"→ Enviar cotización",cotizacion:"→ Pasar a negociación",negociacion:"→ Marcar como cerrado"};
+const ETAPAS_ACTIVAS   = ["contacto","cotizacion","negociacion"];
+const getEtapa = (k)=>ETAPAS.find(e=>e.key===k)||ETAPAS[0];
 
 function Badge({status}) { const s=getS(status); return <span style={{background:s.bg,color:s.color,border:`1px solid ${s.color}30`,borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>{s.label}</span>; }
 function ConfirmBadge({c}) { const s=CONFIRM[c]||CONFIRM.por_confirmar; return <span style={{background:s.bg,color:s.color,border:`1px solid ${s.color}30`,borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>{s.label}</span>; }
@@ -118,6 +129,7 @@ function GraficaPlantas({meses,data,plantasConfig}){
 const emptyOV = {id:"",num_ov:"",clienteId:"",serie:"",folio:"",toneladas:0,fecha_carga:todayISO(),fecha_entrega:"",status:"ov_asignada",confirm:"por_confirmar",motivo:"",remision_firmada:false,notas:"",tipo:"granel"};
 const emptyCliente = {id:"",nombre:"",precio_ton:"",anticipo:0,telefono:""};
 const emptyNota    = {id:"",texto:"",fecha_vencimiento:todayISO(),prioridad:"media",clienteId:"",num_ov:"",completada:false};
+const emptyProsp   = {id:"",nombre:"",telefono:"",contacto:"",vol_mensual:0,etapa:"contacto",notas:"",fecha_seguimiento:todayISO()};
 
 function getWeekRange(offset=0) {
   const d=new Date(); d.setDate(d.getDate()+offset*7);
@@ -152,6 +164,11 @@ function App() {
   const [verCompletadas,setVerCompletadas]     = useState(false);
   const [calView,setCalView]                   = useState("mes");
   const [calOffset,setCalOffset]               = useState(0);
+  const [prospectos,setProspectos]             = useState([]);
+  const [showProspForm,setShowProspForm]       = useState(false);
+  const [prospForm,setProspForm]               = useState(emptyProsp);
+  const [selectedProsp,setSelectedProsp]       = useState(null);
+  const [verCerrados,setVerCerrados]           = useState(false);
 
   useEffect(()=>{
     if(!dbReady){window.addEventListener("dbReady",()=>setDbReady(true)); return;}
@@ -159,7 +176,8 @@ function App() {
     const u1=window.__onSnapshot(window.__col(db,"clientes"),snap=>{setClientes(snap.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false);});
     const u2=window.__onSnapshot(window.__col(db,"ovs"),snap=>{setOVs(snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.fecha_carga||"").localeCompare(a.fecha_carga||"")));});
     const u3=window.__onSnapshot(window.__col(db,"notas"),snap=>{setNotas(snap.docs.map(d=>({id:d.id,...d.data()})));});
-    return ()=>{u1();u2();u3();};
+    const u4=window.__onSnapshot(window.__col(db,"prospectos"),snap=>{setProspectos(snap.docs.map(d=>({id:d.id,...d.data()})));});
+    return ()=>{u1();u2();u3();u4();};
   },[dbReady]);
 
   const saveToDb    = async (col,id,data)=>{ const {id:_,...rest}=data; await window.__setDoc(window.__doc(window.__db,col,id),rest); };
@@ -318,6 +336,33 @@ function App() {
     await deleteFromDb("notas",id);
   };
 
+  const saveProsp = async ()=>{
+    const id=prospForm.id||`PROSP-${Date.now()}`;
+    const p={...prospForm,id};
+    setProspectos(prev=>prev.find(x=>x.id===id)?prev.map(x=>x.id===id?p:x):[p,...prev]);
+    await saveToDb("prospectos",id,p);
+    setShowProspForm(false); setProspForm(emptyProsp);
+  };
+  const deleteProsp = async (id)=>{
+    if(!confirm("¿Eliminar este prospecto?")) return;
+    setProspectos(prev=>prev.filter(x=>x.id!==id));
+    setSelectedProsp(null);
+    await deleteFromDb("prospectos",id);
+  };
+  const avanzarProsp = async (id,etapa)=>{
+    const p=prospectos.find(x=>x.id===id); if(!p) return;
+    const updated={...p,etapa};
+    setProspectos(prev=>prev.map(x=>x.id===id?updated:x));
+    setSelectedProsp(updated);
+    await saveToDb("prospectos",id,updated);
+  };
+  const convertirACliente = (p)=>{
+    setSelectedProsp(null);
+    setCliForm({...emptyCliente,nombre:p.nombre,telefono:p.telefono||""});
+    setShowCliForm(true);
+    setTab("clientes");
+  };
+
   const ovsFiltrados = (()=>{
     let list=filtroCliente
       ? ovs.filter(p=>p.clienteId===filtroCliente).slice().sort((a,b)=>(parseInt(b.folio)||0)-(parseInt(a.folio)||0))
@@ -341,7 +386,9 @@ function App() {
   const enEspera     = ovs.filter(p=>p.status==="listo_para_envio"&&p.fecha_entrega!==todayISO());
   const sinCliente    = ovs.filter(p=>!p.clienteId&&p.status!=="entregado");
   const notasBadge    = notas.filter(n=>!n.completada&&n.fecha_vencimiento&&n.fecha_vencimiento<=todayISO()).length;
-  const notasUrgentes = notas.filter(n=>!n.completada&&n.fecha_vencimiento&&n.fecha_vencimiento<=todayISO()).sort((a,b)=>(a.fecha_vencimiento||"").localeCompare(b.fecha_vencimiento||""));
+  const notasUrgentes      = notas.filter(n=>!n.completada&&n.fecha_vencimiento&&n.fecha_vencimiento<=todayISO()).sort((a,b)=>(a.fecha_vencimiento||"").localeCompare(b.fecha_vencimiento||""));
+  const prospSeguimientoHoy= prospectos.filter(p=>ETAPAS_ACTIVAS.includes(p.etapa)&&p.fecha_seguimiento&&p.fecha_seguimiento<=todayISO()).sort((a,b)=>(a.fecha_seguimiento||"").localeCompare(b.fecha_seguimiento||""));
+  const prospBadge         = prospSeguimientoHoy.length;
 
   const exportExcel = (clienteId)=>{
     if(clienteId){ const c=estadoCuenta.find(ec=>ec.id===clienteId); if(c) exportExcelCliente(c); return; }
@@ -581,7 +628,7 @@ function App() {
   );
 
   return (
-    <div style={{fontFamily:"'Segoe UI',sans-serif",background:"#f8fafc",minHeight:"100vh",color:"#1e293b",paddingBottom:selected?380:40}}>
+    <div style={{fontFamily:"'Segoe UI',sans-serif",background:"#f8fafc",minHeight:"100vh",color:"#1e293b",paddingBottom:(selected||selectedProsp)?380:40}}>
 
       {/* HEADER */}
       <div style={{background:"#1e3a5f",color:"white",padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,boxShadow:"0 2px 12px #00000030"}}>
@@ -597,7 +644,7 @@ function App() {
 
       {/* TABS */}
       <div style={{background:"white",borderBottom:"2px solid #e2e8f0",padding:"0 16px",display:"flex",overflowX:"auto"}}>
-        {[["ordenes","📋 Órdenes"],["confirmar",`📌 Hoy${totales.porConf?` (${totales.porConf})`:""}`],["clientes","👥 Clientes"],["programacion","📅 Semana"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","🗓️ Calendario"]].map(([k,l])=>(
+        {[["ordenes","📋 Órdenes"],["confirmar",`📌 Hoy${(totales.porConf+notasBadge+prospBadge)>0?` (${totales.porConf+notasBadge+prospBadge})`:""}`],["clientes","👥 Clientes"],["programacion","📅 Semana"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","🗓️ Calendario"],["prospectos",`🎯 Prospectos${prospBadge?` (${prospBadge})`:""}`]].map(([k,l])=>(
           <button key={k} onClick={()=>setTab(k)} style={{background:"none",border:"none",borderBottom:tab===k?"3px solid #1e3a5f":"3px solid transparent",padding:"12px 14px",cursor:"pointer",fontWeight:tab===k?700:500,color:tab===k?"#1e3a5f":"#64748b",fontSize:13,whiteSpace:"nowrap"}}>{l}</button>
         ))}
       </div>
@@ -795,14 +842,14 @@ function App() {
               }
             </div>
 
-            {/* SECCIÓN 4 — NOTAS URGENTES */}
+            {/* SECCIÓN 4 — AVISOS DEL DÍA */}
             <div style={{marginBottom:8}}>
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,paddingBottom:8,borderBottom:"2px solid #fecaca"}}>
                 <div style={{background:"#dc2626",borderRadius:4,width:4,height:20,flexShrink:0}}/>
-                <div style={{fontWeight:800,fontSize:14,color:"#dc2626"}}>Notas y recordatorios</div>
-                {notasUrgentes.length>0&&<span style={{marginLeft:"auto",background:"#fef2f2",color:"#dc2626",borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700}}>{notasUrgentes.length}</span>}
+                <div style={{fontWeight:800,fontSize:14,color:"#dc2626"}}>Avisos del día</div>
+                {(notasUrgentes.length+prospSeguimientoHoy.length)>0&&<span style={{marginLeft:"auto",background:"#fef2f2",color:"#dc2626",borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700}}>{notasUrgentes.length+prospSeguimientoHoy.length}</span>}
               </div>
-              {notasUrgentes.length===0
+              {notasUrgentes.length===0&&prospSeguimientoHoy.length===0
                 ?<div style={{background:"#f0fdf4",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#15803d",fontWeight:600}}>✓ Todo en orden</div>
                 :<div style={{display:"flex",flexDirection:"column",gap:8}}>
                   {notasUrgentes.map(n=>{
@@ -813,6 +860,7 @@ function App() {
                       <div key={n.id} style={{background:vencida?"#fef2f2":"#fffbeb",borderRadius:10,padding:"12px 14px",borderLeft:`4px solid ${vencida?"#ef4444":"#d97706"}`}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
                           <div style={{flex:1}}>
+                            <div style={{fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",marginBottom:2}}>📝 Nota</div>
                             <div style={{fontWeight:700,fontSize:13}}>{n.texto}</div>
                             <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"center"}}>
                               <span style={{background:pr.bg,color:pr.color,borderRadius:20,padding:"1px 7px",fontSize:11,fontWeight:700}}>{pr.label}</span>
@@ -825,6 +873,26 @@ function App() {
                             <button onClick={()=>completarNota(n.id)} style={{background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",fontWeight:700}} title="Completar">✓</button>
                             <button onClick={()=>{setNotaForm(n);setShowNotaForm(true);}} style={{background:"#f1f5f9",color:"#64748b",border:"none",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer"}} title="Editar">✏️</button>
                           </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {prospSeguimientoHoy.map(p=>{
+                    const et=getEtapa(p.etapa);
+                    const vencido=(p.fecha_seguimiento||"")<todayISO();
+                    return(
+                      <div key={p.id} style={{background:vencido?"#fef2f2":"#fffbeb",borderRadius:10,padding:"12px 14px",borderLeft:`4px solid ${vencido?"#ef4444":"#d97706"}`}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                          <div style={{flex:1}}>
+                            <div style={{fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",marginBottom:2}}>🎯 Prospecto</div>
+                            <div style={{fontWeight:700,fontSize:13}}>{p.nombre}</div>
+                            <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"center"}}>
+                              <span style={{background:et.bg,color:et.color,borderRadius:20,padding:"1px 7px",fontSize:11,fontWeight:700}}>{et.label}</span>
+                              <span style={{fontSize:11,color:vencido?"#dc2626":"#d97706",fontWeight:700}}>{vencido?"⚠ Seg. vencido:":"🔔 Seg. hoy:"} {diaLabel(p.fecha_seguimiento)}</span>
+                              {p.vol_mensual>0&&<span style={{fontSize:11,color:"#64748b"}}>{p.vol_mensual} ton/mes</span>}
+                            </div>
+                          </div>
+                          <button onClick={()=>{setSelectedProsp(p);setSelected(null);setTab("prospectos");}} style={{background:"#7c3aed",color:"white",border:"none",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",fontWeight:700,flexShrink:0}}>Ver</button>
                         </div>
                       </div>
                     );
@@ -1107,6 +1175,80 @@ function App() {
           </>
         )}
 
+        {/* ---- PROSPECTOS ---- */}
+        {tab==="prospectos"&&(()=>{
+          const activos=prospectos.filter(p=>ETAPAS_ACTIVAS.includes(p.etapa));
+          const cerradosPerdidos=prospectos.filter(p=>!ETAPAS_ACTIVAS.includes(p.etapa));
+          const tonPotenciales=activos.reduce((s,p)=>s+(parseFloat(p.vol_mensual)||0),0);
+          return(
+            <>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+                <button onClick={()=>{setProspForm(emptyProsp);setShowProspForm(true);}} style={{background:"#1e3a5f",color:"white",border:"none",borderRadius:8,padding:"8px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>+ Nuevo prospecto</button>
+                {tonPotenciales>0&&<div style={{background:"#f0fdf4",border:"1px solid #16a34a40",borderRadius:10,padding:"6px 14px",fontSize:13,color:"#15803d",fontWeight:700}}>{tonPotenciales.toFixed(1)} ton/mes potenciales</div>}
+              </div>
+              {prospectos.length===0
+                ?<EmptyState icon="🎯" msg="Sin prospectos aún. Agrega tu primer prospecto." btn="+ Nuevo prospecto" onClick={()=>{setProspForm(emptyProsp);setShowProspForm(true);}}/>
+                :<div style={{display:"flex",flexDirection:"column",gap:18}}>
+                  {ETAPAS.filter(et=>ETAPAS_ACTIVAS.includes(et.key)).map(et=>{
+                    const grupo=activos.filter(p=>p.etapa===et.key);
+                    if(grupo.length===0) return null;
+                    return(
+                      <div key={et.key}>
+                        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                          <div style={{background:et.color,borderRadius:4,width:4,height:18,flexShrink:0}}/>
+                          <div style={{fontWeight:700,fontSize:13,color:et.color}}>{et.label}</div>
+                          <span style={{background:et.bg,color:et.color,borderRadius:20,padding:"1px 8px",fontSize:11,fontWeight:700}}>{grupo.length}</span>
+                        </div>
+                        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                          {grupo.map(p=>{
+                            const venc=p.fecha_seguimiento&&p.fecha_seguimiento<todayISO();
+                            const hoy=p.fecha_seguimiento===todayISO();
+                            return(
+                              <div key={p.id} onClick={()=>{setSelectedProsp(p);setSelected(null);}} style={{background:"white",borderRadius:10,padding:"12px 14px",boxShadow:"0 1px 4px #00000012",cursor:"pointer",borderLeft:`4px solid ${et.color}`,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                                <div style={{flex:1}}>
+                                  <div style={{fontWeight:700,fontSize:14}}>{p.nombre}</div>
+                                  {p.contacto&&<div style={{fontSize:12,color:"#64748b"}}>👤 {p.contacto}</div>}
+                                  <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"center"}}>
+                                    {p.vol_mensual>0&&<span style={{fontSize:11,color:"#64748b",fontWeight:600}}>{p.vol_mensual} ton/mes</span>}
+                                    {p.fecha_seguimiento&&<span style={{fontSize:11,color:venc?"#dc2626":hoy?"#d97706":"#94a3b8",fontWeight:venc||hoy?700:400}}>{venc?"⚠ Seg.:":hoy?"🔔 Hoy:":"📅 Seg.:"} {diaLabel(p.fecha_seguimiento)}</span>}
+                                  </div>
+                                </div>
+                                <div style={{background:et.bg,color:et.color,borderRadius:20,padding:"2px 8px",fontSize:11,fontWeight:700,flexShrink:0}}>{et.label}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {cerradosPerdidos.length>0&&(
+                    <div>
+                      <button onClick={()=>setVerCerrados(v=>!v)} style={{background:"none",border:"1px solid #e2e8f0",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",color:"#64748b",marginBottom:8}}>{verCerrados?`▲ Ocultar cerrados/perdidos`:`▼ Cerrados/Perdidos (${cerradosPerdidos.length})`}</button>
+                      {verCerrados&&(
+                        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                          {cerradosPerdidos.map(p=>{
+                            const et=getEtapa(p.etapa);
+                            return(
+                              <div key={p.id} onClick={()=>{setSelectedProsp(p);setSelected(null);}} style={{background:"white",borderRadius:10,padding:"12px 14px",boxShadow:"0 1px 4px #00000012",cursor:"pointer",borderLeft:`4px solid ${et.color}`,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,opacity:0.7}}>
+                                <div style={{flex:1}}>
+                                  <div style={{fontWeight:700,fontSize:14}}>{p.nombre}</div>
+                                  {p.contacto&&<div style={{fontSize:12,color:"#64748b"}}>👤 {p.contacto}</div>}
+                                  {p.vol_mensual>0&&<div style={{fontSize:11,color:"#64748b"}}>{p.vol_mensual} ton/mes</div>}
+                                </div>
+                                <span style={{background:et.bg,color:et.color,borderRadius:20,padding:"2px 8px",fontSize:11,fontWeight:700,flexShrink:0}}>{et.label}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              }
+            </>
+          );
+        })()}
+
         {/* ---- NOTAS ---- */}
         {tab==="notas"&&(()=>{
           const hoy=todayISO();
@@ -1274,6 +1416,44 @@ function App() {
         })()}
       </div>
 
+      {/* PROSP DETAIL PANEL */}
+      {selectedProsp&&!showProspForm&&(()=>{
+        const p=selectedProsp;
+        const et=getEtapa(p.etapa);
+        const nextKey=ETAPA_NEXT[p.etapa];
+        const nextLabel=ETAPA_NEXT_LABEL[p.etapa];
+        return(
+          <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"2px solid #e2e8f0",padding:"18px 20px",boxShadow:"0 -4px 20px #00000015",maxHeight:"62vh",overflowY:"auto",zIndex:100}}>
+            <div style={{maxWidth:700,margin:"0 auto"}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+                <div>
+                  <div style={{fontWeight:800,fontSize:16}}>{p.nombre}</div>
+                  {p.contacto&&<div style={{fontSize:12,color:"#64748b"}}>👤 {p.contacto}</div>}
+                  {p.telefono&&<div style={{fontSize:12,color:"#64748b"}}>📱 {p.telefono}</div>}
+                </div>
+                <button onClick={()=>setSelectedProsp(null)} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#94a3b8",lineHeight:1}}>×</button>
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+                <span style={{background:et.bg,color:et.color,border:`1px solid ${et.color}30`,borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700}}>{et.label}</span>
+                {p.vol_mensual>0&&<span style={{background:"#f8fafc",color:"#475569",borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700}}>{p.vol_mensual} ton/mes</span>}
+                {p.fecha_seguimiento&&<span style={{background:"#f8fafc",color:"#475569",borderRadius:20,padding:"3px 10px",fontSize:11}}>📅 Seg. {diaLabel(p.fecha_seguimiento)}</span>}
+              </div>
+              {p.notas&&<div style={{background:"#f8fafc",borderRadius:8,padding:"10px 12px",fontSize:13,color:"#475569",marginBottom:12,whiteSpace:"pre-wrap"}}>{p.notas}</div>}
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
+                {nextKey&&<button onClick={()=>avanzarProsp(p.id,nextKey)} style={{background:"#1e3a5f",color:"white",border:"none",borderRadius:8,padding:"10px 16px",fontWeight:700,cursor:"pointer",fontSize:13,flex:1}}>{nextLabel}</button>}
+                {!["cerrado","perdido"].includes(p.etapa)&&<button onClick={()=>avanzarProsp(p.id,"cerrado")} style={{background:"#16a34a",color:"white",border:"none",borderRadius:8,padding:"10px 14px",fontWeight:700,cursor:"pointer",fontSize:13}}>✓ Cerrado</button>}
+                {!["cerrado","perdido"].includes(p.etapa)&&<button onClick={()=>avanzarProsp(p.id,"perdido")} style={{background:"#dc2626",color:"white",border:"none",borderRadius:8,padding:"10px 14px",fontWeight:700,cursor:"pointer",fontSize:13}}>✗ Perdido</button>}
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <button onClick={()=>{setProspForm(p);setShowProspForm(true);}} style={{background:"#f1f5f9",color:"#475569",border:"none",borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13}}>✏️ Editar</button>
+                {p.etapa==="cerrado"&&<button onClick={()=>convertirACliente(p)} style={{background:"#7c3aed",color:"white",border:"none",borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13}}>⭐ Convertir a cliente</button>}
+                <button onClick={()=>deleteProsp(p.id)} style={{background:"#fef2f2",color:"#dc2626",border:"none",borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13,marginLeft:"auto"}}>🗑 Eliminar</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* DETAIL PANEL */}
       {selected&&!showForm&&(()=>{
         const c=cliById(selected.clienteId);
@@ -1412,6 +1592,53 @@ function App() {
             <div style={{display:"flex",gap:10}}>
               <button onClick={saveNota} disabled={!notaForm.texto} style={{flex:1,background:notaForm.texto?"#1e3a5f":"#cbd5e1",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:notaForm.texto?"pointer":"default",fontSize:14}}>Guardar</button>
               <button onClick={()=>setShowNotaForm(false)} style={{flex:1,background:"#f1f5f9",color:"#64748b",border:"none",borderRadius:8,padding:"11px",fontWeight:600,cursor:"pointer",fontSize:14}}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PROSP FORM */}
+      {showProspForm&&(
+        <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div style={{background:"white",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"92vh",overflowY:"auto"}}>
+            <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>{prospForm.id?"Editar prospecto":"Nuevo prospecto"}</div>
+            <div style={{marginBottom:12}}>
+              <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Empresa / nombre *</label>
+              <input value={prospForm.nombre} onChange={e=>setProspForm(f=>({...f,nombre:e.target.value}))} style={inS} placeholder="Nombre del prospecto"/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+              <div>
+                <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Contacto</label>
+                <input value={prospForm.contacto} onChange={e=>setProspForm(f=>({...f,contacto:e.target.value}))} style={inS} placeholder="Nombre de contacto"/>
+              </div>
+              <div>
+                <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Teléfono</label>
+                <input value={prospForm.telefono} onChange={e=>setProspForm(f=>({...f,telefono:e.target.value}))} style={inS} placeholder="Teléfono"/>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+              <div>
+                <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Vol. estimado (ton/mes)</label>
+                <input type="number" value={prospForm.vol_mensual} onChange={e=>setProspForm(f=>({...f,vol_mensual:parseFloat(e.target.value)||0}))} style={inS} min="0" step="0.5"/>
+              </div>
+              <div>
+                <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Etapa</label>
+                <select value={prospForm.etapa} onChange={e=>setProspForm(f=>({...f,etapa:e.target.value}))} style={inS}>
+                  {ETAPAS.map(e=><option key={e.key} value={e.key}>{e.label}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{marginBottom:12}}>
+              <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Fecha próximo seguimiento</label>
+              <input type="date" value={prospForm.fecha_seguimiento} onChange={e=>setProspForm(f=>({...f,fecha_seguimiento:e.target.value}))} style={inS}/>
+            </div>
+            <div style={{marginBottom:18}}>
+              <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Notas</label>
+              <textarea value={prospForm.notas} onChange={e=>setProspForm(f=>({...f,notas:e.target.value}))} style={{...inS,minHeight:60,resize:"vertical"}} placeholder="Notas sobre el prospecto..."/>
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>{setShowProspForm(false);setProspForm(emptyProsp);}} style={{flex:1,background:"#f1f5f9",color:"#475569",border:"none",borderRadius:8,padding:"12px",fontWeight:700,cursor:"pointer",fontSize:14}}>Cancelar</button>
+              <button onClick={saveProsp} disabled={!prospForm.nombre.trim()} style={{flex:2,background:prospForm.nombre.trim()?"#1e3a5f":"#94a3b8",color:"white",border:"none",borderRadius:8,padding:"12px",fontWeight:700,cursor:prospForm.nombre.trim()?"pointer":"default",fontSize:14}}>Guardar</button>
             </div>
           </div>
         </div>
