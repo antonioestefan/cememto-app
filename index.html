@@ -821,7 +821,10 @@ function App() {
                               {n.num_ov&&<span style={{fontSize:11,color:"#64748b"}}>OV: {n.num_ov}</span>}
                             </div>
                           </div>
-                          <button onClick={()=>completarNota(n.id)} style={{background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",fontWeight:700,flexShrink:0}}>✓</button>
+                          <div style={{display:"flex",gap:6,flexShrink:0}}>
+                            <button onClick={()=>completarNota(n.id)} style={{background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",fontWeight:700}} title="Completar">✓</button>
+                            <button onClick={()=>{setNotaForm(n);setShowNotaForm(true);}} style={{background:"#f1f5f9",color:"#64748b",border:"none",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer"}} title="Editar">✏️</button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -1160,7 +1163,10 @@ function App() {
                               <div style={{fontWeight:600,fontSize:13,color:"#64748b",textDecoration:"line-through"}}>{n.texto}</div>
                               {n.fecha_vencimiento&&<div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{diaLabel(n.fecha_vencimiento)}</div>}
                             </div>
-                            <button onClick={()=>deleteNota(n.id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,color:"#94a3b8"}}>🗑</button>
+                            <div style={{display:"flex",gap:4}}>
+                              <button onClick={()=>{setNotaForm(n);setShowNotaForm(true);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,color:"#94a3b8"}} title="Editar">✏️</button>
+                              <button onClick={()=>deleteNota(n.id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,color:"#94a3b8"}} title="Eliminar">🗑</button>
+                            </div>
                           </div>
                         </div>
                       ))}
