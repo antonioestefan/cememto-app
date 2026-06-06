@@ -10,6 +10,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -32,7 +33,7 @@
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useMemo, useEffect } = React;
+const { useState, useMemo, useEffect, useRef } = React;
 
 const fmt  = (n) => new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN",maximumFractionDigits:0}).format(n||0);
 const fmtT = (n) => (parseFloat(n)||0).toFixed(2);
@@ -75,6 +76,38 @@ function Badge({status}) { const s=getS(status); return <span style={{background
 function ConfirmBadge({c}) { const s=CONFIRM[c]||CONFIRM.por_confirmar; return <span style={{background:s.bg,color:s.color,border:`1px solid ${s.color}30`,borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>{s.label}</span>; }
 function PlantaBadge({serie}) { const p=plantaDeSerie(serie); return <span style={{background:plantaBg[p]||"#f1f5f9",color:plantaColor[p]||"#64748b",border:`1px solid ${plantaColor[p]||"#64748b"}30`,borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>🏭 {p}</span>; }
 function EmptyState({icon,msg,btn,onClick}) { return <div style={{textAlign:"center",padding:"48px 20px",color:"#94a3b8"}}><div style={{fontSize:40,marginBottom:12}}>{icon}</div><div style={{fontSize:14,marginBottom:20}}>{msg}</div>{btn&&<button onClick={onClick} style={{background:"#1e3a5f",color:"white",border:"none",borderRadius:8,padding:"10px 20px",fontWeight:700,cursor:"pointer",fontSize:14}}>{btn}</button>}</div>; }
+
+function GraficaPlantas({meses,data}){
+  const canvasRef=useRef(null);
+  const chartRef=useRef(null);
+  useEffect(()=>{
+    if(!canvasRef.current||!window.Chart) return;
+    if(chartRef.current){chartRef.current.destroy();chartRef.current=null;}
+    chartRef.current=new window.Chart(canvasRef.current,{
+      type:"bar",
+      data:{
+        labels:meses.map(ym=>{const[y,m]=ym.split("-");return new Date(+y,+m-1,1).toLocaleDateString("es-MX",{month:"short",year:"2-digit"});}),
+        datasets:[
+          {label:"Puebla",data:data["Puebla"]||[],backgroundColor:"#7c3aed",borderRadius:6,borderSkipped:false},
+          {label:"Aguascalientes",data:data["Aguascalientes"]||[],backgroundColor:"#0891b2",borderRadius:6,borderSkipped:false},
+        ],
+      },
+      options:{
+        responsive:true,
+        plugins:{
+          legend:{position:"top",labels:{font:{size:12},usePointStyle:true}},
+          tooltip:{callbacks:{label:(ctx)=>`${ctx.dataset.label}: ${(ctx.parsed.y||0).toFixed(2)} ton`}},
+        },
+        scales:{
+          x:{grid:{display:false},ticks:{font:{size:11}}},
+          y:{beginAtZero:true,ticks:{callback:(v)=>`${v} ton`,font:{size:11}},grid:{color:"#f1f5f9"}},
+        },
+      },
+    });
+    return()=>{if(chartRef.current){chartRef.current.destroy();chartRef.current=null;}};
+  },[meses,data]);
+  return <canvas ref={canvasRef} style={{maxHeight:260}}/>;
+}
 
 const emptyOV = {id:"",num_ov:"",clienteId:"",serie:"",folio:"",toneladas:0,fecha_carga:todayISO(),fecha_entrega:"",status:"ov_asignada",confirm:"por_confirmar",motivo:"",remision_firmada:false,notas:""};
 const emptyCliente = {id:"",nombre:"",precio_ton:"",anticipo:0,telefono:""};
@@ -165,6 +198,26 @@ function App() {
     const set=new Set(ovs.map(p=>(p.fecha_carga||"").slice(0,7)).filter(Boolean));
     const cur=currentYM(); set.add(cur);
     return [...set].sort().reverse();
+  },[ovs]);
+
+  /* gráfica últimos 6 meses por planta */
+  const graficaPlantas = useMemo(()=>{
+    const today=new Date();
+    const meses=Array.from({length:6},(_,i)=>{const d=new Date(today.getFullYear(),today.getMonth()-5+i,1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
+    const plantas=["Puebla","Aguascalientes"];
+    const data={};
+    plantas.forEach(planta=>{
+      data[planta]=meses.map(ym=>ovs.filter(p=>(p.fecha_carga||"").startsWith(ym)&&plantaDeSerie(p.serie)===planta&&p.status!=="ov_asignada"&&p.status!=="fletera_planta").reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0));
+    });
+    return {meses,data};
+  },[ovs]);
+
+  /* acumulado anual por planta */
+  const acumuladoAnual = useMemo(()=>{
+    const yr=new Date().getFullYear().toString();
+    const calc=planta=>ovs.filter(p=>(p.fecha_carga||"").startsWith(yr)&&plantaDeSerie(p.serie)===planta&&p.status!=="ov_asignada"&&p.status!=="fletera_planta").reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+    const pu=calc("Puebla"), ag=calc("Aguascalientes");
+    return {Puebla:pu,Aguascalientes:ag,total:pu+ag};
   },[ovs]);
 
   const upd = async (id,patch)=>{
@@ -388,19 +441,60 @@ function App() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
   };
 
-  const exportExcelPlanta = ()=>{
-    const wb=XLSX.utils.book_new();
-    reportePlanta.forEach(({planta,remisiones,total_ton})=>{
-      const rows=remisiones.map(p=>({
-        "Fecha carga":p.fecha_carga,
-        Serie:p.serie||"", Folio:p.folio||"",
-        Toneladas:parseFloat(p.toneladas)||0,
-      }));
-      rows.push({"Fecha carga":"TOTAL","Serie":"","Folio":"","Toneladas":total_ton});
-      const ws=XLSX.utils.json_to_sheet(rows);
-      XLSX.utils.book_append_sheet(wb,ws,planta.slice(0,31));
-    });
-    XLSX.writeFile(wb,`Reporte_Plantas_${reporteMes}.xlsx`);
+  const exportExcelPlanta = async ()=>{
+    const wb=new ExcelJS.Workbook(); wb.creator="Cruz Azul — Antonio";
+    const fill=(hex)=>({type:"pattern",pattern:"solid",fgColor:{argb:"FF"+hex}});
+    const fw=(hex,sz=10,bold=false)=>({bold,color:{argb:"FF"+hex},size:sz});
+    const mid={horizontal:"center",vertical:"middle"};
+    const thin={style:"thin",color:{argb:"FFD1D5DB"}};
+    const brd={top:thin,bottom:thin,left:thin,right:thin};
+    const NAVY="1E3A5F", ALTGRAY="F8FAFC";
+
+    for(const {planta,remisiones,total_ton} of reportePlanta){
+      const ws=wb.addWorksheet(planta.slice(0,31));
+      ws.columns=[{width:14},{width:18},{width:14},{width:12}];
+
+      // Encabezado
+      let r=ws.addRow([`CA  ·  ${planta.toUpperCase()}  ·  ${mesLabel(reporteMes).toUpperCase()}  ·  ${todayISO()}`]);
+      ws.mergeCells(r.number,1,r.number,4); r.height=34;
+      Object.assign(r.getCell(1),{font:fw("FFFFFF",13,true),fill:fill(NAVY),alignment:mid});
+
+      ws.addRow([]).height=6;
+
+      // Cabeceras de columna
+      r=ws.addRow(["No. OV","Serie-Folio","Fecha carga","Toneladas"]); r.height=22;
+      for(let c=1;c<=4;c++){
+        const cell=r.getCell(c);
+        cell.font=fw("FFFFFF",11,true); cell.fill=fill(NAVY);
+        cell.alignment={...mid,wrapText:false}; cell.border=brd;
+      }
+
+      // Filas de datos
+      remisiones.forEach((p,i)=>{
+        const ton=parseFloat(p.toneladas)||0;
+        r=ws.addRow([p.num_ov||"—",`${p.serie||"—"}-${p.folio||"s/f"}`,p.fecha_carga||"—",ton]);
+        r.height=16;
+        const bg=i%2===1?ALTGRAY:"FFFFFF";
+        for(let c=1;c<=4;c++){
+          r.getCell(c).fill=fill(bg); r.getCell(c).border=brd;
+          if(c===4){r.getCell(c).numFmt="0.00";r.getCell(c).alignment={horizontal:"right"};}
+        }
+      });
+
+      // Fila TOTAL
+      r=ws.addRow(["","TOTAL","",total_ton]); r.height=26;
+      for(let c=1;c<=4;c++){
+        r.getCell(c).font=fw("FFFFFF",13,true); r.getCell(c).fill=fill(NAVY); r.getCell(c).border=brd;
+        if(c===2) r.getCell(c).alignment=mid;
+        if(c===4){r.getCell(c).numFmt="0.00";r.getCell(c).alignment={horizontal:"right",vertical:"middle"};}
+      }
+    }
+
+    const buf=await wb.xlsx.writeBuffer();
+    const blob=new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a"); a.href=url; a.download=`Reporte_Plantas_${reporteMes}.xlsx`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
   };
 
   const reporteWA = (clienteId)=>{
@@ -725,6 +819,37 @@ function App() {
         {/* ---- REPORTE PLANTAS ---- */}
         {tab==="plantas"&&(
           <>
+            {/* GRÁFICA ÚLTIMOS 6 MESES */}
+            <div style={{background:"white",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000010",marginBottom:12}}>
+              <div style={{fontWeight:700,fontSize:13,color:"#1e293b",marginBottom:12}}>📈 Toneladas retiradas — últimos 6 meses</div>
+              <GraficaPlantas meses={graficaPlantas.meses} data={graficaPlantas.data}/>
+            </div>
+
+            {/* ACUMULADO ANUAL */}
+            <div style={{marginBottom:16}}>
+              <div style={{fontWeight:700,fontSize:11,color:"#94a3b8",marginBottom:8,textTransform:"uppercase",letterSpacing:.8}}>Acumulado {new Date().getFullYear()}</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                <div style={{background:"linear-gradient(135deg,#4c1d95,#7c3aed)",borderRadius:12,padding:"18px 14px",color:"white"}}>
+                  <div style={{fontSize:10,opacity:.75,marginBottom:6,fontWeight:700,textTransform:"uppercase",letterSpacing:.8}}>🏭 Puebla</div>
+                  <div style={{fontSize:34,fontWeight:900,lineHeight:1,letterSpacing:-1}}>{fmtT(acumuladoAnual.Puebla)}</div>
+                  <div style={{fontSize:11,opacity:.6,marginTop:4}}>toneladas</div>
+                </div>
+                <div style={{background:"linear-gradient(135deg,#0369a1,#0891b2)",borderRadius:12,padding:"18px 14px",color:"white"}}>
+                  <div style={{fontSize:10,opacity:.75,marginBottom:6,fontWeight:700,textTransform:"uppercase",letterSpacing:.8}}>🏭 Aguascalientes</div>
+                  <div style={{fontSize:34,fontWeight:900,lineHeight:1,letterSpacing:-1}}>{fmtT(acumuladoAnual.Aguascalientes)}</div>
+                  <div style={{fontSize:11,opacity:.6,marginTop:4}}>toneladas</div>
+                </div>
+              </div>
+              <div style={{background:"linear-gradient(135deg,#1e3a5f,#1e40af)",borderRadius:14,padding:"20px",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontSize:10,opacity:.6,marginBottom:6,fontWeight:700,textTransform:"uppercase",letterSpacing:.8}}>⚡ Total combinado</div>
+                  <div style={{fontSize:44,fontWeight:900,lineHeight:1,letterSpacing:-2}}>{fmtT(acumuladoAnual.total)}</div>
+                  <div style={{fontSize:11,opacity:.55,marginTop:6}}>toneladas · ambas plantas</div>
+                </div>
+                <div style={{fontSize:52,opacity:.18}}>🏗️</div>
+              </div>
+            </div>
+
             <div style={{background:"#f5f3ff",borderRadius:10,padding:"12px 16px",marginBottom:14,fontSize:13,color:"#5b21b6"}}>🏭 <b>Reporte mensual por planta</b> — cemento retirado a pagar a Cruz Azul. La planta se detecta automáticamente por la serie (PU = Puebla, AG = Aguascalientes).</div>
 
             {/* SELECTOR MES */}
