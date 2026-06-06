@@ -75,6 +75,11 @@ const CONFIRM = {
   reprogramado: {label:"Reprogramado", color:"#dc2626",bg:"#fef2f2"},
 };
 const MOTIVOS = ["Sin dotación en planta","Contratiempo del cliente","Contratiempo de la fletera","Otro"];
+const PRIORIDAD = {
+  alta: {label:"Alta",  color:"#dc2626",bg:"#fef2f2"},
+  media:{label:"Media", color:"#d97706",bg:"#fffbeb"},
+  baja: {label:"Baja",  color:"#64748b",bg:"#f8fafc"},
+};
 
 function Badge({status}) { const s=getS(status); return <span style={{background:s.bg,color:s.color,border:`1px solid ${s.color}30`,borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>{s.label}</span>; }
 function ConfirmBadge({c}) { const s=CONFIRM[c]||CONFIRM.por_confirmar; return <span style={{background:s.bg,color:s.color,border:`1px solid ${s.color}30`,borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>{s.label}</span>; }
@@ -112,6 +117,7 @@ function GraficaPlantas({meses,data,plantasConfig}){
 
 const emptyOV = {id:"",num_ov:"",clienteId:"",serie:"",folio:"",toneladas:0,fecha_carga:todayISO(),fecha_entrega:"",status:"ov_asignada",confirm:"por_confirmar",motivo:"",remision_firmada:false,notas:"",tipo:"granel"};
 const emptyCliente = {id:"",nombre:"",precio_ton:"",anticipo:0,telefono:""};
+const emptyNota    = {id:"",texto:"",fecha_vencimiento:todayISO(),prioridad:"media",clienteId:"",num_ov:"",completada:false};
 
 function getWeekRange(offset=0) {
   const d=new Date(); d.setDate(d.getDate()+offset*7);
@@ -140,13 +146,20 @@ function App() {
   const [reporteMes,setReporteMes]             = useState(currentYM());
   const [plantaExpandida,setPlantaExpandida]   = useState({});
   const [editingAnticipo,setEditingAnticipo]   = useState(null); // {cliId,realIdx,fecha,monto}
+  const [notas,setNotas]                       = useState([]);
+  const [showNotaForm,setShowNotaForm]         = useState(false);
+  const [notaForm,setNotaForm]                 = useState(emptyNota);
+  const [verCompletadas,setVerCompletadas]     = useState(false);
+  const [calView,setCalView]                   = useState("mes");
+  const [calOffset,setCalOffset]               = useState(0);
 
   useEffect(()=>{
     if(!dbReady){window.addEventListener("dbReady",()=>setDbReady(true)); return;}
     const db=window.__db;
     const u1=window.__onSnapshot(window.__col(db,"clientes"),snap=>{setClientes(snap.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false);});
     const u2=window.__onSnapshot(window.__col(db,"ovs"),snap=>{setOVs(snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.fecha_carga||"").localeCompare(a.fecha_carga||"")));});
-    return ()=>{u1();u2();};
+    const u3=window.__onSnapshot(window.__col(db,"notas"),snap=>{setNotas(snap.docs.map(d=>({id:d.id,...d.data()})));});
+    return ()=>{u1();u2();u3();};
   },[dbReady]);
 
   const saveToDb    = async (col,id,data)=>{ const {id:_,...rest}=data; await window.__setDoc(window.__doc(window.__db,col,id),rest); };
@@ -286,6 +299,25 @@ function App() {
     setEditingAnticipo(null);
   };
 
+  const saveNota = async ()=>{
+    const id=notaForm.id||`NOTA-${Date.now()}`;
+    const n={...notaForm,id};
+    setNotas(prev=>prev.find(x=>x.id===id)?prev.map(x=>x.id===id?n:x):[n,...prev]);
+    await saveToDb("notas",id,n);
+    setShowNotaForm(false); setNotaForm(emptyNota);
+  };
+  const completarNota = async (id)=>{
+    const n=notas.find(x=>x.id===id); if(!n) return;
+    const updated={...n,completada:true};
+    setNotas(prev=>prev.map(x=>x.id===id?updated:x));
+    await saveToDb("notas",id,updated);
+  };
+  const deleteNota = async (id)=>{
+    if(!confirm("¿Eliminar esta nota?")) return;
+    setNotas(prev=>prev.filter(x=>x.id!==id));
+    await deleteFromDb("notas",id);
+  };
+
   const ovsFiltrados = (()=>{
     let list=filtroCliente
       ? ovs.filter(p=>p.clienteId===filtroCliente).slice().sort((a,b)=>(parseInt(b.folio)||0)-(parseInt(a.folio)||0))
@@ -307,7 +339,9 @@ function App() {
   const porConfirmar = ovs.filter(p=>p.fecha_carga===nextWorkdayISO()).sort((a,b)=>a.confirm==="por_confirmar"?-1:1);
   const entregasHoy  = ovs.filter(p=>p.fecha_entrega===todayISO()&&["listo_para_envio","en_camino","entregado"].includes(p.status)&&!p.remision_firmada);
   const enEspera     = ovs.filter(p=>p.status==="listo_para_envio"&&p.fecha_entrega!==todayISO());
-  const sinCliente   = ovs.filter(p=>!p.clienteId&&p.status!=="entregado");
+  const sinCliente    = ovs.filter(p=>!p.clienteId&&p.status!=="entregado");
+  const notasBadge    = notas.filter(n=>!n.completada&&n.fecha_vencimiento&&n.fecha_vencimiento<=todayISO()).length;
+  const notasUrgentes = notas.filter(n=>!n.completada&&n.fecha_vencimiento&&n.fecha_vencimiento<=todayISO()).sort((a,b)=>(a.fecha_vencimiento||"").localeCompare(b.fecha_vencimiento||""));
 
   const exportExcel = (clienteId)=>{
     if(clienteId){ const c=estadoCuenta.find(ec=>ec.id===clienteId); if(c) exportExcelCliente(c); return; }
@@ -563,7 +597,7 @@ function App() {
 
       {/* TABS */}
       <div style={{background:"white",borderBottom:"2px solid #e2e8f0",padding:"0 16px",display:"flex",overflowX:"auto"}}>
-        {[["ordenes","📋 Órdenes"],["confirmar",`📌 Hoy${totales.porConf?` (${totales.porConf})`:""}`],["clientes","👥 Clientes"],["programacion","📅 Semana"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"]].map(([k,l])=>(
+        {[["ordenes","📋 Órdenes"],["confirmar",`📌 Hoy${totales.porConf?` (${totales.porConf})`:""}`],["clientes","👥 Clientes"],["programacion","📅 Semana"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","🗓️ Calendario"]].map(([k,l])=>(
           <button key={k} onClick={()=>setTab(k)} style={{background:"none",border:"none",borderBottom:tab===k?"3px solid #1e3a5f":"3px solid transparent",padding:"12px 14px",cursor:"pointer",fontWeight:tab===k?700:500,color:tab===k?"#1e3a5f":"#64748b",fontSize:13,whiteSpace:"nowrap"}}>{l}</button>
         ))}
       </div>
@@ -753,6 +787,41 @@ function App() {
                             <Badge status={p.status}/>
                             <span style={{fontSize:12,fontWeight:700,color:dias>=2?"#dc2626":dias===1?"#d97706":"#64748b"}}>{dias===0?"Hoy mismo":dias===1?"1 día en espera":`${dias} días en espera`}</span>
                           </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              }
+            </div>
+
+            {/* SECCIÓN 4 — NOTAS URGENTES */}
+            <div style={{marginBottom:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,paddingBottom:8,borderBottom:"2px solid #fecaca"}}>
+                <div style={{background:"#dc2626",borderRadius:4,width:4,height:20,flexShrink:0}}/>
+                <div style={{fontWeight:800,fontSize:14,color:"#dc2626"}}>Notas y recordatorios</div>
+                {notasUrgentes.length>0&&<span style={{marginLeft:"auto",background:"#fef2f2",color:"#dc2626",borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700}}>{notasUrgentes.length}</span>}
+              </div>
+              {notasUrgentes.length===0
+                ?<div style={{background:"#f0fdf4",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#15803d",fontWeight:600}}>✓ Todo en orden</div>
+                :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {notasUrgentes.map(n=>{
+                    const vencida=(n.fecha_vencimiento||"")<todayISO();
+                    const pr=PRIORIDAD[n.prioridad]||PRIORIDAD.media;
+                    const c=n.clienteId?cliById(n.clienteId):null;
+                    return(
+                      <div key={n.id} style={{background:vencida?"#fef2f2":"#fffbeb",borderRadius:10,padding:"12px 14px",borderLeft:`4px solid ${vencida?"#ef4444":"#d97706"}`}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                          <div style={{flex:1}}>
+                            <div style={{fontWeight:700,fontSize:13}}>{n.texto}</div>
+                            <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"center"}}>
+                              <span style={{background:pr.bg,color:pr.color,borderRadius:20,padding:"1px 7px",fontSize:11,fontWeight:700}}>{pr.label}</span>
+                              <span style={{fontSize:11,color:vencida?"#dc2626":"#d97706",fontWeight:700}}>{vencida?"⚠ Vencida:":"🔔 Hoy:"} {diaLabel(n.fecha_vencimiento)}</span>
+                              {c&&<span style={{fontSize:11,color:"#7c3aed"}}>👤 {c.nombre}</span>}
+                              {n.num_ov&&<span style={{fontSize:11,color:"#64748b"}}>OV: {n.num_ov}</span>}
+                            </div>
+                          </div>
+                          <button onClick={()=>completarNota(n.id)} style={{background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",fontWeight:700,flexShrink:0}}>✓</button>
                         </div>
                       </div>
                     );
@@ -1034,6 +1103,169 @@ function App() {
             }
           </>
         )}
+
+        {/* ---- NOTAS ---- */}
+        {tab==="notas"&&(()=>{
+          const hoy=todayISO();
+          const activas=notas.filter(n=>!n.completada).sort((a,b)=>{
+            const aV=n=>n.fecha_vencimiento&&n.fecha_vencimiento<=hoy;
+            if(aV(a)&&!aV(b)) return -1; if(!aV(a)&&aV(b)) return 1;
+            return (a.fecha_vencimiento||"z").localeCompare(b.fecha_vencimiento||"z");
+          });
+          const completadas=notas.filter(n=>n.completada).sort((a,b)=>(b.fecha_vencimiento||"").localeCompare(a.fecha_vencimiento||""));
+          return(
+            <>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                <button onClick={()=>{setNotaForm(emptyNota);setShowNotaForm(true);}} style={{background:"#1e3a5f",color:"white",border:"none",borderRadius:8,padding:"8px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>+ Nueva nota</button>
+                {completadas.length>0&&<button onClick={()=>setVerCompletadas(v=>!v)} style={{background:"none",border:"1px solid #e2e8f0",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",color:"#64748b"}}>{verCompletadas?`▲ Ocultar completadas`:`▼ Completadas (${completadas.length})`}</button>}
+              </div>
+              {activas.length===0
+                ?<EmptyState icon="📝" msg="No tienes notas pendientes." btn="+ Nueva nota" onClick={()=>{setNotaForm(emptyNota);setShowNotaForm(true);}}/>
+                :<div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  {activas.map(n=>{
+                    const vencida=n.fecha_vencimiento&&n.fecha_vencimiento<hoy;
+                    const hoyMismo=n.fecha_vencimiento===hoy;
+                    const pr=PRIORIDAD[n.prioridad]||PRIORIDAD.media;
+                    const c=n.clienteId?cliById(n.clienteId):null;
+                    const cardBg=vencida?"#fef2f2":hoyMismo?"#fffbeb":"white";
+                    const borderColor=vencida?"#ef4444":hoyMismo?"#d97706":pr.color;
+                    return(
+                      <div key={n.id} style={{background:cardBg,borderRadius:10,padding:"14px 16px",boxShadow:"0 1px 4px #00000010",borderLeft:`4px solid ${borderColor}`}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                          <div style={{flex:1}}>
+                            <div style={{fontWeight:700,fontSize:14,color:"#1e293b",marginBottom:6}}>{n.texto}</div>
+                            <div style={{display:"flex",flexWrap:"wrap",gap:6,alignItems:"center"}}>
+                              <span style={{background:pr.bg,color:pr.color,border:`1px solid ${pr.color}30`,borderRadius:20,padding:"2px 8px",fontSize:11,fontWeight:700}}>{pr.label}</span>
+                              {n.fecha_vencimiento&&<span style={{fontSize:11,color:vencida?"#dc2626":hoyMismo?"#d97706":"#64748b",fontWeight:vencida||hoyMismo?700:400}}>{vencida?"⚠ Vencida":hoyMismo?"🔔 Hoy":""} {diaLabel(n.fecha_vencimiento)}</span>}
+                              {c&&<span style={{fontSize:11,color:"#7c3aed",fontWeight:600}}>👤 {c.nombre}</span>}
+                              {n.num_ov&&<span style={{fontSize:11,color:"#64748b"}}>OV: {n.num_ov}</span>}
+                            </div>
+                          </div>
+                          <div style={{display:"flex",gap:6,flexShrink:0}}>
+                            <button onClick={()=>completarNota(n.id)} style={{background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",fontWeight:700}} title="Completar">✓</button>
+                            <button onClick={()=>{setNotaForm(n);setShowNotaForm(true);}} style={{background:"#f1f5f9",color:"#64748b",border:"none",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer"}} title="Editar">✏️</button>
+                            <button onClick={()=>deleteNota(n.id)} style={{background:"#fef2f2",color:"#dc2626",border:"none",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer"}} title="Eliminar">🗑</button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {verCompletadas&&completadas.length>0&&(
+                    <>
+                      <div style={{fontWeight:700,fontSize:11,color:"#94a3b8",textTransform:"uppercase",letterSpacing:.8,marginTop:6,paddingTop:8,borderTop:"1px solid #e2e8f0"}}>Completadas ({completadas.length})</div>
+                      {completadas.map(n=>(
+                        <div key={n.id} style={{background:"#f8fafc",borderRadius:10,padding:"12px 16px",borderLeft:"4px solid #94a3b8",opacity:.7}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                            <div style={{flex:1}}>
+                              <div style={{fontWeight:600,fontSize:13,color:"#64748b",textDecoration:"line-through"}}>{n.texto}</div>
+                              {n.fecha_vencimiento&&<div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{diaLabel(n.fecha_vencimiento)}</div>}
+                            </div>
+                            <button onClick={()=>deleteNota(n.id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,color:"#94a3b8"}}>🗑</button>
+                          </div>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              }
+            </>
+          );
+        })()}
+
+        {/* ---- CALENDARIO ---- */}
+        {tab==="calendario"&&(()=>{
+          const hoy=todayISO();
+          const mDate=new Date(new Date().getFullYear(),new Date().getMonth()+(calView==="mes"?calOffset:0),1);
+          const mLabel=mDate.toLocaleDateString("es-MX",{month:"long",year:"numeric"});
+          const firstDay=new Date(mDate.getFullYear(),mDate.getMonth(),1);
+          const dowOff=(firstDay.getDay()+6)%7;
+          const gridStart=new Date(firstDay); gridStart.setDate(firstDay.getDate()-dowOff);
+          const calGrid=Array.from({length:42},(_,i)=>{const d=new Date(gridStart);d.setDate(gridStart.getDate()+i);return d.toISOString().slice(0,10);});
+          const calMonthYM=`${mDate.getFullYear()}-${String(mDate.getMonth()+1).padStart(2,"0")}`;
+          const wRange=getWeekRange(calView==="semana"?calOffset:0);
+          const wDays=Array.from({length:7},(_,i)=>addDays(wRange.start,i));
+          const wLabel=`${diaLabel(wRange.start)} — ${diaLabel(wRange.end)}`;
+          const ovsConEntrega=ovs.filter(p=>p.fecha_entrega);
+          const STATUS_DOT={ov_asignada:"#7c3aed",fletera_planta:"#d97706",remisionada:"#0891b2",listo_para_envio:"#b45309",en_camino:"#2563eb",entregado:"#16a34a"};
+          return(
+            <>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+                <button onClick={()=>setCalOffset(o=>o-1)} style={{background:"white",border:"1px solid #e2e8f0",borderRadius:8,padding:"6px 13px",cursor:"pointer",fontSize:16,lineHeight:1}}>←</button>
+                <div style={{flex:1,textAlign:"center",fontWeight:700,fontSize:14,textTransform:"capitalize"}}>{calView==="mes"?mLabel:wLabel}</div>
+                <button onClick={()=>setCalOffset(o=>o+1)} style={{background:"white",border:"1px solid #e2e8f0",borderRadius:8,padding:"6px 13px",cursor:"pointer",fontSize:16,lineHeight:1}}>→</button>
+                <div style={{display:"flex",gap:4,marginLeft:4}}>
+                  <button onClick={()=>{setCalView("mes");setCalOffset(0);}} style={{background:calView==="mes"?"#1e3a5f":"white",color:calView==="mes"?"white":"#64748b",border:"1px solid #e2e8f0",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:12,fontWeight:700}}>Mes</button>
+                  <button onClick={()=>{setCalView("semana");setCalOffset(0);}} style={{background:calView==="semana"?"#1e3a5f":"white",color:calView==="semana"?"white":"#64748b",border:"1px solid #e2e8f0",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:12,fontWeight:700}}>Semana</button>
+                </div>
+              </div>
+
+              {calView==="mes"&&(
+                <div style={{background:"white",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px #00000010"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",background:"#1e3a5f"}}>
+                    {["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"].map(d=>(
+                      <div key={d} style={{padding:"8px 2px",textAlign:"center",fontSize:11,fontWeight:700,color:"white"}}>{d}</div>
+                    ))}
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)"}}>
+                    {calGrid.map(iso=>{
+                      const dayOVs=ovsConEntrega.filter(p=>p.fecha_entrega===iso);
+                      const inMonth=iso.slice(0,7)===calMonthYM;
+                      const isHoy=iso===hoy;
+                      const dayNum=parseInt(iso.slice(8));
+                      return(
+                        <div key={iso} style={{minHeight:60,border:"1px solid #f1f5f9",padding:"3px",background:isHoy?"#eff6ff":inMonth?"white":"#fafafa"}}>
+                          <div style={{width:20,height:20,borderRadius:10,background:isHoy?"#1e3a5f":"transparent",color:isHoy?"white":inMonth?"#1e293b":"#d1d5db",fontSize:11,fontWeight:isHoy?700:400,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:2}}>{dayNum}</div>
+                          {dayOVs.slice(0,3).map(p=>{
+                            const cc=cliById(p.clienteId);
+                            return(
+                              <div key={p.id} onClick={()=>setSelected(p)} style={{background:STATUS_DOT[p.status]||"#94a3b8",borderRadius:3,padding:"1px 4px",fontSize:9,color:"white",marginBottom:1,cursor:"pointer",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
+                                {cc?cc.nombre.split(" ")[0]:p.num_ov}
+                              </div>
+                            );
+                          })}
+                          {dayOVs.length>3&&<div style={{fontSize:9,color:"#94a3b8",paddingLeft:2}}>+{dayOVs.length-3}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {calView==="semana"&&(
+                <div style={{background:"white",borderRadius:12,boxShadow:"0 1px 4px #00000010",overflowX:"auto"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(100px,1fr))",gap:8,padding:12,minWidth:560}}>
+                    {wDays.map(iso=>{
+                      const dayOVs=ovsConEntrega.filter(p=>p.fecha_entrega===iso);
+                      const isHoy=iso===hoy;
+                      const d=new Date(iso+"T12:00");
+                      const dShort=d.toLocaleDateString("es-MX",{weekday:"short"});
+                      return(
+                        <div key={iso} style={{minWidth:0}}>
+                          <div style={{textAlign:"center",padding:"8px 4px",background:isHoy?"#1e3a5f":"#f8fafc",borderRadius:8,marginBottom:8,color:isHoy?"white":"#64748b"}}>
+                            <div style={{fontSize:10,fontWeight:700,textTransform:"capitalize"}}>{dShort}</div>
+                            <div style={{fontSize:18,fontWeight:900}}>{d.getDate()}</div>
+                          </div>
+                          {dayOVs.map(p=>{
+                            const cc=cliById(p.clienteId);
+                            const s=getS(p.status);
+                            return(
+                              <div key={p.id} onClick={()=>setSelected(p)} style={{background:s.bg,borderLeft:`3px solid ${s.color}`,borderRadius:6,padding:"6px 8px",marginBottom:6,cursor:"pointer"}}>
+                                <div style={{fontWeight:700,fontSize:11,color:s.color,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>{cc?cc.nombre:"Sin cliente"}</div>
+                                <div style={{fontSize:10,color:"#64748b"}}>{p.num_ov}</div>
+                                {parseFloat(p.toneladas)>0&&<div style={{fontSize:10,color:"#94a3b8"}}>{fmtT(p.toneladas)} ton</div>}
+                              </div>
+                            );
+                          })}
+                          {dayOVs.length===0&&<div style={{fontSize:10,color:"#e2e8f0",textAlign:"center",padding:"14px 0"}}>—</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
+          );
+        })()}
       </div>
 
       {/* DETAIL PANEL */}
@@ -1132,6 +1364,48 @@ function App() {
             <div style={{display:"flex",gap:10,marginTop:6}}>
               <button onClick={saveCliente} disabled={!cliForm.nombre} style={{flex:1,background:cliForm.nombre?"#1e3a5f":"#cbd5e1",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:cliForm.nombre?"pointer":"default",fontSize:14}}>Guardar</button>
               <button onClick={()=>setShowCliForm(false)} style={{flex:1,background:"#f1f5f9",color:"#64748b",border:"none",borderRadius:8,padding:"11px",fontWeight:600,cursor:"pointer",fontSize:14}}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NOTA FORM */}
+      {showNotaForm&&(
+        <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div style={{background:"white",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"92vh",overflowY:"auto"}}>
+            <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>{notaForm.id?"Editar nota":"Nueva nota"}</div>
+            <div style={{marginBottom:12}}>
+              <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Nota / recordatorio</label>
+              <textarea value={notaForm.texto} onChange={e=>setNotaForm(f=>({...f,texto:e.target.value}))} style={{...inS,minHeight:80,resize:"vertical"}} placeholder="Escribe el recordatorio..."/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+              <div>
+                <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Fecha de vencimiento</label>
+                <input type="date" value={notaForm.fecha_vencimiento} onChange={e=>setNotaForm(f=>({...f,fecha_vencimiento:e.target.value}))} style={inS}/>
+              </div>
+              <div>
+                <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Prioridad</label>
+                <select value={notaForm.prioridad} onChange={e=>setNotaForm(f=>({...f,prioridad:e.target.value}))} style={inS}>
+                  <option value="alta">Alta</option>
+                  <option value="media">Media</option>
+                  <option value="baja">Baja</option>
+                </select>
+              </div>
+            </div>
+            <div style={{marginBottom:12}}>
+              <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Cliente (opcional)</label>
+              <select value={notaForm.clienteId} onChange={e=>setNotaForm(f=>({...f,clienteId:e.target.value}))} style={inS}>
+                <option value="">— Sin cliente —</option>
+                {clientes.map(c=><option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+            <div style={{marginBottom:16}}>
+              <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>No. OV (opcional)</label>
+              <input value={notaForm.num_ov} onChange={e=>setNotaForm(f=>({...f,num_ov:e.target.value}))} style={inS} placeholder="OV-XXXXX"/>
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={saveNota} disabled={!notaForm.texto} style={{flex:1,background:notaForm.texto?"#1e3a5f":"#cbd5e1",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:notaForm.texto?"pointer":"default",fontSize:14}}>Guardar</button>
+              <button onClick={()=>setShowNotaForm(false)} style={{flex:1,background:"#f1f5f9",color:"#64748b",border:"none",borderRadius:8,padding:"11px",fontWeight:600,cursor:"pointer",fontSize:14}}>Cancelar</button>
             </div>
           </div>
         </div>
