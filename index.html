@@ -59,14 +59,15 @@ const GRANEL_CONFIG = [{label:"Puebla",color:"#7c3aed"},{label:"Aguascalientes",
 const SACO_CONFIG   = [{label:"Bodega Querétaro",color:"#15803d"}];
 
 const STATUSES = [
-  {key:"ov_asignada",    label:"OV asignada",       color:"#7c3aed",bg:"#f5f3ff",hint:"Permiso de carga de corporativo"},
-  {key:"fletera_planta", label:"Fletera en planta",  color:"#d97706",bg:"#fffbeb",hint:"Tráiler formándose para cargar"},
-  {key:"remisionada",    label:"Remisionada",        color:"#0891b2",bg:"#ecfeff",hint:"Cargó y se pesó: folio y tonelaje disponibles"},
-  {key:"en_camino",      label:"En camino",          color:"#2563eb",bg:"#eff6ff",hint:"En ruta al cliente"},
-  {key:"entregado",      label:"Entregado",          color:"#16a34a",bg:"#f0fdf4",hint:"Recibido por el cliente"},
+  {key:"ov_asignada",      label:"OV asignada",          color:"#7c3aed",bg:"#f5f3ff",hint:"Permiso de carga de corporativo"},
+  {key:"fletera_planta",   label:"Fletera en planta",    color:"#d97706",bg:"#fffbeb",hint:"Tráiler formándose para cargar"},
+  {key:"remisionada",      label:"Remisionada",          color:"#0891b2",bg:"#ecfeff",hint:"Cargó y se pesó: folio y tonelaje disponibles"},
+  {key:"listo_para_envio", label:"Listo para envío",     color:"#b45309",bg:"#fefce8",hint:"Cemento cargado en espera en base de fletera"},
+  {key:"en_camino",        label:"En camino",            color:"#2563eb",bg:"#eff6ff",hint:"En ruta al cliente"},
+  {key:"entregado",        label:"Entregado",            color:"#16a34a",bg:"#f0fdf4",hint:"Recibido por el cliente"},
 ];
-const NEXT = {ov_asignada:"fletera_planta",fletera_planta:"remisionada",remisionada:"en_camino",en_camino:"entregado"};
-const NEXT_LABEL = {ov_asignada:"→ Mandar fletera a planta",fletera_planta:"→ Registrar remisión (cargó)",remisionada:"→ Marcar en camino",en_camino:"→ Confirmar entrega"};
+const NEXT = {ov_asignada:"fletera_planta",fletera_planta:"remisionada",remisionada:"listo_para_envio",listo_para_envio:"en_camino",en_camino:"entregado"};
+const NEXT_LABEL = {ov_asignada:"→ Mandar fletera a planta",fletera_planta:"→ Registrar remisión (cargó)",remisionada:"→ Listo para envío",listo_para_envio:"→ Marcar en camino",en_camino:"→ Confirmar entrega"};
 const getS = (k) => STATUSES.find(s=>s.key===k)||STATUSES[0];
 const CONFIRM = {
   por_confirmar:{label:"Por confirmar",color:"#d97706",bg:"#fffbeb"},
@@ -165,7 +166,7 @@ function App() {
     const ton      =ovs.filter(p=>p.status==="entregado").reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
     const entVal   =estadoCuenta.reduce((s,c)=>s+c.valor_entregado,0);
     const antVal   =clientes.reduce((s,c)=>s+(parseFloat(c.anticipo)||0),0);
-    const sinCli      =ovs.filter(p=>p.status==="remisionada"&&!p.clienteId).length;
+    const sinCli      =ovs.filter(p=>["remisionada","listo_para_envio"].includes(p.status)&&!p.clienteId).length;
     const porConf     =ovs.filter(p=>p.fecha_carga===nextWorkdayISO()&&p.confirm==="por_confirmar").length;
     const sinRemision =ovs.filter(p=>p.clienteId&&!p.folio&&p.status!=="entregado").length;
     const anticipoBajo=estadoCuenta.filter(c=>c.saldo<200000&&c.saldo>=0&&c.anticipo>0);
@@ -631,7 +632,7 @@ function App() {
                               <div style={{fontWeight:700,fontSize:15,color:c?"#1e293b":"#94a3b8"}}>{c?c.nombre:"Sin cliente asignado"}</div>
                               <div style={{fontSize:12,color:"#64748b"}}>{p.serie?`${p.serie}-${p.folio||"s/f"} · `:""}{p.toneladas>0?`${p.toneladas} ton`:"ton pendiente"}{c&&p.toneladas>0?` · ${fmt(valorOV(p))}`:""}</div>
                               <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>🏭 {p.fecha_carga}{p.fecha_entrega?` · 🚚 ${p.fecha_entrega}`:""}</div>
-                              {!c&&["remisionada","en_camino"].includes(p.status)&&<ClienteSelect p={p}/>}
+                              {!c&&["remisionada","listo_para_envio","en_camino"].includes(p.status)&&<ClienteSelect p={p}/>}
                             </div>
                             <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
                               <Badge status={p.status}/>
