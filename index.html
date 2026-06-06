@@ -819,6 +819,22 @@ function App() {
         {/* ---- REPORTE PLANTAS ---- */}
         {tab==="plantas"&&(
           <>
+            {/* TARJETAS MES SELECCIONADO */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+              {["Puebla","Aguascalientes"].map(planta=>{
+                const entry=reportePlanta.find(r=>r.planta===planta);
+                const ton=entry?entry.total_ton:0;
+                const grad=planta==="Puebla"?"linear-gradient(135deg,#4c1d95,#7c3aed)":"linear-gradient(135deg,#0369a1,#0891b2)";
+                return(
+                  <div key={planta} style={{background:grad,borderRadius:14,padding:"20px 16px",color:"white"}}>
+                    <div style={{fontSize:10,opacity:.7,marginBottom:6,fontWeight:700,textTransform:"uppercase",letterSpacing:.8}}>🏭 {planta}</div>
+                    <div style={{fontSize:38,fontWeight:900,lineHeight:1,letterSpacing:-1}}>{fmtT(ton)}</div>
+                    <div style={{fontSize:11,opacity:.6,marginTop:6}}>{mesLabel(reporteMes)}</div>
+                  </div>
+                );
+              })}
+            </div>
+
             {/* GRÁFICA ÚLTIMOS 6 MESES */}
             <div style={{background:"white",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000010",marginBottom:12}}>
               <div style={{fontWeight:700,fontSize:13,color:"#1e293b",marginBottom:12}}>📈 Toneladas retiradas — últimos 6 meses</div>
