@@ -462,7 +462,7 @@ function App() {
       ws.addRow([]).height=6;
 
       // Cabeceras de columna
-      r=ws.addRow(["No. OV","Serie-Folio","Fecha carga","Toneladas"]); r.height=22;
+      r=ws.addRow(["No. OV","Serie-Folio","Fecha remisión","Toneladas"]); r.height=22;
       for(let c=1;c<=4;c++){
         const cell=r.getCell(c);
         cell.font=fw("FFFFFF",11,true); cell.fill=fill(NAVY);
