@@ -143,7 +143,7 @@ function App() {
   const [clientes,setClientes]       = useState([]);
   const [ovs,setOVs]                 = useState([]);
   const [loading,setLoading]         = useState(true);
-  const [tab,setTab]                 = useState("ordenes");
+  const [tab,setTab]                 = useState("confirmar");
   const [selected,setSelected]       = useState(null);
   const [showForm,setShowForm]       = useState(false);
   const [showCliForm,setShowCliForm] = useState(false);
@@ -650,7 +650,7 @@ function App() {
 
       {/* TABS */}
       <div style={{background:"white",borderBottom:"2px solid #e2e8f0",padding:"0 16px",display:"flex",overflowX:"auto"}}>
-        {[["ordenes","📋 Órdenes"],["confirmar",`📌 Hoy${(totales.porConf+notasBadge+prospBadge)>0?` (${totales.porConf+notasBadge+prospBadge})`:""}`],["clientes","👥 Clientes"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","📅 Calendario"],["prospectos",`🎯 Prospectos${prospBadge?` (${prospBadge})`:""}`]].map(([k,l])=>(
+        {[["confirmar",`📌 Hoy${(totales.porConf+notasBadge+prospBadge)>0?` (${totales.porConf+notasBadge+prospBadge})`:""}`],["ordenes","📋 Órdenes"],["clientes","👥 Clientes"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","📅 Calendario"],["prospectos",`🎯 Prospectos${prospBadge?` (${prospBadge})`:""}`]].map(([k,l])=>(
           <button key={k} onClick={()=>setTab(k)} style={{background:"none",border:"none",borderBottom:tab===k?"3px solid #1e3a5f":"3px solid transparent",padding:"12px 14px",cursor:"pointer",fontWeight:tab===k?700:500,color:tab===k?"#1e3a5f":"#64748b",fontSize:13,whiteSpace:"nowrap"}}>{l}</button>
         ))}
       </div>
