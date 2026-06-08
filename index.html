@@ -128,7 +128,7 @@ function GraficaPlantas({meses,data,plantasConfig}){
 }
 
 const emptyOV = {id:"",num_ov:"",clienteId:"",serie:"",folio:"",toneladas:0,fecha_carga:todayISO(),fecha_entrega:"",status:"ov_asignada",confirm:"por_confirmar",motivo:"",remision_firmada:false,notas:"",tipo:"granel"};
-const emptyCliente = {id:"",nombre:"",rfc:"",precio_ton:"",anticipo:0,telefono:""};
+const emptyCliente = {id:"",nombre:"",nombre_fiscal:"",rfc:"",precio_ton:"",anticipo:0,telefono:""};
 const emptyNota    = {id:"",texto:"",fecha_vencimiento:todayISO(),prioridad:"media",clienteId:"",num_ov:"",completada:false};
 const emptyProsp   = {id:"",nombre:"",telefono:"",contacto:"",vol_mensual:0,etapa:"contacto",notas:"",fecha_seguimiento:todayISO()};
 const emptyFactura = {id:"",clienteId:"",folio_fiscal:"",fecha:todayISO(),monto_total:"",tipo:"Normal",estatus:"Emitida",pagos_ligados:[],notas:""};
@@ -1038,9 +1038,13 @@ function App() {
                 {estadoCuenta.map(c=>(
                   <div key={c.id} style={{background:"white",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px #00000010",borderLeft:`4px solid ${c.saldo>=0?"#16a34a":"#ef4444"}`}}>
                     <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-                      <div><div style={{fontWeight:700,fontSize:16}}>{c.nombre}</div><div style={{fontSize:12,color:"#64748b"}}>Precio: {fmt(c.precio_ton)}/ton · {c.num_entregas} entregas{c.rfc?` · RFC: ${c.rfc}`:""}{c.telefono?` · 📞 ${c.telefono}`:""}</div></div>
+                      <div>
+                        <div style={{fontWeight:700,fontSize:16}}>{c.nombre}</div>
+                        {c.nombre_fiscal&&<div style={{fontSize:11,color:"#94a3b8",marginTop:1}}>{c.nombre_fiscal}</div>}
+                        <div style={{fontSize:12,color:"#64748b",marginTop:1}}>Precio: {fmt(c.precio_ton)}/ton · {c.num_entregas} entregas{c.rfc?` · RFC: ${c.rfc}`:""}{c.telefono?` · 📞 ${c.telefono}`:""}</div>
+                      </div>
                       <div style={{display:"flex",gap:6}}>
-                        <button onClick={()=>setCompForm({clienteId:c.id,verFacturados:false,selected:{},toneladas:""})} style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"#1e40af",fontWeight:600}}>🧾 Comprobante</button>
+                        <button onClick={()=>setCompForm({clienteId:c.id,verFacturados:false,selected:{},toneladas:"",precioTon:String(c.precio_ton||"")})} style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"#1e40af",fontWeight:600}}>🧾 Comprobante</button>
                         <button onClick={()=>{setCliForm(c);setShowCliForm(true);}} style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"#1e3a5f"}}>✏️</button>
                       </div>
                     </div>
@@ -1078,7 +1082,7 @@ function App() {
                           </div>
                           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                             {fac.pendiente>0&&(
-                              <button onClick={()=>setCompPendForm({clienteId:c.id,toneladas:""})} style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:6,padding:"5px 10px",fontSize:11,cursor:"pointer",color:"#c2410c",fontWeight:600}}>🧾 Comprobante pendiente</button>
+                              <button onClick={()=>setCompPendForm({clienteId:c.id,toneladas:"",precioTon:String(c.precio_ton||"")})} style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:6,padding:"5px 10px",fontSize:11,cursor:"pointer",color:"#c2410c",fontWeight:600}}>🧾 Comprobante pendiente</button>
                             )}
                             <button onClick={()=>setVerFacturasClienteId(c.id)} style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:6,padding:"5px 10px",fontSize:11,cursor:"pointer",color:"#1e3a5f",fontWeight:600}}>📋 Ver facturas</button>
                           </div>
@@ -1783,7 +1787,7 @@ function App() {
         <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
           <div style={{background:"white",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:500,padding:"22px 20px"}}>
             <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>{cliForm.id?"Editar cliente":"Nuevo cliente"}</div>
-            {[["nombre","Nombre del cliente","text"],["rfc","RFC (opcional)","text"],["telefono","Teléfono (opcional)","tel"],["precio_ton","Precio por tonelada ($)","number"],["anticipo","Anticipo inicial ($)","number"]].map(([k,l,t])=>(
+            {[["nombre","Nombre comercial","text"],["nombre_fiscal","Nombre fiscal (para comprobantes)","text"],["rfc","RFC (opcional)","text"],["telefono","Teléfono (opcional)","tel"],["precio_ton","Precio por tonelada ($)","number"],["anticipo","Anticipo inicial ($)","number"]].map(([k,l,t])=>(
               <div key={k} style={{marginBottom:12}}>
                 <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>{l}</label>
                 <input type={t} value={cliForm[k]} onChange={e=>setCliForm(f=>({...f,[k]:e.target.value}))} style={inS}/>
@@ -2002,6 +2006,7 @@ function App() {
         const iva16=sinIVA*0.16;
         const total=sinIVA+iva16;
         const tons=parseFloat(compPendForm.toneladas)||0;
+        const precioTon=parseFloat(compPendForm.precioTon)||0;
         return(
           <div style={{position:"fixed",inset:0,background:"#00000070",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
             <div style={{background:"white",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:520,padding:"22px 20px",maxHeight:"94vh",overflowY:"auto"}}>
@@ -2010,9 +2015,15 @@ function App() {
               <div style={{background:"#fff7ed",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:13}}>
                 <span style={{color:"#c2410c",fontWeight:700}}>Pendiente de facturar: {fmt(pendiente)}</span>
               </div>
-              <div style={{marginBottom:14}}>
-                <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Toneladas relacionadas (opcional)</label>
-                <input type="number" value={compPendForm.toneladas} onChange={e=>setCompPendForm(f=>({...f,toneladas:e.target.value}))} style={inS} min="0" step="0.01" placeholder="0.00"/>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+                <div>
+                  <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Toneladas (opcional)</label>
+                  <input type="number" value={compPendForm.toneladas} onChange={e=>setCompPendForm(f=>({...f,toneladas:e.target.value}))} style={inS} min="0" step="0.01" placeholder="0.00"/>
+                </div>
+                <div>
+                  <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Precio / ton (opcional)</label>
+                  <input type="number" value={compPendForm.precioTon} onChange={e=>setCompPendForm(f=>({...f,precioTon:e.target.value}))} style={inS} min="0" step="1" placeholder="0"/>
+                </div>
               </div>
               <div ref={compPendRef} style={{background:"white",border:"2px solid #1e3a5f",borderRadius:12,overflow:"hidden",marginBottom:16,fontFamily:"'Segoe UI',Arial,sans-serif"}}>
                 <div style={{background:"#1e3a5f",padding:"16px 20px"}}>
@@ -2021,22 +2032,22 @@ function App() {
                 </div>
                 <div style={{padding:"14px 20px 10px",borderBottom:"1px solid #e2e8f0"}}>
                   <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:2}}>Cliente</div>
-                  <div style={{fontWeight:800,fontSize:19,color:"#1e3a5f"}}>{cli.nombre}</div>
+                  <div style={{fontWeight:800,fontSize:19,color:"#1e3a5f"}}>{cli.nombre_fiscal||cli.nombre}</div>
                   {cli.rfc&&<div style={{fontSize:11,color:"#64748b",marginTop:2}}>RFC: {cli.rfc}</div>}
                   <div style={{fontSize:11,color:"#94a3b8",marginTop:3}}>{todayISO()}</div>
                 </div>
                 <div style={{padding:"12px 20px 14px"}}>
                   <div style={{fontSize:12,color:"#64748b",marginBottom:10,fontStyle:"italic"}}>Complemento de pago pendiente de facturar</div>
-                  {[["Subtotal sin IVA",fmt(sinIVA)],["IVA 16%",fmt(iva16)]].map(([k,v],i)=>(
+                  {[
+                    ...(tons>0?[["Toneladas",`${fmtT(tons)} ton`]]:[]),
+                    ...(precioTon>0?[["Precio / ton",fmt(precioTon)]]:[]),
+                    ["Subtotal sin IVA",fmt(sinIVA)],
+                    ["IVA 16%",fmt(iva16)],
+                  ].map(([k,v],i)=>(
                     <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderTop:"1px solid #f1f5f9",fontSize:12}}>
                       <span style={{color:"#64748b"}}>{k}</span><span style={{fontWeight:600}}>{v}</span>
                     </div>
                   ))}
-                  {tons>0&&(
-                    <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderTop:"1px solid #f1f5f9",fontSize:12}}>
-                      <span style={{color:"#64748b"}}>Toneladas</span><span style={{fontWeight:600}}>{fmtT(tons)} ton</span>
-                    </div>
-                  )}
                   <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 4px",borderTop:"2px solid #1e3a5f",marginTop:4,fontSize:15}}>
                     <span style={{fontWeight:700,color:"#1e3a5f"}}>Total con IVA</span>
                     <span style={{fontWeight:900,color:"#1e3a5f",fontSize:17}}>{fmt(total)}</span>
@@ -2069,6 +2080,7 @@ function App() {
         const iva16=sinIVA*0.16;
         const total=sinIVA+iva16;
         const tons=parseFloat(compForm.toneladas)||0;
+        const precioTon=parseFloat(compForm.precioTon)||0;
         const formOk=selIndices.length>0;
         const pagosSel=selIndices.map(idx=>historial[idx]).filter(Boolean).sort((a,b)=>(a.fecha||"").localeCompare(b.fecha||""));
         const todosSeleccionados=pagosVisibles.length>0&&pagosVisibles.every(a=>compForm.selected[a.realIdx]);
@@ -2121,9 +2133,15 @@ function App() {
                   <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid #e2e8f0",paddingTop:6,marginTop:4}}><span style={{fontWeight:700,color:"#1e3a5f"}}>Total con IVA</span><span style={{fontWeight:800,color:"#1e3a5f",fontSize:14}}>{fmt(total)}</span></div>
                 </div>
               )}
-              <div style={{marginBottom:14}}>
-                <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Toneladas relacionadas (opcional)</label>
-                <input type="number" value={compForm.toneladas} onChange={e=>setCompForm(f=>({...f,toneladas:e.target.value}))} style={inS} min="0" step="0.01" placeholder="0.00"/>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+                <div>
+                  <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Toneladas (opcional)</label>
+                  <input type="number" value={compForm.toneladas} onChange={e=>setCompForm(f=>({...f,toneladas:e.target.value}))} style={inS} min="0" step="0.01" placeholder="0.00"/>
+                </div>
+                <div>
+                  <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Precio / ton (opcional)</label>
+                  <input type="number" value={compForm.precioTon} onChange={e=>setCompForm(f=>({...f,precioTon:e.target.value}))} style={inS} min="0" step="1" placeholder="0"/>
+                </div>
               </div>
 
               {/* PREVIEW COMPROBANTE */}
@@ -2135,7 +2153,7 @@ function App() {
                   </div>
                   <div style={{padding:"14px 20px 10px",borderBottom:"1px solid #e2e8f0"}}>
                     <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:2}}>Cliente</div>
-                    <div style={{fontWeight:800,fontSize:19,color:"#1e3a5f"}}>{cli.nombre}</div>
+                    <div style={{fontWeight:800,fontSize:19,color:"#1e3a5f"}}>{cli.nombre_fiscal||cli.nombre}</div>
                     {cli.rfc&&<div style={{fontSize:11,color:"#64748b",marginTop:2}}>RFC: {cli.rfc}</div>}
                     <div style={{fontSize:11,color:"#94a3b8",marginTop:3}}>{todayISO()}</div>
                   </div>
@@ -2151,16 +2169,16 @@ function App() {
                     ))}
                   </div>
                   <div style={{padding:"4px 20px 14px"}}>
-                    {[["Subtotal sin IVA",fmt(sinIVA)],["IVA 16%",fmt(iva16)]].map(([k,v],i)=>(
+                    {[
+                      ...(tons>0?[["Toneladas",`${fmtT(tons)} ton`]]:[]),
+                      ...(precioTon>0?[["Precio / ton",fmt(precioTon)]]:[]),
+                      ["Subtotal sin IVA",fmt(sinIVA)],
+                      ["IVA 16%",fmt(iva16)],
+                    ].map(([k,v],i)=>(
                       <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:"1px solid #f1f5f9",fontSize:12}}>
                         <span style={{color:"#64748b"}}>{k}</span><span style={{fontWeight:600}}>{v}</span>
                       </div>
                     ))}
-                    {tons>0&&(
-                      <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:"1px solid #f1f5f9",fontSize:12}}>
-                        <span style={{color:"#64748b"}}>Toneladas</span><span style={{fontWeight:600}}>{fmtT(tons)} ton</span>
-                      </div>
-                    )}
                     <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 4px",borderTop:"2px solid #1e3a5f",marginTop:4,fontSize:15}}>
                       <span style={{fontWeight:700,color:"#1e3a5f"}}>Total con IVA</span>
                       <span style={{fontWeight:900,color:"#1e3a5f",fontSize:17}}>{fmt(total)}</span>
