@@ -1066,20 +1066,21 @@ function App() {
                         </div>
                         {exp&&(
                           <div style={{borderTop:"1px solid #e2e8f0"}}>
-                            <div style={{display:"grid",gridTemplateColumns:"1.8fr 0.9fr 1fr 0.8fr 1fr",background:"#f8fafc",padding:"7px 14px",fontSize:10,fontWeight:700,color:"#64748b",gap:4}}>
-                              <div>Serie-Folio</div><div>No. OV</div><div>F. Entrega</div><div style={{textAlign:"right"}}>Ton</div><div style={{textAlign:"right"}}>Monto</div>
+                            <div style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 0.9fr 1fr 0.8fr 1fr",background:"#f8fafc",padding:"7px 14px",fontSize:10,fontWeight:700,color:"#64748b",gap:4}}>
+                              <div>Serie-Folio</div><div>F. Remisión</div><div>No. OV</div><div>F. Entrega</div><div style={{textAlign:"right"}}>Ton</div><div style={{textAlign:"right"}}>Monto</div>
                             </div>
                             {g.remisiones.map((p,i)=>(
-                              <div key={p.id} style={{display:"grid",gridTemplateColumns:"1.8fr 0.9fr 1fr 0.8fr 1fr",padding:"8px 14px",fontSize:11,borderTop:"1px solid #f1f5f9",background:i%2?"#fafafa":"white",gap:4}}>
+                              <div key={p.id} style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 0.9fr 1fr 0.8fr 1fr",padding:"8px 14px",fontSize:11,borderTop:"1px solid #f1f5f9",background:i%2?"#fafafa":"white",gap:4}}>
                                 <div style={{color:"#1e3a5f",fontWeight:500}}>{[p.serie,p.folio].filter(Boolean).join("-")||"—"}</div>
+                                <div style={{color:"#475569"}}>{p.fecha_carga||"—"}</div>
                                 <div style={{color:"#475569"}}>{p.num_ov||"—"}</div>
                                 <div style={{color:"#475569"}}>{p.fecha_entrega||"—"}</div>
                                 <div style={{textAlign:"right",color:"#334155"}}>{fmtT(p.toneladas)}</div>
                                 <div style={{textAlign:"right",color:"#334155"}}>{fmt(valorOV(p))}</div>
                               </div>
                             ))}
-                            <div style={{display:"grid",gridTemplateColumns:"1.8fr 0.9fr 1fr 0.8fr 1fr",padding:"8px 14px",fontSize:11,borderTop:"2px solid #cbd5e1",fontWeight:700,background:"#eff6ff",gap:4}}>
-                              <div style={{color:"#1e3a5f"}}>Total</div><div></div><div></div>
+                            <div style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 0.9fr 1fr 0.8fr 1fr",padding:"8px 14px",fontSize:11,borderTop:"2px solid #cbd5e1",fontWeight:700,background:"#eff6ff",gap:4}}>
+                              <div style={{color:"#1e3a5f"}}>Total</div><div></div><div></div><div></div>
                               <div style={{textAlign:"right",color:"#1e3a5f"}}>{fmtT(g.total_ton)}</div>
                               <div style={{textAlign:"right",color:"#1e3a5f"}}>{fmt(g.total_valor)}</div>
                             </div>
