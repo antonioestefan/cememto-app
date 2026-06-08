@@ -128,7 +128,7 @@ function GraficaPlantas({meses,data,plantasConfig}){
 }
 
 const emptyOV = {id:"",num_ov:"",clienteId:"",serie:"",folio:"",toneladas:0,fecha_carga:todayISO(),fecha_entrega:"",status:"ov_asignada",confirm:"por_confirmar",motivo:"",remision_firmada:false,notas:"",tipo:"granel"};
-const emptyCliente = {id:"",nombre:"",precio_ton:"",anticipo:0,telefono:""};
+const emptyCliente = {id:"",nombre:"",rfc:"",precio_ton:"",anticipo:0,telefono:""};
 const emptyNota    = {id:"",texto:"",fecha_vencimiento:todayISO(),prioridad:"media",clienteId:"",num_ov:"",completada:false};
 const emptyProsp   = {id:"",nombre:"",telefono:"",contacto:"",vol_mensual:0,etapa:"contacto",notas:"",fecha_seguimiento:todayISO()};
 
@@ -320,7 +320,7 @@ function App() {
   };
   const addAnticipo = async (id,monto,fecha)=>{
     const c=clientes.find(x=>x.id===id); if(!c) return;
-    const historial=[...(c.historial_anticipos||[]),{fecha,monto}];
+    const historial=[...(c.historial_anticipos||[]),{fecha,monto,estatus_factura:"pendiente"}];
     const updated={...c,anticipo:(parseFloat(c.anticipo)||0)+monto,historial_anticipos:historial};
     setClientes(prev=>prev.map(x=>x.id===id?updated:x));
     await saveToDb("clientes",id,updated);
@@ -335,12 +335,27 @@ function App() {
   };
   const editAnticipo = async (cliId,realIdx,newFecha,newMonto)=>{
     const c=clientes.find(x=>x.id===cliId); if(!c) return;
-    const historial=(c.historial_anticipos||[]).map((a,i)=>i===realIdx?{fecha:newFecha,monto:parseFloat(newMonto)||0}:a);
+    const historial=(c.historial_anticipos||[]).map((a,i)=>i===realIdx?{...a,fecha:newFecha,monto:parseFloat(newMonto)||0}:a);
     const anticipo=historial.reduce((s,a)=>s+(parseFloat(a.monto)||0),0);
     const updated={...c,anticipo,historial_anticipos:historial};
     setClientes(prev=>prev.map(x=>x.id===cliId?updated:x));
     await saveToDb("clientes",cliId,updated);
     setEditingAnticipo(null);
+  };
+
+  const toggleEstatusFactura = async (cliId,realIdx)=>{
+    const c=clientes.find(x=>x.id===cliId); if(!c) return;
+    const historial=(c.historial_anticipos||[]).map((a,i)=>i===realIdx?{...a,estatus_factura:(a.estatus_factura||"pendiente")==="facturado"?"pendiente":"facturado"}:a);
+    const updated={...c,historial_anticipos:historial};
+    setClientes(prev=>prev.map(x=>x.id===cliId?updated:x));
+    await saveToDb("clientes",cliId,updated);
+  };
+  const marcarFacturadoLote = async (cliId,indices)=>{
+    const c=clientes.find(x=>x.id===cliId); if(!c) return;
+    const historial=(c.historial_anticipos||[]).map((a,i)=>indices.includes(i)?{...a,estatus_factura:"facturado"}:a);
+    const updated={...c,historial_anticipos:historial};
+    setClientes(prev=>prev.map(x=>x.id===cliId?updated:x));
+    await saveToDb("clientes",cliId,updated);
   };
 
   const saveNota = async ()=>{
@@ -630,13 +645,16 @@ function App() {
   };
 
   const generarComprobante = async ()=>{
-    if(!compRef.current) return;
+    if(!compRef.current||!compForm) return;
+    const cli=clientes.find(x=>x.id===compForm.clienteId);
+    const selIndices=Object.entries(compForm.selected).filter(([,v])=>v).map(([k])=>parseInt(k));
     const canvas=await window.html2canvas(compRef.current,{scale:2,useCORS:true,backgroundColor:"#ffffff",logging:false});
     const link=document.createElement("a");
-    const nombre=(compForm.nombre||"cliente").replace(/\s+/g,"_");
-    link.download=`Comprobante_${nombre}_${todayISO()}.png`;
+    link.download=`Comprobante_${(cli?.nombre||"cliente").replace(/\s+/g,"_")}_${todayISO()}.png`;
     link.href=canvas.toDataURL("image/png");
     link.click();
+    await marcarFacturadoLote(compForm.clienteId,selIndices);
+    setCompForm(null);
   };
 
   const reporteWAPlanta = ()=>{
@@ -974,9 +992,9 @@ function App() {
                 {estadoCuenta.map(c=>(
                   <div key={c.id} style={{background:"white",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px #00000010",borderLeft:`4px solid ${c.saldo>=0?"#16a34a":"#ef4444"}`}}>
                     <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-                      <div><div style={{fontWeight:700,fontSize:16}}>{c.nombre}</div><div style={{fontSize:12,color:"#64748b"}}>Precio: {fmt(c.precio_ton)}/ton · {c.num_entregas} entregas{c.telefono?` · 📞 ${c.telefono}`:""}</div></div>
+                      <div><div style={{fontWeight:700,fontSize:16}}>{c.nombre}</div><div style={{fontSize:12,color:"#64748b"}}>Precio: {fmt(c.precio_ton)}/ton · {c.num_entregas} entregas{c.rfc?` · RFC: ${c.rfc}`:""}{c.telefono?` · 📞 ${c.telefono}`:""}</div></div>
                       <div style={{display:"flex",gap:6}}>
-                        <button onClick={()=>setCompForm({clienteId:c.id,nombre:c.nombre,precioTon:String(c.precio_ton||""),modo:null,remisionId:"",referencia:"",toneladas:""})} style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"#1e40af",fontWeight:600}}>🧾 Comprobante</button>
+                        <button onClick={()=>setCompForm({clienteId:c.id,verFacturados:false,selected:{},toneladas:""})} style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"#1e40af",fontWeight:600}}>🧾 Comprobante</button>
                         <button onClick={()=>{setCliForm(c);setShowCliForm(true);}} style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"#1e3a5f"}}>✏️</button>
                       </div>
                     </div>
@@ -1007,9 +1025,10 @@ function App() {
                             </div>
                           );
                           return(
-                            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"3px 0",borderTop:i>0?"1px solid #f1f5f9":"none",gap:4}}>
-                              <span style={{color:"#64748b",flex:1}}>{a.fecha}</span>
+                            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"4px 0",borderTop:i>0?"1px solid #f1f5f9":"none",gap:4}}>
+                              <span style={{color:"#64748b",flex:"0 0 80px"}}>{a.fecha}</span>
                               <span style={{fontWeight:700,color:"#16a34a",flex:1,textAlign:"right"}}>{fmt(a.monto)}</span>
+                              <button onClick={()=>toggleEstatusFactura(c.id,realIdx)} style={{background:(a.estatus_factura||"pendiente")==="facturado"?"#dcfce7":"#fff7ed",border:"none",borderRadius:4,padding:"2px 6px",fontSize:10,cursor:"pointer",fontWeight:700,color:(a.estatus_factura||"pendiente")==="facturado"?"#15803d":"#c2410c",flexShrink:0}}>{(a.estatus_factura||"pendiente")==="facturado"?"✔ Facturado":"⏳ Pendiente"}</button>
                               <button onClick={()=>setEditingAnticipo({cliId:c.id,realIdx,fecha:a.fecha,monto:a.monto})} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,padding:"0 2px",color:"#94a3b8"}} title="Editar">✏️</button>
                               <button onClick={()=>{if(confirm(`¿Eliminar anticipo de ${fmt(a.monto)} del ${a.fecha}?`))deleteAnticipo(c.id,realIdx);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,padding:"0 2px",color:"#94a3b8"}} title="Eliminar">🗑️</button>
                             </div>
@@ -1638,7 +1657,7 @@ function App() {
         <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
           <div style={{background:"white",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:500,padding:"22px 20px"}}>
             <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>{cliForm.id?"Editar cliente":"Nuevo cliente"}</div>
-            {[["nombre","Nombre del cliente","text"],["telefono","Teléfono (opcional)","tel"],["precio_ton","Precio por tonelada ($)","number"],["anticipo","Anticipo inicial ($)","number"]].map(([k,l,t])=>(
+            {[["nombre","Nombre del cliente","text"],["rfc","RFC (opcional)","text"],["telefono","Teléfono (opcional)","tel"],["precio_ton","Precio por tonelada ($)","number"],["anticipo","Anticipo inicial ($)","number"]].map(([k,l,t])=>(
               <div key={k} style={{marginBottom:12}}>
                 <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>{l}</label>
                 <input type={t} value={cliForm[k]} onChange={e=>setCliForm(f=>({...f,[k]:e.target.value}))} style={inS}/>
@@ -1742,136 +1761,125 @@ function App() {
       )}
       {/* COMPROBANTE MODAL */}
       {compForm&&(()=>{
-        const remisiones=ovs.filter(p=>p.clienteId===compForm.clienteId&&p.status==="entregado")
-          .sort((a,b)=>(b.fecha_entrega||"").localeCompare(a.fecha_entrega||""));
-        const tons=parseFloat(compForm.toneladas)||0;
-        const precio=parseFloat(compForm.precioTon)||0;
-        const sinIVA=tons*precio;
+        const cli=clientes.find(x=>x.id===compForm.clienteId)||{};
+        const historial=cli.historial_anticipos||[];
+        const pagosVisibles=historial
+          .map((a,idx)=>({...a,realIdx:idx}))
+          .filter(a=>compForm.verFacturados||(a.estatus_factura||"pendiente")==="pendiente")
+          .reverse();
+        const selIndices=Object.entries(compForm.selected).filter(([,v])=>v).map(([k])=>parseInt(k));
+        const totalSel=selIndices.reduce((s,idx)=>s+(parseFloat(historial[idx]?.monto)||0),0);
+        const sinIVA=totalSel;
         const iva16=sinIVA*0.16;
         const total=sinIVA+iva16;
-        const formOk=compForm.modo&&compForm.referencia.trim()&&tons>0&&precio>0;
+        const tons=parseFloat(compForm.toneladas)||0;
+        const formOk=selIndices.length>0;
+        const pagosSel=selIndices.map(idx=>historial[idx]).filter(Boolean).sort((a,b)=>(a.fecha||"").localeCompare(b.fecha||""));
+        const todosSeleccionados=pagosVisibles.length>0&&pagosVisibles.every(a=>compForm.selected[a.realIdx]);
         return(
           <div style={{position:"fixed",inset:0,background:"#00000070",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
             <div style={{background:"white",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:520,padding:"22px 20px",maxHeight:"94vh",overflowY:"auto"}}>
-              <div style={{fontWeight:800,fontSize:17,marginBottom:4}}>🧾 Comprobante de facturación</div>
-              <div style={{fontSize:12,color:"#64748b",marginBottom:16}}>{compForm.nombre}</div>
+              <div style={{fontWeight:800,fontSize:17,marginBottom:2}}>🧾 Comprobante de facturación</div>
+              <div style={{fontSize:12,color:"#64748b",marginBottom:14}}>{cli.nombre}{cli.rfc?` · RFC: ${cli.rfc}`:""}</div>
 
-              {/* PASO 1: selección de modo */}
-              {!compForm.modo&&(
-                <>
-                  <div style={{fontSize:12,color:"#475569",marginBottom:12}}>¿Cómo quieres generar el comprobante?</div>
-                  <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:16}}>
-                    <button onClick={()=>setCompForm(f=>({...f,modo:"remision"}))}
-                      style={{background:"#eff6ff",border:"2px solid #bfdbfe",borderRadius:10,padding:"14px 16px",textAlign:"left",cursor:"pointer"}}>
-                      <div style={{fontWeight:700,color:"#1e40af",fontSize:14}}>📋 Por remisión</div>
-                      <div style={{fontSize:12,color:"#64748b",marginTop:3}}>Selecciona una remisión entregada del cliente para pre-llenar los datos.</div>
-                    </button>
-                    <button onClick={()=>setCompForm(f=>({...f,modo:"libre"}))}
-                      style={{background:"#f0fdf4",border:"2px solid #bbf7d0",borderRadius:10,padding:"14px 16px",textAlign:"left",cursor:"pointer"}}>
-                      <div style={{fontWeight:700,color:"#15803d",fontSize:14}}>✏️ Monto libre</div>
-                      <div style={{fontSize:12,color:"#64748b",marginTop:3}}>Captura referencia, toneladas y monto manualmente.</div>
-                    </button>
+              {/* LISTA DE PAGOS */}
+              <div style={{marginBottom:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#475569",textTransform:"uppercase",letterSpacing:.6}}>Pagos a incluir</div>
+                  <label style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:"#64748b",cursor:"pointer"}}>
+                    <input type="checkbox" checked={compForm.verFacturados} onChange={e=>setCompForm(f=>({...f,verFacturados:e.target.checked,selected:{}}))}/>
+                    Ver también facturados
+                  </label>
+                </div>
+                {pagosVisibles.length===0
+                  ?<div style={{fontSize:12,color:"#94a3b8",padding:"12px 0",textAlign:"center"}}>{compForm.verFacturados?"Sin pagos registrados.":"Sin pagos pendientes de facturar."}</div>
+                  :<>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                      <button onClick={()=>{
+                        if(todosSeleccionados) setCompForm(f=>({...f,selected:{}}));
+                        else {const s={}; pagosVisibles.forEach(a=>{s[a.realIdx]=true;}); setCompForm(f=>({...f,selected:s}));}
+                      }} style={{background:"none",border:"none",color:"#1e40af",fontSize:11,cursor:"pointer",padding:0,fontWeight:600}}>
+                        {todosSeleccionados?"Deseleccionar todos":"Seleccionar todos"}
+                      </button>
+                      {selIndices.length>0&&<span style={{fontSize:11,color:"#64748b"}}>{selIndices.length} seleccionado{selIndices.length>1?"s":""}</span>}
+                    </div>
+                    <div style={{border:"1px solid #e2e8f0",borderRadius:8,overflow:"hidden"}}>
+                      {pagosVisibles.map((a,i)=>(
+                        <label key={a.realIdx} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:compForm.selected[a.realIdx]?"#eff6ff":"white",borderTop:i>0?"1px solid #f1f5f9":"none",cursor:"pointer"}}>
+                          <input type="checkbox" checked={!!compForm.selected[a.realIdx]} onChange={e=>setCompForm(f=>({...f,selected:{...f.selected,[a.realIdx]:e.target.checked}}))}/>
+                          <span style={{flex:"0 0 86px",fontSize:12,color:"#64748b"}}>{a.fecha}</span>
+                          <span style={{flex:1,fontWeight:700,fontSize:13,color:"#1e293b"}}>{fmt(a.monto)}</span>
+                          <span style={{fontSize:10,fontWeight:700,color:(a.estatus_factura||"pendiente")==="facturado"?"#15803d":"#c2410c",background:(a.estatus_factura||"pendiente")==="facturado"?"#dcfce7":"#fff7ed",borderRadius:4,padding:"2px 6px"}}>{(a.estatus_factura||"pendiente")==="facturado"?"✔ Facturado":"⏳ Pendiente"}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                }
+              </div>
+
+              {/* TOTALES + TONELADAS */}
+              {formOk&&(
+                <div style={{background:"#f8fafc",borderRadius:8,padding:"10px 12px",marginBottom:12,fontSize:12}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{color:"#64748b"}}>Subtotal sin IVA</span><span style={{fontWeight:600}}>{fmt(sinIVA)}</span></div>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{color:"#64748b"}}>IVA 16%</span><span style={{fontWeight:600}}>{fmt(iva16)}</span></div>
+                  <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid #e2e8f0",paddingTop:6,marginTop:4}}><span style={{fontWeight:700,color:"#1e3a5f"}}>Total con IVA</span><span style={{fontWeight:800,color:"#1e3a5f",fontSize:14}}>{fmt(total)}</span></div>
+                </div>
+              )}
+              <div style={{marginBottom:14}}>
+                <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Toneladas relacionadas (opcional)</label>
+                <input type="number" value={compForm.toneladas} onChange={e=>setCompForm(f=>({...f,toneladas:e.target.value}))} style={inS} min="0" step="0.01" placeholder="0.00"/>
+              </div>
+
+              {/* PREVIEW COMPROBANTE */}
+              {formOk&&(
+                <div ref={compRef} style={{background:"white",border:"2px solid #1e3a5f",borderRadius:12,overflow:"hidden",marginBottom:16,fontFamily:"'Segoe UI',Arial,sans-serif"}}>
+                  <div style={{background:"#1e3a5f",padding:"16px 20px"}}>
+                    <div style={{color:"white",fontWeight:800,fontSize:15,letterSpacing:.3}}>Distribuidora Cruz Azul</div>
+                    <div style={{color:"#93c5fd",fontSize:12,marginTop:2}}>Antonio Estefan</div>
                   </div>
-                  <button onClick={()=>setCompForm(null)} style={{width:"100%",background:"#f1f5f9",color:"#64748b",border:"none",borderRadius:8,padding:"11px",fontWeight:600,cursor:"pointer",fontSize:14}}>Cancelar</button>
-                </>
+                  <div style={{padding:"14px 20px 10px",borderBottom:"1px solid #e2e8f0"}}>
+                    <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:2}}>Cliente</div>
+                    <div style={{fontWeight:800,fontSize:19,color:"#1e3a5f"}}>{cli.nombre}</div>
+                    {cli.rfc&&<div style={{fontSize:11,color:"#64748b",marginTop:2}}>RFC: {cli.rfc}</div>}
+                    <div style={{fontSize:11,color:"#94a3b8",marginTop:3}}>{todayISO()}</div>
+                  </div>
+                  <div style={{padding:"10px 20px"}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr auto",background:"#f8fafc",padding:"6px 10px",borderRadius:"6px 6px 0 0",fontSize:10,fontWeight:700,color:"#64748b",gap:16,marginBottom:2}}>
+                      <div>Fecha</div><div style={{textAlign:"right",minWidth:90}}>Monto</div>
+                    </div>
+                    {pagosSel.map((a,i)=>(
+                      <div key={i} style={{display:"grid",gridTemplateColumns:"1fr auto",padding:"6px 10px",fontSize:12,borderTop:"1px solid #f1f5f9",gap:16,background:i%2?"#fafafa":"white"}}>
+                        <div style={{color:"#475569"}}>{a.fecha}</div>
+                        <div style={{textAlign:"right",fontWeight:600,minWidth:90}}>{fmt(a.monto)}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{padding:"4px 20px 14px"}}>
+                    {[["Subtotal sin IVA",fmt(sinIVA)],["IVA 16%",fmt(iva16)]].map(([k,v],i)=>(
+                      <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:"1px solid #f1f5f9",fontSize:12}}>
+                        <span style={{color:"#64748b"}}>{k}</span><span style={{fontWeight:600}}>{v}</span>
+                      </div>
+                    ))}
+                    {tons>0&&(
+                      <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:"1px solid #f1f5f9",fontSize:12}}>
+                        <span style={{color:"#64748b"}}>Toneladas</span><span style={{fontWeight:600}}>{fmtT(tons)} ton</span>
+                      </div>
+                    )}
+                    <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 4px",borderTop:"2px solid #1e3a5f",marginTop:4,fontSize:15}}>
+                      <span style={{fontWeight:700,color:"#1e3a5f"}}>Total con IVA</span>
+                      <span style={{fontWeight:900,color:"#1e3a5f",fontSize:17}}>{fmt(total)}</span>
+                    </div>
+                  </div>
+                  <div style={{background:"#f8fafc",padding:"8px 20px",borderTop:"1px solid #e2e8f0"}}>
+                    <div style={{fontSize:10,color:"#94a3b8",textAlign:"center"}}>Documento informativo — Distribuidora Cruz Azul</div>
+                  </div>
+                </div>
               )}
 
-              {/* PASO 2: formulario */}
-              {compForm.modo&&(
-                <>
-                  <button onClick={()=>setCompForm(f=>({...f,modo:null,remisionId:"",referencia:"",toneladas:""}))}
-                    style={{background:"none",border:"none",color:"#64748b",fontSize:12,cursor:"pointer",marginBottom:12,padding:0}}>← Cambiar tipo</button>
-
-                  {/* selector de remisión */}
-                  {compForm.modo==="remision"&&(
-                    <div style={{marginBottom:14}}>
-                      <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Remisión entregada</label>
-                      <select value={compForm.remisionId} onChange={e=>{
-                        const ov=remisiones.find(p=>p.id===e.target.value);
-                        if(ov) setCompForm(f=>({...f,remisionId:ov.id,referencia:[ov.serie,ov.folio].filter(Boolean).join("-"),toneladas:String(ov.toneladas||"")}));
-                        else setCompForm(f=>({...f,remisionId:"",referencia:"",toneladas:""}));
-                      }} style={{...inS,background:"white"}}>
-                        <option value="">— Selecciona una remisión —</option>
-                        {remisiones.map(p=><option key={p.id} value={p.id}>{[p.serie,p.folio].filter(Boolean).join("-")} · {p.fecha_entrega||"s/f"} · {fmtT(p.toneladas)} ton</option>)}
-                      </select>
-                    </div>
-                  )}
-
-                  {/* campos editables */}
-                  <div style={{marginBottom:10}}>
-                    <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Nombre del cliente</label>
-                    <input value={compForm.nombre} onChange={e=>setCompForm(f=>({...f,nombre:e.target.value}))} style={inS}/>
-                  </div>
-                  <div style={{marginBottom:10}}>
-                    <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Referencia / concepto</label>
-                    <input value={compForm.referencia} onChange={e=>setCompForm(f=>({...f,referencia:e.target.value}))} style={inS} placeholder="No. de transferencia o folio"/>
-                  </div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-                    <div>
-                      <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Toneladas</label>
-                      <input type="number" value={compForm.toneladas} onChange={e=>setCompForm(f=>({...f,toneladas:e.target.value}))} style={inS} min="0" step="0.01"/>
-                    </div>
-                    <div>
-                      <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Precio / ton ($)</label>
-                      <input type="number" value={compForm.precioTon} onChange={e=>setCompForm(f=>({...f,precioTon:e.target.value}))} style={inS} min="0" step="1"/>
-                    </div>
-                  </div>
-
-                  {/* montos calculados (solo lectura) */}
-                  {tons>0&&precio>0&&(
-                    <div style={{background:"#f8fafc",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12}}>
-                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{color:"#64748b"}}>Monto sin IVA</span><span style={{fontWeight:600}}>{fmt(sinIVA)}</span></div>
-                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{color:"#64748b"}}>IVA 16%</span><span style={{fontWeight:600}}>{fmt(iva16)}</span></div>
-                      <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid #e2e8f0",paddingTop:6,marginTop:4}}><span style={{fontWeight:700,color:"#1e3a5f"}}>Total con IVA</span><span style={{fontWeight:800,color:"#1e3a5f",fontSize:14}}>{fmt(total)}</span></div>
-                    </div>
-                  )}
-
-                  {/* PREVIEW COMPROBANTE */}
-                  {formOk&&(
-                    <div ref={compRef} style={{background:"white",border:"2px solid #1e3a5f",borderRadius:12,overflow:"hidden",marginBottom:16,fontFamily:"'Segoe UI',Arial,sans-serif"}}>
-                      {/* encabezado */}
-                      <div style={{background:"#1e3a5f",padding:"16px 20px"}}>
-                        <div style={{color:"white",fontWeight:800,fontSize:15,letterSpacing:.3}}>Distribuidora Cruz Azul</div>
-                        <div style={{color:"#93c5fd",fontSize:12,marginTop:2}}>Antonio Estefan</div>
-                      </div>
-                      {/* nombre cliente */}
-                      <div style={{padding:"14px 20px 8px",borderBottom:"1px solid #e2e8f0"}}>
-                        <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:2}}>Cliente</div>
-                        <div style={{fontWeight:800,fontSize:20,color:"#1e3a5f"}}>{compForm.nombre}</div>
-                        <div style={{fontSize:11,color:"#64748b",marginTop:3}}>{todayISO()}</div>
-                      </div>
-                      {/* tabla de datos */}
-                      <div style={{padding:"12px 20px 16px"}}>
-                        {[
-                          ["Referencia / Concepto", compForm.referencia],
-                          ["Toneladas", `${fmtT(tons)} ton`],
-                          ["Precio por tonelada", fmt(precio)],
-                          ["Monto sin IVA", fmt(sinIVA)],
-                          ["IVA 16%", fmt(iva16)],
-                        ].map(([k,v],i)=>(
-                          <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #f1f5f9",fontSize:13}}>
-                            <span style={{color:"#64748b"}}>{k}</span>
-                            <span style={{fontWeight:600,color:"#1e293b"}}>{v}</span>
-                          </div>
-                        ))}
-                        <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 4px",fontSize:15}}>
-                          <span style={{fontWeight:700,color:"#1e3a5f"}}>Total con IVA</span>
-                          <span style={{fontWeight:900,color:"#1e3a5f",fontSize:17}}>{fmt(total)}</span>
-                        </div>
-                      </div>
-                      {/* pie */}
-                      <div style={{background:"#f8fafc",padding:"8px 20px",borderTop:"1px solid #e2e8f0"}}>
-                        <div style={{fontSize:10,color:"#94a3b8",textAlign:"center"}}>Distribuidora Cruz Azul — Antonio Estefan · Documento informativo</div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div style={{display:"flex",gap:10}}>
-                    <button onClick={()=>setCompForm(null)} style={{flex:1,background:"#f1f5f9",color:"#64748b",border:"none",borderRadius:8,padding:"11px",fontWeight:600,cursor:"pointer",fontSize:14}}>Cancelar</button>
-                    <button onClick={generarComprobante} disabled={!formOk} style={{flex:2,background:formOk?"#1e3a5f":"#cbd5e1",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:formOk?"pointer":"default",fontSize:14}}>⬇ Generar imagen</button>
-                  </div>
-                </>
-              )}
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={()=>setCompForm(null)} style={{flex:1,background:"#f1f5f9",color:"#64748b",border:"none",borderRadius:8,padding:"11px",fontWeight:600,cursor:"pointer",fontSize:14}}>Cancelar</button>
+                <button onClick={generarComprobante} disabled={!formOk} style={{flex:2,background:formOk?"#1e3a5f":"#cbd5e1",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:formOk?"pointer":"default",fontSize:14}}>⬇ Generar imagen</button>
+              </div>
             </div>
           </div>
         );
