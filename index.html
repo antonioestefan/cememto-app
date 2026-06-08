@@ -131,6 +131,7 @@ const emptyOV = {id:"",num_ov:"",clienteId:"",serie:"",folio:"",toneladas:0,fech
 const emptyCliente = {id:"",nombre:"",rfc:"",precio_ton:"",anticipo:0,telefono:""};
 const emptyNota    = {id:"",texto:"",fecha_vencimiento:todayISO(),prioridad:"media",clienteId:"",num_ov:"",completada:false};
 const emptyProsp   = {id:"",nombre:"",telefono:"",contacto:"",vol_mensual:0,etapa:"contacto",notas:"",fecha_seguimiento:todayISO()};
+const emptyFactura = {id:"",clienteId:"",folio_fiscal:"",fecha:todayISO(),monto_total:"",tipo:"Normal",estatus:"Emitida",pagos_ligados:[],notas:""};
 
 function getWeekRange(offset=0) {
   const d=new Date(); d.setDate(d.getDate()+offset*7);
@@ -162,6 +163,7 @@ function App() {
   const [clienteExpandido,setClienteExpandido] = useState({});
   const [compForm,setCompForm]                 = useState(null);
   const compRef = useRef(null);
+  const compPendRef = useRef(null);
   const [editingAnticipo,setEditingAnticipo]   = useState(null); // {cliId,realIdx,fecha,monto}
   const [notas,setNotas]                       = useState([]);
   const [showNotaForm,setShowNotaForm]         = useState(false);
@@ -175,6 +177,12 @@ function App() {
   const [prospForm,setProspForm]               = useState(emptyProsp);
   const [selectedProsp,setSelectedProsp]       = useState(null);
   const [verCerrados,setVerCerrados]           = useState(false);
+  const [facturas,setFacturas]                 = useState([]);
+  const [showFacturaForm,setShowFacturaForm]   = useState(false);
+  const [facturaForm,setFacturaForm]           = useState(emptyFactura);
+  const [filtroFacturaCliente,setFiltroFacturaCliente] = useState("");
+  const [verFacturasClienteId,setVerFacturasClienteId] = useState(null);
+  const [compPendForm,setCompPendForm]         = useState(null);
 
   useEffect(()=>{
     if(!dbReady){window.addEventListener("dbReady",()=>setDbReady(true)); return;}
@@ -183,7 +191,8 @@ function App() {
     const u2=window.__onSnapshot(window.__col(db,"ovs"),snap=>{setOVs(snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.fecha_carga||"").localeCompare(a.fecha_carga||"")));});
     const u3=window.__onSnapshot(window.__col(db,"notas"),snap=>{setNotas(snap.docs.map(d=>({id:d.id,...d.data()})));});
     const u4=window.__onSnapshot(window.__col(db,"prospectos"),snap=>{setProspectos(snap.docs.map(d=>({id:d.id,...d.data()})));});
-    return ()=>{u1();u2();u3();u4();};
+    const u5=window.__onSnapshot(window.__col(db,"facturas"),snap=>{setFacturas(snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||"")));});
+    return ()=>{u1();u2();u3();u4();u5();};
   },[dbReady]);
 
   const saveToDb    = async (col,id,data)=>{ const {id:_,...rest}=data; await window.__setDoc(window.__doc(window.__db,col,id),rest); };
@@ -198,6 +207,16 @@ function App() {
     const val=ton*(parseFloat(c.precio_ton)||0);
     return {...c,ton_entregadas:ton,valor_entregado:val,saldo:(parseFloat(c.anticipo)||0)-val,num_entregas:ent.length};
   }),[clientes,ovs]);
+
+  const facturacionPorCliente = useMemo(()=>{
+    const r={};
+    clientes.forEach(c=>{
+      const totalPagado=parseFloat(c.anticipo)||0;
+      const totalFacturado=facturas.filter(f=>f.clienteId===c.id&&f.estatus==="Emitida").reduce((s,f)=>s+(parseFloat(f.total_con_iva)||0),0);
+      r[c.id]={totalPagado,totalFacturado,pendiente:totalPagado-totalFacturado};
+    });
+    return r;
+  },[clientes,facturas]);
 
   const totales = useMemo(()=>{
     const ton      =ovs.filter(p=>p.status==="entregado").reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
@@ -657,6 +676,33 @@ function App() {
     setCompForm(null);
   };
 
+  const saveFactura = async ()=>{
+    const id=facturaForm.id||`FAC-${Date.now()}`;
+    const totalConIVA=parseFloat(facturaForm.monto_total)||0;
+    const monto_sin_iva=totalConIVA/1.16;
+    const iva=totalConIVA-monto_sin_iva;
+    const fac={...facturaForm,id,monto_sin_iva,iva,total_con_iva:totalConIVA};
+    setFacturas(prev=>prev.find(x=>x.id===id)?prev.map(x=>x.id===id?fac:x):[fac,...prev]);
+    await saveToDb("facturas",id,fac);
+    setShowFacturaForm(false); setFacturaForm(emptyFactura);
+  };
+  const cancelarFactura = async (id)=>{
+    const f=facturas.find(x=>x.id===id); if(!f) return;
+    const updated={...f,estatus:f.estatus==="Cancelada"?"Emitida":"Cancelada"};
+    setFacturas(prev=>prev.map(x=>x.id===id?updated:x));
+    await saveToDb("facturas",id,updated);
+  };
+  const generarComprobantePendiente = async ()=>{
+    if(!compPendRef.current||!compPendForm) return;
+    const cli=clientes.find(x=>x.id===compPendForm.clienteId);
+    const canvas=await window.html2canvas(compPendRef.current,{scale:2,useCORS:true,backgroundColor:"#ffffff",logging:false});
+    const link=document.createElement("a");
+    link.download=`Comp_Pendiente_${(cli?.nombre||"cliente").replace(/\s+/g,"_")}_${todayISO()}.png`;
+    link.href=canvas.toDataURL("image/png");
+    link.click();
+    setCompPendForm(null);
+  };
+
   const reporteWAPlanta = ()=>{
     let t=`*REPORTE MENSUAL POR PLANTA — ${mesLabel(reporteMes)}*\n_Distribuidora Cruz Azul_\n\n`;
     reportePlanta.forEach(({planta,remisiones,total_ton})=>{
@@ -702,7 +748,7 @@ function App() {
 
       {/* TABS */}
       <div style={{background:"white",borderBottom:"2px solid #e2e8f0",padding:"0 16px",display:"flex",overflowX:"auto"}}>
-        {[["confirmar",`📌 Hoy${(totales.porConf+notasBadge+prospBadge)>0?` (${totales.porConf+notasBadge+prospBadge})`:""}`],["ordenes","📋 Órdenes"],["clientes","👥 Clientes"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","📅 Calendario"],["prospectos",`🎯 Prospectos${prospBadge?` (${prospBadge})`:""}`]].map(([k,l])=>(
+        {[["confirmar",`📌 Hoy${(totales.porConf+notasBadge+prospBadge)>0?` (${totales.porConf+notasBadge+prospBadge})`:""}`],["ordenes","📋 Órdenes"],["clientes","👥 Clientes"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","📅 Calendario"],["prospectos",`🎯 Prospectos${prospBadge?` (${prospBadge})`:""}`],["facturas","🧾 Facturas"]].map(([k,l])=>(
           <button key={k} onClick={()=>setTab(k)} style={{background:"none",border:"none",borderBottom:tab===k?"3px solid #1e3a5f":"3px solid transparent",padding:"12px 14px",cursor:"pointer",fontWeight:tab===k?700:500,color:tab===k?"#1e3a5f":"#64748b",fontSize:13,whiteSpace:"nowrap"}}>{l}</button>
         ))}
       </div>
@@ -1010,6 +1056,35 @@ function App() {
                       if(!f) return;
                       addAnticipo(c.id,m,f);
                     }} style={{marginTop:10,background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"6px 14px",fontSize:12,cursor:"pointer",fontWeight:600}}>+ Registrar anticipo</button>
+                    {(()=>{
+                      const fac=facturacionPorCliente[c.id]||{};
+                      if(!fac.totalPagado&&!fac.totalFacturado) return null;
+                      return(
+                        <div style={{marginTop:10,borderTop:"1px solid #f1f5f9",paddingTop:8}}>
+                          <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:6}}>FACTURACIÓN</div>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:8}}>
+                            <div style={{background:"#f8fafc",borderRadius:6,padding:"6px 8px"}}>
+                              <div style={{fontSize:9,color:"#94a3b8"}}>Pagado</div>
+                              <div style={{fontWeight:700,fontSize:12}}>{fmt(fac.totalPagado)}</div>
+                            </div>
+                            <div style={{background:"#f0fdf4",borderRadius:6,padding:"6px 8px"}}>
+                              <div style={{fontSize:9,color:"#94a3b8"}}>Facturado</div>
+                              <div style={{fontWeight:700,fontSize:12,color:"#16a34a"}}>{fmt(fac.totalFacturado)}</div>
+                            </div>
+                            <div style={{background:fac.pendiente>0?"#fff7ed":"#f0fdf4",borderRadius:6,padding:"6px 8px"}}>
+                              <div style={{fontSize:9,color:"#94a3b8"}}>Pendiente</div>
+                              <div style={{fontWeight:700,fontSize:12,color:fac.pendiente>0?"#c2410c":"#16a34a"}}>{fmt(Math.max(0,fac.pendiente))}</div>
+                            </div>
+                          </div>
+                          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                            {fac.pendiente>0&&(
+                              <button onClick={()=>setCompPendForm({clienteId:c.id,toneladas:""})} style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:6,padding:"5px 10px",fontSize:11,cursor:"pointer",color:"#c2410c",fontWeight:600}}>🧾 Comprobante pendiente</button>
+                            )}
+                            <button onClick={()=>setVerFacturasClienteId(c.id)} style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:6,padding:"5px 10px",fontSize:11,cursor:"pointer",color:"#1e3a5f",fontWeight:600}}>📋 Ver facturas</button>
+                          </div>
+                        </div>
+                      );
+                    })()}
                     {(c.historial_anticipos||[]).length>0&&(
                       <div style={{marginTop:10,borderTop:"1px solid #f1f5f9",paddingTop:8}}>
                         <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:4}}>HISTORIAL DE ANTICIPOS</div>
@@ -1530,6 +1605,57 @@ function App() {
             </>
           );
         })()}
+
+        {/* ---- FACTURAS ---- */}
+        {tab==="facturas"&&(()=>{
+          const mesActual=currentYM();
+          const factMes=facturas.filter(f=>(f.fecha||"").startsWith(mesActual)&&f.estatus==="Emitida");
+          const totalMes=factMes.reduce((s,f)=>s+(parseFloat(f.total_con_iva)||0),0);
+          const factFiltradas=(filtroFacturaCliente?facturas.filter(f=>f.clienteId===filtroFacturaCliente):facturas);
+          return(
+            <>
+              <div style={{background:"linear-gradient(135deg,#1e3a5f,#1e40af)",borderRadius:14,padding:"18px 20px",color:"white",marginBottom:14}}>
+                <div style={{fontSize:10,opacity:.7,fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:4}}>🧾 Facturado {mesLabel(mesActual)}</div>
+                <div style={{fontSize:36,fontWeight:900,letterSpacing:-1}}>{fmt(totalMes)}</div>
+                <div style={{fontSize:11,opacity:.6,marginTop:4}}>{factMes.length} factura{factMes.length!==1?"s":""} emitida{factMes.length!==1?"s":""}</div>
+              </div>
+              <div style={{display:"flex",gap:10,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
+                <button onClick={()=>{setFacturaForm(emptyFactura);setShowFacturaForm(true);}} style={{background:"#1e3a5f",color:"white",border:"none",borderRadius:8,padding:"8px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>+ Nueva factura</button>
+              </div>
+              <div style={{marginBottom:14}}>
+                <select value={filtroFacturaCliente} onChange={e=>setFiltroFacturaCliente(e.target.value)} style={{...inS,background:"white"}}>
+                  <option value="">— Todos los clientes —</option>
+                  {clientes.map(c=><option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+              </div>
+              {factFiltradas.length===0
+                ?<EmptyState icon="🧾" msg="Sin facturas registradas."/>
+                :<div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  {factFiltradas.map(f=>{
+                    const cli=cliById(f.clienteId);
+                    return(
+                      <div key={f.id} style={{background:"white",borderRadius:10,padding:"14px 16px",boxShadow:"0 1px 4px #00000010",borderLeft:`4px solid ${f.estatus==="Cancelada"?"#ef4444":"#1e3a5f"}`}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                          <div style={{flex:1}}>
+                            <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{f.folio_fiscal||"(sin folio)"}</div>
+                            <div style={{fontSize:12,color:"#64748b",marginTop:2}}>{cli?.nombre||"—"} · {f.fecha}</div>
+                            <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap",alignItems:"center"}}>
+                              <span style={{fontSize:11,background:f.tipo==="Complemento"?"#f5f3ff":"#eff6ff",color:f.tipo==="Complemento"?"#7c3aed":"#1e40af",borderRadius:20,padding:"2px 8px",fontWeight:600}}>{f.tipo}</span>
+                              <span style={{fontSize:11,background:f.estatus==="Cancelada"?"#fef2f2":"#f0fdf4",color:f.estatus==="Cancelada"?"#dc2626":"#16a34a",borderRadius:20,padding:"2px 8px",fontWeight:600}}>{f.estatus}</span>
+                              <span style={{fontSize:14,fontWeight:800,color:f.estatus==="Cancelada"?"#94a3b8":"#1e3a5f",marginLeft:"auto"}}>{fmt(f.total_con_iva)}</span>
+                            </div>
+                          </div>
+                          <button onClick={()=>cancelarFactura(f.id)} title={f.estatus==="Cancelada"?"Reactivar":"Cancelar"} style={{background:"none",border:"none",cursor:"pointer",fontSize:15,color:"#94a3b8",flexShrink:0,padding:"2px"}}>{f.estatus==="Cancelada"?"↩️":"🚫"}</button>
+                        </div>
+                        {f.notas&&<div style={{fontSize:11,color:"#64748b",marginTop:6,borderTop:"1px solid #f1f5f9",paddingTop:6}}>{f.notas}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              }
+            </>
+          );
+        })()}
       </div>
 
       {/* PROSP DETAIL PANEL */}
@@ -1759,6 +1885,176 @@ function App() {
           </div>
         </div>
       )}
+      {/* FACTURA FORM */}
+      {showFacturaForm&&(()=>{
+        const facCli=cliById(facturaForm.clienteId);
+        const hist=facCli?.historial_anticipos||[];
+        const totalConIVA=parseFloat(facturaForm.monto_total)||0;
+        const sinIVA=totalConIVA/1.16;
+        const ivaVal=totalConIVA-sinIVA;
+        const formOk=facturaForm.clienteId&&facturaForm.folio_fiscal.trim()&&facturaForm.fecha&&totalConIVA>0;
+        return(
+          <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+            <div style={{background:"white",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:520,padding:"22px 20px",maxHeight:"92vh",overflowY:"auto"}}>
+              <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>{facturaForm.id?"Editar factura":"Nueva factura"}</div>
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Cliente *</label>
+                <select value={facturaForm.clienteId} onChange={e=>setFacturaForm(f=>({...f,clienteId:e.target.value,pagos_ligados:[]}))} style={{...inS,background:"white"}}>
+                  <option value="">— Selecciona un cliente —</option>
+                  {clientes.map(c=><option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+              </div>
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Folio fiscal *</label>
+                <input value={facturaForm.folio_fiscal} onChange={e=>setFacturaForm(f=>({...f,folio_fiscal:e.target.value}))} style={inS} placeholder="UUID o folio de la factura"/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+                <div>
+                  <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Fecha *</label>
+                  <input type="date" value={facturaForm.fecha} onChange={e=>setFacturaForm(f=>({...f,fecha:e.target.value}))} style={inS}/>
+                </div>
+                <div>
+                  <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Tipo</label>
+                  <select value={facturaForm.tipo} onChange={e=>setFacturaForm(f=>({...f,tipo:e.target.value}))} style={{...inS,background:"white"}}>
+                    <option value="Normal">Normal</option>
+                    <option value="Complemento">Complemento</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Monto total con IVA ($) *</label>
+                <input type="number" value={facturaForm.monto_total} onChange={e=>setFacturaForm(f=>({...f,monto_total:e.target.value}))} style={inS} min="0" step="0.01" placeholder="0.00"/>
+                {totalConIVA>0&&<div style={{fontSize:11,color:"#64748b",marginTop:4,display:"flex",gap:14}}>
+                  <span>Sin IVA: <b>{fmt(sinIVA)}</b></span><span>IVA 16%: <b>{fmt(ivaVal)}</b></span>
+                </div>}
+              </div>
+              {facturaForm.clienteId&&hist.length>0&&(
+                <div style={{marginBottom:12}}>
+                  <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:6}}>Pagos ligados (opcional)</label>
+                  <div style={{border:"1px solid #e2e8f0",borderRadius:8,overflow:"hidden"}}>
+                    {hist.map((a,idx)=>(
+                      <label key={idx} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:facturaForm.pagos_ligados.includes(idx)?"#eff6ff":"white",borderTop:idx>0?"1px solid #f1f5f9":"none",cursor:"pointer"}}>
+                        <input type="checkbox" checked={facturaForm.pagos_ligados.includes(idx)} onChange={e=>setFacturaForm(f=>({...f,pagos_ligados:e.target.checked?[...f.pagos_ligados,idx]:f.pagos_ligados.filter(i=>i!==idx)}))}/>
+                        <span style={{flex:"0 0 86px",fontSize:12,color:"#64748b"}}>{a.fecha}</span>
+                        <span style={{flex:1,fontSize:12,fontWeight:600}}>{fmt(a.monto)}</span>
+                        <span style={{fontSize:10,fontWeight:700,color:(a.estatus_factura||"pendiente")==="facturado"?"#15803d":"#c2410c",background:(a.estatus_factura||"pendiente")==="facturado"?"#dcfce7":"#fff7ed",borderRadius:4,padding:"2px 5px"}}>{(a.estatus_factura||"pendiente")==="facturado"?"Facturado":"Pendiente"}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div style={{marginBottom:16}}>
+                <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Notas (opcional)</label>
+                <textarea value={facturaForm.notas} onChange={e=>setFacturaForm(f=>({...f,notas:e.target.value}))} style={{...inS,minHeight:56,resize:"vertical"}} placeholder="Observaciones..."/>
+              </div>
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={()=>{setShowFacturaForm(false);setFacturaForm(emptyFactura);}} style={{flex:1,background:"#f1f5f9",color:"#64748b",border:"none",borderRadius:8,padding:"11px",fontWeight:600,cursor:"pointer",fontSize:14}}>Cancelar</button>
+                <button onClick={saveFactura} disabled={!formOk} style={{flex:2,background:formOk?"#1e3a5f":"#cbd5e1",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:formOk?"pointer":"default",fontSize:14}}>Guardar factura</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* VER FACTURAS CLIENTE */}
+      {verFacturasClienteId&&(()=>{
+        const cli=cliById(verFacturasClienteId)||{};
+        const facsCli=facturas.filter(f=>f.clienteId===verFacturasClienteId);
+        const totalEmitido=facsCli.filter(f=>f.estatus==="Emitida").reduce((s,f)=>s+(parseFloat(f.total_con_iva)||0),0);
+        return(
+          <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+            <div style={{background:"white",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:520,padding:"22px 20px",maxHeight:"88vh",overflowY:"auto"}}>
+              <div style={{fontWeight:800,fontSize:17,marginBottom:2}}>📋 Facturas</div>
+              <div style={{fontSize:12,color:"#64748b",marginBottom:4}}>{cli.nombre}{cli.rfc?` · RFC: ${cli.rfc}`:""}</div>
+              {totalEmitido>0&&<div style={{fontSize:12,color:"#1e3a5f",fontWeight:700,marginBottom:14}}>Total emitido: {fmt(totalEmitido)}</div>}
+              {facsCli.length===0
+                ?<EmptyState icon="🧾" msg="Sin facturas para este cliente."/>
+                :<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+                  {facsCli.map(f=>(
+                    <div key={f.id} style={{background:"#f8fafc",borderRadius:8,padding:"12px 14px",borderLeft:`3px solid ${f.estatus==="Cancelada"?"#ef4444":"#1e3a5f"}`}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                        <div>
+                          <div style={{fontWeight:700,fontSize:13}}>{f.folio_fiscal||"(sin folio)"}</div>
+                          <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{f.fecha} · <span style={{color:f.tipo==="Complemento"?"#7c3aed":"#1e40af"}}>{f.tipo}</span></div>
+                        </div>
+                        <div style={{textAlign:"right",flexShrink:0}}>
+                          <div style={{fontWeight:800,fontSize:14,color:f.estatus==="Cancelada"?"#94a3b8":"#1e3a5f"}}>{fmt(f.total_con_iva)}</div>
+                          <div style={{fontSize:10,fontWeight:700,color:f.estatus==="Cancelada"?"#dc2626":"#16a34a"}}>{f.estatus}</div>
+                        </div>
+                      </div>
+                      {f.notas&&<div style={{fontSize:11,color:"#64748b",marginTop:5,borderTop:"1px solid #e2e8f0",paddingTop:5}}>{f.notas}</div>}
+                    </div>
+                  ))}
+                </div>
+              }
+              <button onClick={()=>setVerFacturasClienteId(null)} style={{width:"100%",background:"#f1f5f9",color:"#64748b",border:"none",borderRadius:8,padding:"11px",fontWeight:600,cursor:"pointer",fontSize:14}}>Cerrar</button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* COMPROBANTE PENDIENTE */}
+      {compPendForm&&(()=>{
+        const cli=clientes.find(x=>x.id===compPendForm.clienteId)||{};
+        const fac=facturacionPorCliente[compPendForm.clienteId]||{};
+        const pendiente=Math.max(0,fac.pendiente||0);
+        const sinIVA=pendiente;
+        const iva16=sinIVA*0.16;
+        const total=sinIVA+iva16;
+        const tons=parseFloat(compPendForm.toneladas)||0;
+        return(
+          <div style={{position:"fixed",inset:0,background:"#00000070",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+            <div style={{background:"white",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:520,padding:"22px 20px",maxHeight:"94vh",overflowY:"auto"}}>
+              <div style={{fontWeight:800,fontSize:17,marginBottom:2}}>🧾 Comprobante de pendiente</div>
+              <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>{cli.nombre}</div>
+              <div style={{background:"#fff7ed",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:13}}>
+                <span style={{color:"#c2410c",fontWeight:700}}>Pendiente de facturar: {fmt(pendiente)}</span>
+              </div>
+              <div style={{marginBottom:14}}>
+                <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Toneladas relacionadas (opcional)</label>
+                <input type="number" value={compPendForm.toneladas} onChange={e=>setCompPendForm(f=>({...f,toneladas:e.target.value}))} style={inS} min="0" step="0.01" placeholder="0.00"/>
+              </div>
+              <div ref={compPendRef} style={{background:"white",border:"2px solid #1e3a5f",borderRadius:12,overflow:"hidden",marginBottom:16,fontFamily:"'Segoe UI',Arial,sans-serif"}}>
+                <div style={{background:"#1e3a5f",padding:"16px 20px"}}>
+                  <div style={{color:"white",fontWeight:800,fontSize:15,letterSpacing:.3}}>Distribuidora Cruz Azul</div>
+                  <div style={{color:"#93c5fd",fontSize:12,marginTop:2}}>Antonio Estefan</div>
+                </div>
+                <div style={{padding:"14px 20px 10px",borderBottom:"1px solid #e2e8f0"}}>
+                  <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:2}}>Cliente</div>
+                  <div style={{fontWeight:800,fontSize:19,color:"#1e3a5f"}}>{cli.nombre}</div>
+                  {cli.rfc&&<div style={{fontSize:11,color:"#64748b",marginTop:2}}>RFC: {cli.rfc}</div>}
+                  <div style={{fontSize:11,color:"#94a3b8",marginTop:3}}>{todayISO()}</div>
+                </div>
+                <div style={{padding:"12px 20px 14px"}}>
+                  <div style={{fontSize:12,color:"#64748b",marginBottom:10,fontStyle:"italic"}}>Complemento de pago pendiente de facturar</div>
+                  {[["Subtotal sin IVA",fmt(sinIVA)],["IVA 16%",fmt(iva16)]].map(([k,v],i)=>(
+                    <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderTop:"1px solid #f1f5f9",fontSize:12}}>
+                      <span style={{color:"#64748b"}}>{k}</span><span style={{fontWeight:600}}>{v}</span>
+                    </div>
+                  ))}
+                  {tons>0&&(
+                    <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderTop:"1px solid #f1f5f9",fontSize:12}}>
+                      <span style={{color:"#64748b"}}>Toneladas</span><span style={{fontWeight:600}}>{fmtT(tons)} ton</span>
+                    </div>
+                  )}
+                  <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 4px",borderTop:"2px solid #1e3a5f",marginTop:4,fontSize:15}}>
+                    <span style={{fontWeight:700,color:"#1e3a5f"}}>Total con IVA</span>
+                    <span style={{fontWeight:900,color:"#1e3a5f",fontSize:17}}>{fmt(total)}</span>
+                  </div>
+                </div>
+                <div style={{background:"#f8fafc",padding:"8px 20px",borderTop:"1px solid #e2e8f0"}}>
+                  <div style={{fontSize:10,color:"#94a3b8",textAlign:"center"}}>Documento informativo — Distribuidora Cruz Azul</div>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={()=>setCompPendForm(null)} style={{flex:1,background:"#f1f5f9",color:"#64748b",border:"none",borderRadius:8,padding:"11px",fontWeight:600,cursor:"pointer",fontSize:14}}>Cancelar</button>
+                <button onClick={generarComprobantePendiente} style={{flex:2,background:"#1e3a5f",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:"pointer",fontSize:14}}>⬇ Generar imagen</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* COMPROBANTE MODAL */}
       {compForm&&(()=>{
         const cli=clientes.find(x=>x.id===compForm.clienteId)||{};
