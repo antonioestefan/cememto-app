@@ -11,6 +11,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -159,6 +160,8 @@ function App() {
   const [reporteMes,setReporteMes]             = useState(currentYM());
   const [plantaExpandida,setPlantaExpandida]   = useState({});
   const [clienteExpandido,setClienteExpandido] = useState({});
+  const [compForm,setCompForm]                 = useState(null);
+  const compRef = useRef(null);
   const [editingAnticipo,setEditingAnticipo]   = useState(null); // {cliId,realIdx,fecha,monto}
   const [notas,setNotas]                       = useState([]);
   const [showNotaForm,setShowNotaForm]         = useState(false);
@@ -626,6 +629,16 @@ function App() {
     window.open(`https://wa.me/?text=${encodeURIComponent(t)}`,"_blank");
   };
 
+  const generarComprobante = async ()=>{
+    if(!compRef.current) return;
+    const canvas=await window.html2canvas(compRef.current,{scale:2,useCORS:true,backgroundColor:"#ffffff",logging:false});
+    const link=document.createElement("a");
+    const nombre=(compForm.nombre||"cliente").replace(/\s+/g,"_");
+    link.download=`Comprobante_${nombre}_${todayISO()}.png`;
+    link.href=canvas.toDataURL("image/png");
+    link.click();
+  };
+
   const reporteWAPlanta = ()=>{
     let t=`*REPORTE MENSUAL POR PLANTA — ${mesLabel(reporteMes)}*\n_Distribuidora Cruz Azul_\n\n`;
     reportePlanta.forEach(({planta,remisiones,total_ton})=>{
@@ -962,7 +975,10 @@ function App() {
                   <div key={c.id} style={{background:"white",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px #00000010",borderLeft:`4px solid ${c.saldo>=0?"#16a34a":"#ef4444"}`}}>
                     <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                       <div><div style={{fontWeight:700,fontSize:16}}>{c.nombre}</div><div style={{fontSize:12,color:"#64748b"}}>Precio: {fmt(c.precio_ton)}/ton · {c.num_entregas} entregas{c.telefono?` · 📞 ${c.telefono}`:""}</div></div>
-                      <button onClick={()=>{setCliForm(c);setShowCliForm(true);}} style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"#1e3a5f"}}>✏️</button>
+                      <div style={{display:"flex",gap:6}}>
+                        <button onClick={()=>setCompForm({clienteId:c.id,nombre:c.nombre,precioTon:String(c.precio_ton||""),modo:null,remisionId:"",referencia:"",toneladas:""})} style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"#1e40af",fontWeight:600}}>🧾 Comprobante</button>
+                        <button onClick={()=>{setCliForm(c);setShowCliForm(true);}} style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"#1e3a5f"}}>✏️</button>
+                      </div>
                     </div>
                     <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginTop:12}}>
                       <div style={{background:"#f8fafc",borderRadius:8,padding:"8px 10px"}}><div style={{fontSize:10,color:"#94a3b8"}}>Entregado</div><div style={{fontWeight:700}}>{fmtT(c.ton_entregadas)} ton</div><div style={{fontSize:11,color:"#64748b"}}>{fmt(c.valor_entregado)}</div></div>
@@ -1724,6 +1740,143 @@ function App() {
           </div>
         </div>
       )}
+      {/* COMPROBANTE MODAL */}
+      {compForm&&(()=>{
+        const remisiones=ovs.filter(p=>p.clienteId===compForm.clienteId&&p.status==="entregado")
+          .sort((a,b)=>(b.fecha_entrega||"").localeCompare(a.fecha_entrega||""));
+        const tons=parseFloat(compForm.toneladas)||0;
+        const precio=parseFloat(compForm.precioTon)||0;
+        const sinIVA=tons*precio;
+        const iva16=sinIVA*0.16;
+        const total=sinIVA+iva16;
+        const formOk=compForm.modo&&compForm.referencia.trim()&&tons>0&&precio>0;
+        return(
+          <div style={{position:"fixed",inset:0,background:"#00000070",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+            <div style={{background:"white",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:520,padding:"22px 20px",maxHeight:"94vh",overflowY:"auto"}}>
+              <div style={{fontWeight:800,fontSize:17,marginBottom:4}}>🧾 Comprobante de facturación</div>
+              <div style={{fontSize:12,color:"#64748b",marginBottom:16}}>{compForm.nombre}</div>
+
+              {/* PASO 1: selección de modo */}
+              {!compForm.modo&&(
+                <>
+                  <div style={{fontSize:12,color:"#475569",marginBottom:12}}>¿Cómo quieres generar el comprobante?</div>
+                  <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:16}}>
+                    <button onClick={()=>setCompForm(f=>({...f,modo:"remision"}))}
+                      style={{background:"#eff6ff",border:"2px solid #bfdbfe",borderRadius:10,padding:"14px 16px",textAlign:"left",cursor:"pointer"}}>
+                      <div style={{fontWeight:700,color:"#1e40af",fontSize:14}}>📋 Por remisión</div>
+                      <div style={{fontSize:12,color:"#64748b",marginTop:3}}>Selecciona una remisión entregada del cliente para pre-llenar los datos.</div>
+                    </button>
+                    <button onClick={()=>setCompForm(f=>({...f,modo:"libre"}))}
+                      style={{background:"#f0fdf4",border:"2px solid #bbf7d0",borderRadius:10,padding:"14px 16px",textAlign:"left",cursor:"pointer"}}>
+                      <div style={{fontWeight:700,color:"#15803d",fontSize:14}}>✏️ Monto libre</div>
+                      <div style={{fontSize:12,color:"#64748b",marginTop:3}}>Captura referencia, toneladas y monto manualmente.</div>
+                    </button>
+                  </div>
+                  <button onClick={()=>setCompForm(null)} style={{width:"100%",background:"#f1f5f9",color:"#64748b",border:"none",borderRadius:8,padding:"11px",fontWeight:600,cursor:"pointer",fontSize:14}}>Cancelar</button>
+                </>
+              )}
+
+              {/* PASO 2: formulario */}
+              {compForm.modo&&(
+                <>
+                  <button onClick={()=>setCompForm(f=>({...f,modo:null,remisionId:"",referencia:"",toneladas:""}))}
+                    style={{background:"none",border:"none",color:"#64748b",fontSize:12,cursor:"pointer",marginBottom:12,padding:0}}>← Cambiar tipo</button>
+
+                  {/* selector de remisión */}
+                  {compForm.modo==="remision"&&(
+                    <div style={{marginBottom:14}}>
+                      <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Remisión entregada</label>
+                      <select value={compForm.remisionId} onChange={e=>{
+                        const ov=remisiones.find(p=>p.id===e.target.value);
+                        if(ov) setCompForm(f=>({...f,remisionId:ov.id,referencia:[ov.serie,ov.folio].filter(Boolean).join("-"),toneladas:String(ov.toneladas||"")}));
+                        else setCompForm(f=>({...f,remisionId:"",referencia:"",toneladas:""}));
+                      }} style={{...inS,background:"white"}}>
+                        <option value="">— Selecciona una remisión —</option>
+                        {remisiones.map(p=><option key={p.id} value={p.id}>{[p.serie,p.folio].filter(Boolean).join("-")} · {p.fecha_entrega||"s/f"} · {fmtT(p.toneladas)} ton</option>)}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* campos editables */}
+                  <div style={{marginBottom:10}}>
+                    <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Nombre del cliente</label>
+                    <input value={compForm.nombre} onChange={e=>setCompForm(f=>({...f,nombre:e.target.value}))} style={inS}/>
+                  </div>
+                  <div style={{marginBottom:10}}>
+                    <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Referencia / concepto</label>
+                    <input value={compForm.referencia} onChange={e=>setCompForm(f=>({...f,referencia:e.target.value}))} style={inS} placeholder="No. de transferencia o folio"/>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                    <div>
+                      <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Toneladas</label>
+                      <input type="number" value={compForm.toneladas} onChange={e=>setCompForm(f=>({...f,toneladas:e.target.value}))} style={inS} min="0" step="0.01"/>
+                    </div>
+                    <div>
+                      <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Precio / ton ($)</label>
+                      <input type="number" value={compForm.precioTon} onChange={e=>setCompForm(f=>({...f,precioTon:e.target.value}))} style={inS} min="0" step="1"/>
+                    </div>
+                  </div>
+
+                  {/* montos calculados (solo lectura) */}
+                  {tons>0&&precio>0&&(
+                    <div style={{background:"#f8fafc",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12}}>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{color:"#64748b"}}>Monto sin IVA</span><span style={{fontWeight:600}}>{fmt(sinIVA)}</span></div>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{color:"#64748b"}}>IVA 16%</span><span style={{fontWeight:600}}>{fmt(iva16)}</span></div>
+                      <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid #e2e8f0",paddingTop:6,marginTop:4}}><span style={{fontWeight:700,color:"#1e3a5f"}}>Total con IVA</span><span style={{fontWeight:800,color:"#1e3a5f",fontSize:14}}>{fmt(total)}</span></div>
+                    </div>
+                  )}
+
+                  {/* PREVIEW COMPROBANTE */}
+                  {formOk&&(
+                    <div ref={compRef} style={{background:"white",border:"2px solid #1e3a5f",borderRadius:12,overflow:"hidden",marginBottom:16,fontFamily:"'Segoe UI',Arial,sans-serif"}}>
+                      {/* encabezado */}
+                      <div style={{background:"#1e3a5f",padding:"16px 20px"}}>
+                        <div style={{color:"white",fontWeight:800,fontSize:15,letterSpacing:.3}}>Distribuidora Cruz Azul</div>
+                        <div style={{color:"#93c5fd",fontSize:12,marginTop:2}}>Antonio Estefan</div>
+                      </div>
+                      {/* nombre cliente */}
+                      <div style={{padding:"14px 20px 8px",borderBottom:"1px solid #e2e8f0"}}>
+                        <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:2}}>Cliente</div>
+                        <div style={{fontWeight:800,fontSize:20,color:"#1e3a5f"}}>{compForm.nombre}</div>
+                        <div style={{fontSize:11,color:"#64748b",marginTop:3}}>{todayISO()}</div>
+                      </div>
+                      {/* tabla de datos */}
+                      <div style={{padding:"12px 20px 16px"}}>
+                        {[
+                          ["Referencia / Concepto", compForm.referencia],
+                          ["Toneladas", `${fmtT(tons)} ton`],
+                          ["Precio por tonelada", fmt(precio)],
+                          ["Monto sin IVA", fmt(sinIVA)],
+                          ["IVA 16%", fmt(iva16)],
+                        ].map(([k,v],i)=>(
+                          <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #f1f5f9",fontSize:13}}>
+                            <span style={{color:"#64748b"}}>{k}</span>
+                            <span style={{fontWeight:600,color:"#1e293b"}}>{v}</span>
+                          </div>
+                        ))}
+                        <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 4px",fontSize:15}}>
+                          <span style={{fontWeight:700,color:"#1e3a5f"}}>Total con IVA</span>
+                          <span style={{fontWeight:900,color:"#1e3a5f",fontSize:17}}>{fmt(total)}</span>
+                        </div>
+                      </div>
+                      {/* pie */}
+                      <div style={{background:"#f8fafc",padding:"8px 20px",borderTop:"1px solid #e2e8f0"}}>
+                        <div style={{fontSize:10,color:"#94a3b8",textAlign:"center"}}>Distribuidora Cruz Azul — Antonio Estefan · Documento informativo</div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{display:"flex",gap:10}}>
+                    <button onClick={()=>setCompForm(null)} style={{flex:1,background:"#f1f5f9",color:"#64748b",border:"none",borderRadius:8,padding:"11px",fontWeight:600,cursor:"pointer",fontSize:14}}>Cancelar</button>
+                    <button onClick={generarComprobante} disabled={!formOk} style={{flex:2,background:formOk?"#1e3a5f":"#cbd5e1",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:formOk?"pointer":"default",fontSize:14}}>⬇ Generar imagen</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }
