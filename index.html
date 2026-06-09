@@ -140,7 +140,51 @@ function getWeekRange(offset=0) {
   return {start:mon.toISOString().slice(0,10),end:sun.toISOString().slice(0,10)};
 }
 
+const AUTH_KEY  = 'ca_auth_expires';
+const AUTH_PW   = 'CruzAzul2024';
+const AUTH_DAYS = 30;
+
+function LoginScreen({ onSuccess }) {
+  const [pw,setPw]       = useState('');
+  const [error,setError] = useState(false);
+  const submit = () => {
+    if (pw === AUTH_PW) {
+      localStorage.setItem(AUTH_KEY, String(Date.now() + AUTH_DAYS * 86400000));
+      onSuccess();
+    } else {
+      setError(true);
+      setPw('');
+    }
+  };
+  return (
+    <div style={{minHeight:'100vh',background:'#f8fafc',display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}}>
+      <div style={{background:'white',borderRadius:18,padding:'40px 28px 32px',width:'100%',maxWidth:340,boxShadow:'0 6px 32px #0001',textAlign:'center'}}>
+        <div style={{width:72,height:72,borderRadius:18,background:'#1e3a5f',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 20px',boxShadow:'0 3px 14px #1e3a5f40'}}>
+          <span style={{color:'white',fontWeight:900,fontSize:30,letterSpacing:-1}}>CA</span>
+        </div>
+        <div style={{fontWeight:800,fontSize:19,color:'#1e293b',marginBottom:4}}>Cruz Azul — Antonio</div>
+        <div style={{fontSize:13,color:'#94a3b8',marginBottom:26}}>Ingresa tu contraseña para continuar</div>
+        <input
+          type="password"
+          value={pw}
+          onChange={e=>{setPw(e.target.value);setError(false);}}
+          onKeyDown={e=>e.key==='Enter'&&submit()}
+          placeholder="Contraseña"
+          autoFocus
+          style={{width:'100%',padding:'12px 14px',border:error?'1.5px solid #ef4444':'1.5px solid #e2e8f0',borderRadius:10,fontSize:15,outline:'none',marginBottom:error?6:14,background:'#f8fafc',color:'#1e293b'}}
+        />
+        {error&&<div style={{fontSize:12,color:'#ef4444',marginBottom:12,textAlign:'left',paddingLeft:2}}>Contraseña incorrecta. Inténtalo de nuevo.</div>}
+        <button onClick={submit} style={{width:'100%',background:'#1e3a5f',color:'white',border:'none',borderRadius:10,padding:'13px',fontWeight:700,fontSize:15,cursor:'pointer'}}>Entrar</button>
+      </div>
+    </div>
+  );
+}
+
 function App() {
+  const [autenticado,setAutenticado] = useState(()=>{
+    const exp=localStorage.getItem(AUTH_KEY);
+    return !!(exp && parseInt(exp,10)>Date.now());
+  });
   const [dbReady,setDbReady]         = useState(!!window.__dbReady);
   const [clientes,setClientes]       = useState([]);
   const [ovs,setOVs]                 = useState([]);
@@ -742,6 +786,8 @@ function App() {
       {clientes.map(c=><option key={c.id} value={c.id}>{c.nombre} ({fmt(c.precio_ton)}/ton)</option>)}
     </select>
   );
+
+  if(!autenticado) return <LoginScreen onSuccess={()=>setAutenticado(true)}/>;
 
   if(!dbReady||loading) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",flexDirection:"column",gap:16}}>
