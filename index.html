@@ -201,6 +201,7 @@ function App() {
   const [filtroSinRemision,setFiltroSinRemision] = useState(false);
   const [filtroSinCliente,setFiltroSinCliente]   = useState(false);
   const [filtroSinFirma,setFiltroSinFirma]       = useState(false);
+  const [sortOVs,setSortOVs]                     = useState("fecha_desc");
   const [reporteCliente,setReporteCliente]     = useState("");
   const [reporteMes,setReporteMes]             = useState(currentYM());
   const [plantaExpandida,setPlantaExpandida]   = useState({});
@@ -487,9 +488,7 @@ function App() {
   };
 
   const ovsFiltrados = (()=>{
-    let list=filtroCliente
-      ? ovs.filter(p=>p.clienteId===filtroCliente).slice().sort((a,b)=>(parseInt(b.folio)||0)-(parseInt(a.folio)||0))
-      : [...ovs];
+    let list=filtroCliente ? ovs.filter(p=>p.clienteId===filtroCliente) : [...ovs];
     if(filtroSinRemision) list=list.filter(p=>p.clienteId&&!p.folio&&p.status!=="entregado");
     if(filtroSinCliente)  list=list.filter(p=>!p.clienteId);
     if(filtroSinFirma)    list=list.filter(p=>p.status==="entregado"&&!p.remision_firmada);
@@ -501,6 +500,10 @@ function App() {
         (cliById(p.clienteId)?.nombre||"").toLowerCase().includes(q)
       );
     }
+    if(sortOVs==="fecha_desc") list=list.slice().sort((a,b)=>(b.fecha_carga||"").localeCompare(a.fecha_carga||""));
+    else if(sortOVs==="fecha_asc")  list=list.slice().sort((a,b)=>(a.fecha_carga||"").localeCompare(b.fecha_carga||""));
+    else if(sortOVs==="folio_desc") list=list.slice().sort((a,b)=>(parseInt(b.folio)||0)-(parseInt(a.folio)||0));
+    else if(sortOVs==="folio_asc")  list=list.slice().sort((a,b)=>(parseInt(a.folio)||0)-(parseInt(b.folio)||0));
     return list;
   })();
   const semana       = getWeekRange(weekOffset);
@@ -854,9 +857,17 @@ function App() {
               ?<EmptyState icon="📋" msg="Aún no tienes órdenes de venta." btn="+ Capturar primera OV" onClick={()=>{setForm({...emptyOV,fecha_carga:todayISO()});setShowForm(true);}}/>
               :<>
                 <div style={{marginBottom:12}}>
-                  <div style={{position:"relative",marginBottom:8}}>
-                    <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",fontSize:15,pointerEvents:"none",color:"#94a3b8"}}>🔍</span>
-                    <input value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="Buscar OV, folio o cliente..." style={{...inS,paddingLeft:34,background:"white"}}/>
+                  <div style={{display:"flex",gap:8,marginBottom:8,alignItems:"center"}}>
+                    <div style={{position:"relative",flex:1}}>
+                      <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",fontSize:15,pointerEvents:"none",color:"#94a3b8"}}>🔍</span>
+                      <input value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="Buscar OV, folio o cliente..." style={{...inS,paddingLeft:34,background:"white"}}/>
+                    </div>
+                    <select value={sortOVs} onChange={e=>setSortOVs(e.target.value)} title="Ordenar" style={{...inS,background:"#1e3a5f",color:"white",fontWeight:700,fontSize:12,width:108,flexShrink:0,padding:"9px 8px",cursor:"pointer"}}>
+                      <option value="fecha_desc" style={{background:"white",color:"#1e293b",fontWeight:600}}>↓ Reciente</option>
+                      <option value="fecha_asc"  style={{background:"white",color:"#1e293b",fontWeight:600}}>↑ Antiguo</option>
+                      <option value="folio_desc" style={{background:"white",color:"#1e293b",fontWeight:600}}>↓ Folio</option>
+                      <option value="folio_asc"  style={{background:"white",color:"#1e293b",fontWeight:600}}>↑ Folio</option>
+                    </select>
                   </div>
                   <select value={filtroCliente} onChange={e=>{setFiltroCliente(e.target.value);if(e.target.value)setFiltroSinCliente(false);}} style={{...inS,background:"white",marginBottom:8}}>
                     <option value="">— Todos los clientes —</option>
