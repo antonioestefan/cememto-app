@@ -1160,6 +1160,7 @@ function App() {
                             {fac.pendiente>0&&(
                               <button onClick={()=>{const pend=Math.max(0,(facturacionPorCliente[c.id]||{}).pendiente||0);const prec=parseFloat(c.precio_ton)||0;const tons=prec>0?(pend/prec).toFixed(5):"";setCompPendForm({clienteId:c.id,toneladas:tons,precioTon:String(c.precio_ton||"")});}} style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:6,padding:"5px 10px",fontSize:11,cursor:"pointer",color:"#c2410c",fontWeight:600}}>🧾 Comprobante pendiente</button>
                             )}
+                            <button onClick={()=>{const hist=c.historial_anticipos||[];const eps=estatusPagos[c.id]||[];const pendIdx=hist.map((_,i)=>i).filter(i=>(eps[i]?.estatus||"pendiente")!=="facturado");const suma=pendIdx.reduce((s,i)=>s+(parseFloat(hist[i]?.monto)||0),0);setFacturaForm({...emptyFactura,clienteId:c.id,pagos_ligados:pendIdx,monto_total:suma>0?String(suma):""});setMontoEditadoManualmente(false);setShowFacturaForm(true);}} style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:6,padding:"5px 10px",fontSize:11,cursor:"pointer",color:"#1d4ed8",fontWeight:600}}>🧾 Nueva factura</button>
                             <button onClick={()=>setVerFacturasClienteId(c.id)} style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:6,padding:"5px 10px",fontSize:11,cursor:"pointer",color:"#1e3a5f",fontWeight:600}}>📋 Ver facturas</button>
                           </div>
                         </div>
