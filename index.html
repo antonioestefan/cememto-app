@@ -1842,9 +1842,12 @@ function App() {
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:10}}>
               <div>
-                <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Serie (PU/AG…)</label>
-                <input value={form.serie} onChange={e=>setForm(f=>({...f,serie:e.target.value}))} style={inS} placeholder="PU, AG…"/>
-                {form.serie&&<div style={{fontSize:11,color:plantaColor[plantaDeSerie(form.serie)]||"#64748b",marginTop:4}}>🏭 {plantaDeSerie(form.serie)}</div>}
+                <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Serie / Planta</label>
+                <select value={form.serie} onChange={e=>setForm(f=>({...f,serie:e.target.value}))} style={{...inS,background:"white"}}>
+                  <option value="">— Selecciona —</option>
+                  {Object.entries(PLANTAS).map(([k,v])=><option key={k} value={k}>{k} — {v}</option>)}
+                </select>
+                {form.serie&&<div style={{fontSize:11,color:plantaColor[PLANTAS[form.serie]]||"#64748b",fontWeight:600,marginTop:5}}>🏭 {PLANTAS[form.serie]||form.serie}</div>}
               </div>
               <div><label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Folio remisión</label><input value={form.folio} onChange={e=>setForm(f=>({...f,folio:e.target.value}))} style={inS}/></div>
             </div>
