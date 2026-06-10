@@ -128,7 +128,7 @@ function GraficaPlantas({meses,data,plantasConfig}){
 }
 
 const emptyOV = {id:"",num_ov:"",clienteId:"",serie:"",folio:"",toneladas:0,precio_ton:"",fecha_carga:todayISO(),fecha_entrega:"",status:"ov_asignada",confirm:"por_confirmar",motivo:"",remision_firmada:false,notas:"",tipo:"granel"};
-const emptyCliente = {id:"",nombre:"",nombre_fiscal:"",rfc:"",precio_ton:"",anticipo:0,telefono:""};
+const emptyCliente = {id:"",nombre:"",nombre_fiscal:"",rfc:"",ciudad:"",precio_ton:"",anticipo:0,telefono:""};
 const emptyNota    = {id:"",texto:"",fecha_vencimiento:todayISO(),prioridad:"media",clienteId:"",num_ov:"",completada:false};
 const emptyProsp   = {id:"",nombre:"",telefono:"",contacto:"",vol_mensual:0,etapa:"contacto",notas:"",fecha_seguimiento:todayISO()};
 const emptyFactura = {id:"",clienteId:"",folio_fiscal:"",fecha:todayISO(),monto_total:"",tipo:"Normal",estatus:"Emitida",pagos_ligados:[],notas:""};
@@ -229,6 +229,8 @@ function App() {
   const [filtroFacturaCliente,setFiltroFacturaCliente] = useState("");
   const [verFacturasClienteId,setVerFacturasClienteId] = useState(null);
   const [compPendForm,setCompPendForm]         = useState(null);
+  const [progEntradas,setProgEntradas]         = useState([]);
+  const [progMensaje,setProgMensaje]           = useState("");
 
   useEffect(()=>{
     if(!dbReady){window.addEventListener("dbReady",()=>setDbReady(true)); return;}
@@ -322,7 +324,7 @@ function App() {
 
   /* detalle mensual por cliente */
   const detalleClienteMes = useMemo(()=>{
-    const ovsMes=ovs.filter(p=>(p.fecha_entrega||"").startsWith(reporteMes)&&p.status==="entregado");
+    const ovsMes=ovs.filter(p=>(p.fecha_carga||"").startsWith(reporteMes)&&p.status==="entregado");
     const grupos={};
     ovsMes.forEach(p=>{
       const cid=p.clienteId||"__sin__";
@@ -333,7 +335,7 @@ function App() {
       .map(([cid,rems])=>({
         cid,
         nombre:cliById(cid)?.nombre||"(sin cliente)",
-        remisiones:rems.sort((a,b)=>(a.fecha_entrega||"").localeCompare(b.fecha_entrega||"")),
+        remisiones:rems.sort((a,b)=>(a.fecha_carga||"").localeCompare(b.fecha_carga||"")),
         total_ton:rems.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0),
         total_valor:rems.reduce((s,p)=>s+valorOV(p),0),
       }))
@@ -782,6 +784,34 @@ function App() {
     window.open(`https://wa.me/?text=${encodeURIComponent(t)}`,"_blank");
   };
 
+  const PLANTA_LABELS_PROG = {PU:"PUEBLA",AG:"AGUASCALIENTES",BQ:"BODEGA QUERÉTARO"};
+  const generarMensajeProg = ()=>{
+    const byPlanta={};
+    const ordenPlanta=[];
+    progEntradas.forEach(ent=>{
+      if(!ent.clienteId||!ent.slots.length) return;
+      const pk=ent.planta||"PU";
+      if(!byPlanta[pk]){byPlanta[pk]=[];ordenPlanta.push(pk);}
+      byPlanta[pk].push(ent);
+    });
+    let msg="";
+    ordenPlanta.forEach(pk=>{
+      const entradas=byPlanta[pk];
+      msg+=`${PLANTA_LABELS_PROG[pk]||pk}\n\n`;
+      entradas.forEach(ent=>{
+        const cli=cliById(ent.clienteId);
+        const nombre=cli?cli.nombre:"—";
+        const ciudad=cli&&cli.ciudad?cli.ciudad:"";
+        msg+=`- ${nombre}${ciudad?` - ${ciudad}`:""}\n`;
+        ent.slots.forEach(slot=>{msg+=`  - ${slot.dia} ${slot.hora}\n`;});
+        msg+="\n";
+      });
+      const total=entradas.reduce((s,e)=>s+e.slots.length,0);
+      msg+=`TOTAL = ${total}\n\n`;
+    });
+    setProgMensaje(msg.trim());
+  };
+
   const inS={width:"100%",border:"1px solid #e2e8f0",borderRadius:8,padding:"8px 10px",fontSize:14,boxSizing:"border-box",outline:"none"};
   const ClienteSelect=({p})=>(
     <select value={p.clienteId||""} onChange={e=>{e.stopPropagation();upd(p.id,{clienteId:e.target.value});}} onClick={e=>e.stopPropagation()} style={{...inS,padding:"5px 8px",fontSize:12,marginTop:6}}>
@@ -816,7 +846,7 @@ function App() {
 
       {/* TABS */}
       <div style={{background:"white",borderBottom:"2px solid #e2e8f0",padding:"0 16px",display:"flex",overflowX:"auto"}}>
-        {[["confirmar",`📌 Hoy${(totales.porConf+notasBadge+prospBadge)>0?` (${totales.porConf+notasBadge+prospBadge})`:""}`],["ordenes","📋 Órdenes"],["clientes","👥 Clientes"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","📅 Calendario"],["prospectos",`🎯 Prospectos${prospBadge?` (${prospBadge})`:""}`],["facturas","🧾 Facturas"]].map(([k,l])=>(
+        {[["confirmar",`📌 Hoy${(totales.porConf+notasBadge+prospBadge)>0?` (${totales.porConf+notasBadge+prospBadge})`:""}`],["ordenes","📋 Órdenes"],["clientes","👥 Clientes"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","📅 Calendario"],["prospectos",`🎯 Prospectos${prospBadge?` (${prospBadge})`:""}`],["facturas","🧾 Facturas"],["programacion","📋 Prog. Semanal"]].map(([k,l])=>(
           <button key={k} onClick={()=>setTab(k)} style={{background:"none",border:"none",borderBottom:tab===k?"3px solid #1e3a5f":"3px solid transparent",padding:"12px 14px",cursor:"pointer",fontWeight:tab===k?700:500,color:tab===k?"#1e3a5f":"#64748b",fontSize:13,whiteSpace:"nowrap"}}>{l}</button>
         ))}
       </div>
@@ -1117,6 +1147,7 @@ function App() {
                       <div>
                         <div style={{fontWeight:700,fontSize:16}}>{c.nombre}</div>
                         {c.nombre_fiscal&&<div style={{fontSize:11,color:"#94a3b8",marginTop:1}}>{c.nombre_fiscal}</div>}
+                        {c.ciudad&&<div style={{fontSize:12,color:"#475569",marginTop:1}}>📍 {c.ciudad}</div>}
                         <div style={{fontSize:12,color:"#64748b",marginTop:1}}>Precio: {fmt(c.precio_ton)}/ton · {c.num_entregas} entregas{c.rfc?` · RFC: ${c.rfc}`:""}{c.telefono?` · 📞 ${c.telefono}`:""}</div>
                       </div>
                       <div style={{display:"flex",gap:6}}>
@@ -1691,6 +1722,62 @@ function App() {
           );
         })()}
 
+        {/* ---- PROGRAMACIÓN SEMANAL ---- */}
+        {tab==="programacion"&&(
+          <>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+              <div style={{fontWeight:700,fontSize:15,color:"#1e293b"}}>Programación Semanal</div>
+              <button onClick={()=>setProgEntradas(prev=>[...prev,{id:Date.now(),clienteId:"",planta:"PU",slots:[{dia:"Lunes",hora:"8AM"}]}])} style={{background:"#1e3a5f",color:"white",border:"none",borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13}}>+ Agregar entrega</button>
+            </div>
+            {progEntradas.length===0
+              ?<EmptyState icon="📋" msg="Agrega entregas para generar la programación semanal."/>
+              :<div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
+                {progEntradas.map(ent=>(
+                  <div key={ent.id} style={{background:"white",borderRadius:10,padding:"14px",boxShadow:"0 1px 4px #00000010"}}>
+                    <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+                      <select value={ent.clienteId} onChange={e=>setProgEntradas(prev=>prev.map(x=>x.id===ent.id?{...x,clienteId:e.target.value}:x))} style={{...inS,flex:"2 1 160px"}}>
+                        <option value="">— Selecciona cliente —</option>
+                        {clientes.map(c=><option key={c.id} value={c.id}>{c.nombre}{c.ciudad?` (${c.ciudad})`:""}</option>)}
+                      </select>
+                      <select value={ent.planta} onChange={e=>setProgEntradas(prev=>prev.map(x=>x.id===ent.id?{...x,planta:e.target.value}:x))} style={{...inS,flex:"1 1 120px"}}>
+                        {Object.entries(PLANTAS).map(([k,v])=><option key={k} value={k}>{k} — {v}</option>)}
+                      </select>
+                      <button onClick={()=>setProgEntradas(prev=>prev.filter(x=>x.id!==ent.id))} style={{background:"#fef2f2",color:"#dc2626",border:"none",borderRadius:6,padding:"6px 11px",cursor:"pointer",fontSize:14,fontWeight:700,flexShrink:0}}>✕</button>
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      {ent.slots.map((slot,slotIdx)=>(
+                        <div key={slotIdx} style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                          <select value={slot.dia} onChange={e=>setProgEntradas(prev=>prev.map(x=>x.id===ent.id?{...x,slots:x.slots.map((s,i)=>i===slotIdx?{...s,dia:e.target.value}:s)}:x))} style={{...inS,flex:"2 1 110px"}}>
+                            {["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"].map(d=><option key={d} value={d}>{d}</option>)}
+                          </select>
+                          <select value={slot.hora} onChange={e=>setProgEntradas(prev=>prev.map(x=>x.id===ent.id?{...x,slots:x.slots.map((s,i)=>i===slotIdx?{...s,hora:e.target.value}:s)}:x))} style={{...inS,flex:"1 1 80px"}}>
+                            {["6AM","7AM","8AM","9AM","10AM","11AM","12PM","1PM","2PM","3PM","4PM","5PM"].map(h=><option key={h} value={h}>{h}</option>)}
+                          </select>
+                          {ent.slots.length>1&&<button onClick={()=>setProgEntradas(prev=>prev.map(x=>x.id===ent.id?{...x,slots:x.slots.filter((_,i)=>i!==slotIdx)}:x))} style={{background:"#f1f5f9",color:"#94a3b8",border:"none",borderRadius:6,padding:"5px 9px",cursor:"pointer",flexShrink:0}}>−</button>}
+                        </div>
+                      ))}
+                      <button onClick={()=>setProgEntradas(prev=>prev.map(x=>x.id===ent.id?{...x,slots:[...x.slots,{dia:"Lunes",hora:"8AM"}]}:x))} style={{background:"#f0fdf4",color:"#16a34a",border:"1px solid #bbf7d0",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer",fontWeight:600,alignSelf:"flex-start",marginTop:2}}>+ Día / hora</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            }
+            {progEntradas.length>0&&(
+              <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+                <button onClick={generarMensajeProg} style={{background:"#1e3a5f",color:"white",border:"none",borderRadius:8,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13}}>📋 Generar mensaje</button>
+                {progMensaje&&<button onClick={()=>{if(navigator.clipboard) navigator.clipboard.writeText(progMensaje);}} style={{background:"#16a34a",color:"white",border:"none",borderRadius:8,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13}}>📋 Copiar</button>}
+                <button onClick={()=>{setProgEntradas([]);setProgMensaje("");}} style={{background:"#fef2f2",color:"#dc2626",border:"1px solid #fecaca",borderRadius:8,padding:"10px 14px",fontWeight:700,cursor:"pointer",fontSize:13}}>Limpiar</button>
+              </div>
+            )}
+            {progMensaje&&(
+              <div style={{background:"white",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px #00000010",borderLeft:"4px solid #1e3a5f"}}>
+                <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",marginBottom:8,letterSpacing:.6}}>Mensaje generado</div>
+                <pre style={{fontFamily:"'Segoe UI',sans-serif",fontSize:13,whiteSpace:"pre-wrap",color:"#1e293b",margin:0,lineHeight:1.6}}>{progMensaje}</pre>
+              </div>
+            )}
+          </>
+        )}
+
         {/* ---- FACTURAS ---- */}
         {tab==="facturas"&&(()=>{
           const mesActual=currentYM();
@@ -1878,7 +1965,7 @@ function App() {
         <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
           <div style={{background:"white",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:500,padding:"22px 20px"}}>
             <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>{cliForm.id?"Editar cliente":"Nuevo cliente"}</div>
-            {[["nombre","Nombre comercial","text"],["nombre_fiscal","Nombre fiscal (para comprobantes)","text"],["rfc","RFC (opcional)","text"],["telefono","Teléfono (opcional)","tel"],["precio_ton","Precio por tonelada ($)","number"],["anticipo","Anticipo inicial ($)","number"]].map(([k,l,t])=>(
+            {[["nombre","Nombre comercial","text"],["nombre_fiscal","Nombre fiscal (para comprobantes)","text"],["rfc","RFC (opcional)","text"],["ciudad","Ciudad (opcional)","text"],["telefono","Teléfono (opcional)","tel"],["precio_ton","Precio por tonelada ($)","number"],["anticipo","Anticipo inicial ($)","number"]].map(([k,l,t])=>(
               <div key={k} style={{marginBottom:12}}>
                 <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>{l}</label>
                 <input type={t} value={cliForm[k]} onChange={e=>setCliForm(f=>({...f,[k]:e.target.value}))} style={inS}/>
