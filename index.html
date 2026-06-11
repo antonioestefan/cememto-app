@@ -1608,12 +1608,17 @@ function App() {
                     puEntry&&card(puEntry),
                     agEntry&&card(agEntry),
                     hasGranel&&(
-                      <div key="total-granel" style={{background:"linear-gradient(135deg,#1e3a5f,#2563eb)",borderRadius:10,padding:"14px 16px",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                        <div>
-                          <div style={{fontSize:10,opacity:.75,fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:4}}>⚡ TOTAL GRANEL (PU + AG)</div>
-                          <div style={{fontSize:11,opacity:.6}}>{periodoLabel()}</div>
+                      <div key="total-granel" style={{background:"white",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px #00000010"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",background:"#e8edf5"}}>
+                          <div>
+                            <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>⚡ Total Granel</div>
+                            <div style={{fontSize:12,color:"#64748b",marginTop:2}}>Puebla + Aguascalientes</div>
+                          </div>
+                          <div style={{textAlign:"right"}}>
+                            <div style={{fontWeight:800,fontSize:22,color:"#1e3a5f"}}>{fmtT(totalGranel)}</div>
+                            <div style={{fontSize:11,color:"#64748b"}}>toneladas</div>
+                          </div>
                         </div>
-                        <div style={{fontWeight:900,fontSize:26,letterSpacing:-1}}>{fmtT(totalGranel)} ton</div>
                       </div>
                     ),
                     bqEntry&&card(bqEntry),
