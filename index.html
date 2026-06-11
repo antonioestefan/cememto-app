@@ -1549,6 +1549,27 @@ function App() {
               <button onClick={reporteWAPlanta} style={{background:"#25D366",color:"white",border:"none",borderRadius:8,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13}}>💬 WhatsApp</button>
             </div>
 
+            {(()=>{
+              const puE=reportePlanta.find(r=>r.planta==="Puebla");
+              const agE=reportePlanta.find(r=>r.planta==="Aguascalientes");
+              if(!puE&&!agE) return null;
+              const tg=(puE?.total_ton||0)+(agE?.total_ton||0);
+              return(
+                <div style={{background:"white",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px #00000010",marginBottom:14}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",background:"#e8edf5"}}>
+                    <div>
+                      <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>⚡ Total Granel</div>
+                      <div style={{fontSize:12,color:"#64748b",marginTop:2}}>Puebla + Aguascalientes · {periodoLabel()}</div>
+                    </div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontWeight:800,fontSize:22,color:"#1e3a5f"}}>{fmtT(tg)}</div>
+                      <div style={{fontSize:11,color:"#64748b"}}>toneladas</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {reportePlanta.length===0
               ?<EmptyState icon="🏭" msg={`Sin remisiones registradas para ${periodoLabel()}.`}/>
               :<div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -1605,20 +1626,6 @@ function App() {
                     </div>
                   );
                   return [
-                    hasGranel&&(
-                      <div key="total-granel" style={{background:"white",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px #00000010"}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",background:"#e8edf5"}}>
-                          <div>
-                            <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>⚡ Total Granel</div>
-                            <div style={{fontSize:12,color:"#64748b",marginTop:2}}>Puebla + Aguascalientes</div>
-                          </div>
-                          <div style={{textAlign:"right"}}>
-                            <div style={{fontWeight:800,fontSize:22,color:"#1e3a5f"}}>{fmtT(totalGranel)}</div>
-                            <div style={{fontSize:11,color:"#64748b"}}>toneladas</div>
-                          </div>
-                        </div>
-                      </div>
-                    ),
                     puEntry&&card(puEntry),
                     agEntry&&card(agEntry),
                     bqEntry&&card(bqEntry),
