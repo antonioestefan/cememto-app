@@ -659,16 +659,63 @@ function App() {
       r=ws.addRow(["Sin remisiones entregadas"]); mergeRow(r.number);
       Object.assign(r.getCell(1),{font:{...fw("94A3B8",10),italic:true},alignment:mid});
     } else {
-      remisiones.forEach((p,i)=>{
-        const ton=parseFloat(p.toneladas)||0, precio=parseFloat(p.precio_ton)||(parseFloat(cuenta.precio_ton)||0), monto=ton*precio;
-        r=ws.addRow([`${p.serie||"—"}-${p.folio||"s/f"}`,p.fecha_carga||"—",p.fecha_entrega||"—",ton,precio,monto]);
-        const bg=i%2===1?ALTGRAY:"FFFFFF";
+      const plantaHex={"Puebla":"4C1D95","Aguascalientes":"0369A1","Bodega Querétaro":"15803D"};
+      const granelPlantas=["Puebla","Aguascalientes"];
+      let tonGranel=0, valGranel=0, hasGranel=false;
+      const addPlantaSection=(planta)=>{
+        const pRems=remisiones.filter(p=>plantaDeSerie(p.serie)===planta);
+        if(pRems.length===0) return null;
+        const hex=plantaHex[planta]||"334155";
+        r=ws.addRow([planta]); mergeRow(r.number); r.height=16;
+        Object.assign(r.getCell(1),{font:fw("FFFFFF",9,true),fill:fill(hex),alignment:mid});
+        pRems.forEach((p,i)=>{
+          const ton=parseFloat(p.toneladas)||0, precio=parseFloat(p.precio_ton)||(parseFloat(cuenta.precio_ton)||0), monto=ton*precio;
+          r=ws.addRow([`${p.serie||"—"}-${p.folio||"s/f"}`,p.fecha_carga||"—",p.fecha_entrega||"—",ton,precio,monto]);
+          const bg=i%2===1?ALTGRAY:"FFFFFF";
+          for(let c=1;c<=N;c++){
+            r.getCell(c).fill=fill(bg);
+            if(c===4){r.getCell(c).numFmt="0.00"; r.getCell(c).alignment={horizontal:"right"};}
+            if(c===5||c===6){r.getCell(c).numFmt='"$"#,##0'; r.getCell(c).alignment={horizontal:"right"};}
+          }
+        });
+        const tonP=pRems.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+        const valP=pRems.reduce((s,p)=>s+valorOV(p),0);
+        r=ws.addRow(["","",`Subtotal ${planta}`,tonP,"",valP]); r.height=16;
         for(let c=1;c<=N;c++){
-          r.getCell(c).fill=fill(bg);
+          r.getCell(c).font=fw(hex,9,true); r.getCell(c).fill=fill("F8FAFC");
           if(c===4){r.getCell(c).numFmt="0.00"; r.getCell(c).alignment={horizontal:"right"};}
-          if(c===5||c===6){r.getCell(c).numFmt='"$"#,##0'; r.getCell(c).alignment={horizontal:"right"};}
+          if(c===6){r.getCell(c).numFmt='"$"#,##0'; r.getCell(c).alignment={horizontal:"right"};}
         }
+        return {tonP,valP};
+      };
+      granelPlantas.forEach(planta=>{
+        const sub=addPlantaSection(planta);
+        if(sub){tonGranel+=sub.tonP; valGranel+=sub.valP; hasGranel=true;}
       });
+      if(hasGranel){
+        r=ws.addRow(["","","TOTAL GRANEL",tonGranel,"",valGranel]); r.height=20;
+        for(let c=1;c<=N;c++){
+          r.getCell(c).font=fw("92400E",11,true); r.getCell(c).fill=fill("FEF3C7");
+          if(c===4){r.getCell(c).numFmt="0.00"; r.getCell(c).alignment={horizontal:"right"};}
+          if(c===6){r.getCell(c).numFmt='"$"#,##0'; r.getCell(c).alignment={horizontal:"right"};}
+        }
+      }
+      addPlantaSection("Bodega Querétaro");
+      const otherRems=remisiones.filter(p=>![...granelPlantas,"Bodega Querétaro"].includes(plantaDeSerie(p.serie)));
+      if(otherRems.length>0){
+        r=ws.addRow(["Otras"]); mergeRow(r.number); r.height=16;
+        Object.assign(r.getCell(1),{font:fw("FFFFFF",9,true),fill:fill("64748B"),alignment:mid});
+        otherRems.forEach((p,i)=>{
+          const ton=parseFloat(p.toneladas)||0, precio=parseFloat(p.precio_ton)||(parseFloat(cuenta.precio_ton)||0), monto=ton*precio;
+          r=ws.addRow([`${p.serie||"—"}-${p.folio||"s/f"}`,p.fecha_carga||"—",p.fecha_entrega||"—",ton,precio,monto]);
+          const bg=i%2===1?ALTGRAY:"FFFFFF";
+          for(let c=1;c<=N;c++){
+            r.getCell(c).fill=fill(bg);
+            if(c===4){r.getCell(c).numFmt="0.00"; r.getCell(c).alignment={horizontal:"right"};}
+            if(c===5||c===6){r.getCell(c).numFmt='"$"#,##0'; r.getCell(c).alignment={horizontal:"right"};}
+          }
+        });
+      }
       r=ws.addRow(["","","TOTAL",tonFilt,"",valFilt]); r.height=18;
       for(let c=1;c<=N;c++){
         r.getCell(c).font=fw("1E293B",10,true); r.getCell(c).fill=fill(LGRAY);
@@ -731,7 +778,7 @@ function App() {
     };
     addR("Total entregado (ton):",tonFilt,"0.00");
     addR("Total entregado ($):",valFilt,'"$"#,##0');
-    addR("Total pagado (anticipos):",parseFloat(cuenta.anticipo)||0,'"$"#,##0');
+    addR("Total pagado (anticipos):",histPer.reduce((s,a)=>s+(parseFloat(a.monto)||0),0),'"$"#,##0');
 
     const pos=cuenta.saldo>=0;
     r=ws.addRow([pos?"✓ Saldo a favor":"⚠ Adeudo",Math.abs(cuenta.saldo)]); r.height=24;
