@@ -127,6 +127,38 @@ function GraficaPlantas({meses,data,plantasConfig}){
   return <canvas ref={canvasRef} style={{maxHeight:260}}/>;
 }
 
+function GraficaVolumenClientes({labels,mesActual,mesAnterior,curLabel,prevLabel}){
+  const canvasRef=useRef(null);
+  const chartRef=useRef(null);
+  useEffect(()=>{
+    if(!canvasRef.current||!window.Chart) return;
+    if(chartRef.current){chartRef.current.destroy();chartRef.current=null;}
+    chartRef.current=new window.Chart(canvasRef.current,{
+      type:"bar",
+      data:{
+        labels,
+        datasets:[
+          {label:curLabel,data:mesActual,backgroundColor:"#1e3a5f",borderRadius:5,borderSkipped:false},
+          {label:prevLabel,data:mesAnterior,backgroundColor:"#94a3b8",borderRadius:5,borderSkipped:false},
+        ],
+      },
+      options:{
+        responsive:true,
+        plugins:{
+          legend:{position:"top",labels:{font:{size:11},usePointStyle:true,boxWidth:12}},
+          tooltip:{callbacks:{label:(ctx)=>`${ctx.dataset.label}: ${(ctx.parsed.y||0).toFixed(2)} ton`}},
+        },
+        scales:{
+          x:{grid:{display:false},ticks:{font:{size:10},maxRotation:40,minRotation:30}},
+          y:{beginAtZero:true,ticks:{callback:(v)=>`${v}t`,font:{size:10}},grid:{color:"#f1f5f9"}},
+        },
+      },
+    });
+    return()=>{if(chartRef.current){chartRef.current.destroy();chartRef.current=null;}};
+  },[labels,mesActual,mesAnterior]);
+  return <canvas ref={canvasRef} style={{maxHeight:240}}/>;
+}
+
 const emptyOV = {id:"",num_ov:"",clienteId:"",serie:"",folio:"",toneladas:0,precio_ton:"",fecha_carga:todayISO(),fecha_entrega:"",status:"ov_asignada",confirm:"por_confirmar",motivo:"",remision_firmada:false,notas:"",tipo:"granel"};
 const emptyCliente = {id:"",nombre:"",nombre_fiscal:"",rfc:"",ciudad:"",precio_ton:"",anticipo:0,telefono:""};
 const emptyNota    = {id:"",texto:"",fecha_vencimiento:todayISO(),prioridad:"media",clienteId:"",num_ov:"",completada:false};
@@ -234,6 +266,7 @@ function App() {
   const [reportePeriodo,setReportePeriodo]     = useState("mensual");
   const [reporteRangoInicio,setReporteRangoInicio] = useState("");
   const [reporteRangoFin,setReporteRangoFin]   = useState("");
+  const [historialExpandido,setHistorialExpandido] = useState({});
 
   useEffect(()=>{
     if(!dbReady){window.addEventListener("dbReady",()=>setDbReady(true)); return;}
@@ -265,6 +298,14 @@ function App() {
     if(reportePeriodo==="historico") return "Histórico";
     if(reportePeriodo==="mensual") return mesLabel(reporteMes);
     return `${reporteRangoInicio||"—"} al ${reporteRangoFin||"—"}`;
+  };
+
+  const anticipoFiltrado = (c)=>{
+    const hist=c.historial_anticipos||[];
+    if(reportePeriodo==="historico") return hist.reduce((s,a)=>s+(parseFloat(a.monto)||0),0);
+    if(reportePeriodo==="mensual") return hist.filter(a=>(a.fecha||"").startsWith(reporteMes)).reduce((s,a)=>s+(parseFloat(a.monto)||0),0);
+    if(reportePeriodo==="rango") return hist.filter(a=>{const f=a.fecha||"";return(!reporteRangoInicio||f>=reporteRangoInicio)&&(!reporteRangoFin||f<=reporteRangoFin);}).reduce((s,a)=>s+(parseFloat(a.monto)||0),0);
+    return parseFloat(c.anticipo)||0;
   };
 
   const estadoCuenta = useMemo(()=>clientes.map(c=>{
@@ -367,6 +408,24 @@ function App() {
     });
     return {meses,data};
   },[ovs]);
+
+  /* gráfica volumen por cliente: mes actual vs mes anterior al mismo día */
+  const graficaVolumenClientes = useMemo(()=>{
+    const today=todayISO();
+    const curYM=today.slice(0,7);
+    const [cy,cm]=curYM.split("-").map(Number);
+    const pd=new Date(cy,cm-2,1);
+    const prevYM=`${pd.getFullYear()}-${String(pd.getMonth()+1).padStart(2,"0")}`;
+    const todayDay=today.slice(8,10);
+    const prevCutoff=`${prevYM}-${todayDay}`;
+    const cls=estadoCuenta.filter(c=>c.id!=="__sin__");
+    const labels=cls.map(c=>c.nombre);
+    const mesActual=cls.map(c=>ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado"&&(p.fecha_carga||"").startsWith(curYM)).reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0));
+    const mesAnterior=cls.map(c=>ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado"&&(p.fecha_carga||"").startsWith(prevYM)&&(p.fecha_carga||"")<=prevCutoff).reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0));
+    const curLabel=mesLabel(curYM);
+    const prevLabel=`${mesLabel(prevYM)} (1-${parseInt(todayDay)})`;
+    return {labels,mesActual,mesAnterior,curLabel,prevLabel};
+  },[ovs,estadoCuenta]);
 
   /* acumulado anual por planta */
   const acumuladoAnual = useMemo(()=>{
@@ -1235,8 +1294,11 @@ function App() {
                     })()}
                     {(c.historial_anticipos||[]).length>0&&(
                       <div style={{marginTop:10,borderTop:"1px solid #f1f5f9",paddingTop:8}}>
-                        <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:4}}>HISTORIAL DE ANTICIPOS</div>
-                        {[...(c.historial_anticipos||[])].reverse().map((a,i)=>{
+                        <div onClick={()=>setHistorialExpandido(p=>({...p,[c.id]:!p[c.id]}))} style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",userSelect:"none",marginBottom:historialExpandido[c.id]?6:0}}>
+                          <div style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>HISTORIAL DE ANTICIPOS ({(c.historial_anticipos||[]).length})</div>
+                          <span style={{fontSize:12,color:"#94a3b8",padding:"0 2px"}}>{historialExpandido[c.id]?"▲":"▼"}</span>
+                        </div>
+                        {historialExpandido[c.id]&&[...(c.historial_anticipos||[])].reverse().map((a,i)=>{
                           const realIdx=(c.historial_anticipos.length-1-i);
                           const isEditing=editingAnticipo&&editingAnticipo.cliId===c.id&&editingAnticipo.realIdx===realIdx;
                           if(isEditing) return(
@@ -1315,12 +1377,27 @@ function App() {
                   <div key={c.id} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",padding:"11px 14px",fontSize:12,borderTop:"1px solid #f1f5f9",background:i%2?"#fafafa":"white"}}>
                     <div style={{fontWeight:600}}>{c.nombre}<div style={{fontSize:10,color:"#94a3b8"}}>{fmtT(c.ton_entregadas)} ton</div></div>
                     <div style={{textAlign:"right"}}>{fmt(c.valor_entregado)}</div>
-                    <div style={{textAlign:"right",color:"#16a34a"}}>{fmt(c.anticipo)}</div>
+                    <div style={{textAlign:"right",color:"#16a34a"}}>{fmt(anticipoFiltrado(c))}</div>
                     <div style={{textAlign:"right",fontWeight:700,color:c.saldo>=0?"#2563eb":"#ef4444"}}>{c.saldo>=0?fmt(c.saldo):`-${fmt(-c.saldo)}`}</div>
                   </div>
                 ))}
               </div>
             }
+
+            {/* GRÁFICA VOLUMEN POR CLIENTE */}
+            {graficaVolumenClientes.labels.length>0&&(
+              <div style={{background:"white",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px #00000010",marginBottom:20,marginTop:8}}>
+                <div style={{fontWeight:700,fontSize:13,color:"#1e293b",marginBottom:4}}>📊 Volumen por cliente — mes actual vs mes anterior</div>
+                <div style={{fontSize:11,color:"#64748b",marginBottom:12}}>{graficaVolumenClientes.curLabel} vs {graficaVolumenClientes.prevLabel}</div>
+                <GraficaVolumenClientes
+                  labels={graficaVolumenClientes.labels}
+                  mesActual={graficaVolumenClientes.mesActual}
+                  mesAnterior={graficaVolumenClientes.mesAnterior}
+                  curLabel={graficaVolumenClientes.curLabel}
+                  prevLabel={graficaVolumenClientes.prevLabel}
+                />
+              </div>
+            )}
 
             {/* DETALLE POR PERÍODO */}
             <div style={{marginTop:28}}>
@@ -1520,6 +1597,21 @@ function App() {
                     )}
                   </div>
                 ))}
+                {(()=>{
+                  const puEntry=reportePlanta.find(r=>r.planta==="Puebla");
+                  const agEntry=reportePlanta.find(r=>r.planta==="Aguascalientes");
+                  if(!puEntry&&!agEntry) return null;
+                  const totalGranel=(puEntry?.total_ton||0)+(agEntry?.total_ton||0);
+                  return(
+                    <div style={{background:"linear-gradient(135deg,#1e3a5f,#2563eb)",borderRadius:10,padding:"14px 16px",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div>
+                        <div style={{fontSize:10,opacity:.75,fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:4}}>⚡ TOTAL GRANEL (PU + AG)</div>
+                        <div style={{fontSize:11,opacity:.6}}>{periodoLabel()}</div>
+                      </div>
+                      <div style={{fontWeight:900,fontSize:26,letterSpacing:-1}}>{fmtT(totalGranel)} ton</div>
+                    </div>
+                  );
+                })()}
               </div>
             }
           </>
