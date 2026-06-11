@@ -659,63 +659,16 @@ function App() {
       r=ws.addRow(["Sin remisiones entregadas"]); mergeRow(r.number);
       Object.assign(r.getCell(1),{font:{...fw("94A3B8",10),italic:true},alignment:mid});
     } else {
-      const plantaHex={"Puebla":"4C1D95","Aguascalientes":"0369A1","Bodega Querétaro":"15803D"};
-      const granelPlantas=["Puebla","Aguascalientes"];
-      let tonGranel=0, valGranel=0, hasGranel=false;
-      const addPlantaSection=(planta)=>{
-        const pRems=remisiones.filter(p=>plantaDeSerie(p.serie)===planta);
-        if(pRems.length===0) return null;
-        const hex=plantaHex[planta]||"334155";
-        r=ws.addRow([planta]); mergeRow(r.number); r.height=16;
-        Object.assign(r.getCell(1),{font:fw("FFFFFF",9,true),fill:fill(hex),alignment:mid});
-        pRems.forEach((p,i)=>{
-          const ton=parseFloat(p.toneladas)||0, precio=parseFloat(p.precio_ton)||(parseFloat(cuenta.precio_ton)||0), monto=ton*precio;
-          r=ws.addRow([`${p.serie||"—"}-${p.folio||"s/f"}`,p.fecha_carga||"—",p.fecha_entrega||"—",ton,precio,monto]);
-          const bg=i%2===1?ALTGRAY:"FFFFFF";
-          for(let c=1;c<=N;c++){
-            r.getCell(c).fill=fill(bg);
-            if(c===4){r.getCell(c).numFmt="0.00"; r.getCell(c).alignment={horizontal:"right"};}
-            if(c===5||c===6){r.getCell(c).numFmt='"$"#,##0'; r.getCell(c).alignment={horizontal:"right"};}
-          }
-        });
-        const tonP=pRems.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
-        const valP=pRems.reduce((s,p)=>s+valorOV(p),0);
-        r=ws.addRow(["","",`Subtotal ${planta}`,tonP,"",valP]); r.height=16;
+      remisiones.forEach((p,i)=>{
+        const ton=parseFloat(p.toneladas)||0, precio=parseFloat(p.precio_ton)||(parseFloat(cuenta.precio_ton)||0), monto=ton*precio;
+        r=ws.addRow([`${p.serie||"—"}-${p.folio||"s/f"}`,p.fecha_carga||"—",p.fecha_entrega||"—",ton,precio,monto]);
+        const bg=i%2===1?ALTGRAY:"FFFFFF";
         for(let c=1;c<=N;c++){
-          r.getCell(c).font=fw(hex,9,true); r.getCell(c).fill=fill("F8FAFC");
+          r.getCell(c).fill=fill(bg);
           if(c===4){r.getCell(c).numFmt="0.00"; r.getCell(c).alignment={horizontal:"right"};}
-          if(c===6){r.getCell(c).numFmt='"$"#,##0'; r.getCell(c).alignment={horizontal:"right"};}
+          if(c===5||c===6){r.getCell(c).numFmt='"$"#,##0'; r.getCell(c).alignment={horizontal:"right"};}
         }
-        return {tonP,valP};
-      };
-      granelPlantas.forEach(planta=>{
-        const sub=addPlantaSection(planta);
-        if(sub){tonGranel+=sub.tonP; valGranel+=sub.valP; hasGranel=true;}
       });
-      if(hasGranel){
-        r=ws.addRow(["","","TOTAL GRANEL",tonGranel,"",valGranel]); r.height=20;
-        for(let c=1;c<=N;c++){
-          r.getCell(c).font=fw("92400E",11,true); r.getCell(c).fill=fill("FEF3C7");
-          if(c===4){r.getCell(c).numFmt="0.00"; r.getCell(c).alignment={horizontal:"right"};}
-          if(c===6){r.getCell(c).numFmt='"$"#,##0'; r.getCell(c).alignment={horizontal:"right"};}
-        }
-      }
-      addPlantaSection("Bodega Querétaro");
-      const otherRems=remisiones.filter(p=>![...granelPlantas,"Bodega Querétaro"].includes(plantaDeSerie(p.serie)));
-      if(otherRems.length>0){
-        r=ws.addRow(["Otras"]); mergeRow(r.number); r.height=16;
-        Object.assign(r.getCell(1),{font:fw("FFFFFF",9,true),fill:fill("64748B"),alignment:mid});
-        otherRems.forEach((p,i)=>{
-          const ton=parseFloat(p.toneladas)||0, precio=parseFloat(p.precio_ton)||(parseFloat(cuenta.precio_ton)||0), monto=ton*precio;
-          r=ws.addRow([`${p.serie||"—"}-${p.folio||"s/f"}`,p.fecha_carga||"—",p.fecha_entrega||"—",ton,precio,monto]);
-          const bg=i%2===1?ALTGRAY:"FFFFFF";
-          for(let c=1;c<=N;c++){
-            r.getCell(c).fill=fill(bg);
-            if(c===4){r.getCell(c).numFmt="0.00"; r.getCell(c).alignment={horizontal:"right"};}
-            if(c===5||c===6){r.getCell(c).numFmt='"$"#,##0'; r.getCell(c).alignment={horizontal:"right"};}
-          }
-        });
-      }
       r=ws.addRow(["","","TOTAL",tonFilt,"",valFilt]); r.height=18;
       for(let c=1;c<=N;c++){
         r.getCell(c).font=fw("1E293B",10,true); r.getCell(c).fill=fill(LGRAY);
@@ -1599,65 +1552,73 @@ function App() {
             {reportePlanta.length===0
               ?<EmptyState icon="🏭" msg={`Sin remisiones registradas para ${periodoLabel()}.`}/>
               :<div style={{display:"flex",flexDirection:"column",gap:14}}>
-                {reportePlanta.map(({planta,remisiones,total_ton,total_valor})=>(
-                  <div key={planta} style={{background:"white",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px #00000010"}}>
-                    {/* HEADER PLANTA */}
-                    <div onClick={()=>setPlantaExpandida(p=>({...p,[planta]:!p[planta]}))} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",background:plantaBg[planta]||"#f1f5f9",cursor:"pointer"}}>
-                      <div>
-                        <div style={{fontWeight:800,fontSize:15,color:plantaColor[planta]||"#1e293b"}}>🏭 {planta}</div>
-                        <div style={{fontSize:12,color:"#64748b",marginTop:2}}>{remisiones.length} remisiones</div>
-                      </div>
-                      <div style={{textAlign:"right"}}>
-                        <div style={{fontWeight:800,fontSize:22,color:plantaColor[planta]||"#1e293b"}}>{fmtT(total_ton)}</div>
-                        <div style={{fontSize:11,color:"#64748b"}}>toneladas</div>
-                      </div>
-                    </div>
-                    {/* DETALLE */}
-                    {plantaExpandida[planta]&&(
-                      <div>
-                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr 1fr",padding:"8px 16px",background:"#f8fafc",fontSize:11,fontWeight:700,color:"#64748b"}}>
-                          <div>Serie-Folio</div><div style={{textAlign:"right"}}>Ton</div><div style={{paddingLeft:8}}>Cliente</div><div style={{textAlign:"right"}}>Fecha</div>
-                        </div>
-                        {remisiones.map((p,i)=>{
-                          const c=cliById(p.clienteId);
-                          return(
-                            <div key={p.id} style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr 1fr",padding:"9px 16px",fontSize:12,borderTop:"1px solid #f1f5f9",background:i%2?"#fafafa":"white"}}>
-                              <div style={{fontWeight:600,color:"#7c3aed"}}>{p.serie||"—"}-{p.folio||"s/f"}</div>
-                              <div style={{textAlign:"right",fontWeight:700}}>{fmtT(p.toneladas)}</div>
-                              <div style={{paddingLeft:8,color:"#64748b"}}>{c?c.nombre:"sin cliente"}</div>
-                              <div style={{textAlign:"right",color:"#94a3b8"}}>{p.fecha_carga}</div>
-                            </div>
-                          );
-                        })}
-                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr 1fr",padding:"10px 16px",borderTop:"2px solid #e2e8f0",background:plantaBg[planta]||"#f1f5f9"}}>
-                          <div style={{fontWeight:800,color:plantaColor[planta]}}>TOTAL</div>
-                          <div style={{textAlign:"right",fontWeight:800,color:plantaColor[planta]}}>{fmtT(total_ton)} ton</div>
-                          <div></div>
-                          <div></div>
-                        </div>
-                      </div>
-                    )}
-                    {!plantaExpandida[planta]&&(
-                      <div onClick={()=>setPlantaExpandida(p=>({...p,[planta]:true}))} style={{padding:"8px 16px",fontSize:12,color:"#94a3b8",cursor:"pointer",textAlign:"center"}}>
-                        Ver {remisiones.length} remisiones ▼
-                      </div>
-                    )}
-                  </div>
-                ))}
                 {(()=>{
+                  const GRANEL=["Puebla","Aguascalientes"];
+                  const BQ="Bodega Querétaro";
                   const puEntry=reportePlanta.find(r=>r.planta==="Puebla");
                   const agEntry=reportePlanta.find(r=>r.planta==="Aguascalientes");
-                  if(!puEntry&&!agEntry) return null;
+                  const bqEntry=reportePlanta.find(r=>r.planta===BQ);
+                  const otherEntries=reportePlanta.filter(r=>![...GRANEL,BQ].includes(r.planta));
+                  const hasGranel=!!(puEntry||agEntry);
                   const totalGranel=(puEntry?.total_ton||0)+(agEntry?.total_ton||0);
-                  return(
-                    <div style={{background:"linear-gradient(135deg,#1e3a5f,#2563eb)",borderRadius:10,padding:"14px 16px",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                      <div>
-                        <div style={{fontSize:10,opacity:.75,fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:4}}>⚡ TOTAL GRANEL (PU + AG)</div>
-                        <div style={{fontSize:11,opacity:.6}}>{periodoLabel()}</div>
+                  const card=({planta,remisiones,total_ton})=>(
+                    <div key={planta} style={{background:"white",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px #00000010"}}>
+                      <div onClick={()=>setPlantaExpandida(p=>({...p,[planta]:!p[planta]}))} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",background:plantaBg[planta]||"#f1f5f9",cursor:"pointer"}}>
+                        <div>
+                          <div style={{fontWeight:800,fontSize:15,color:plantaColor[planta]||"#1e293b"}}>🏭 {planta}</div>
+                          <div style={{fontSize:12,color:"#64748b",marginTop:2}}>{remisiones.length} remisiones</div>
+                        </div>
+                        <div style={{textAlign:"right"}}>
+                          <div style={{fontWeight:800,fontSize:22,color:plantaColor[planta]||"#1e293b"}}>{fmtT(total_ton)}</div>
+                          <div style={{fontSize:11,color:"#64748b"}}>toneladas</div>
+                        </div>
                       </div>
-                      <div style={{fontWeight:900,fontSize:26,letterSpacing:-1}}>{fmtT(totalGranel)} ton</div>
+                      {plantaExpandida[planta]&&(
+                        <div>
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr 1fr",padding:"8px 16px",background:"#f8fafc",fontSize:11,fontWeight:700,color:"#64748b"}}>
+                            <div>Serie-Folio</div><div style={{textAlign:"right"}}>Ton</div><div style={{paddingLeft:8}}>Cliente</div><div style={{textAlign:"right"}}>Fecha</div>
+                          </div>
+                          {remisiones.map((p,i)=>{
+                            const c=cliById(p.clienteId);
+                            return(
+                              <div key={p.id} style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr 1fr",padding:"9px 16px",fontSize:12,borderTop:"1px solid #f1f5f9",background:i%2?"#fafafa":"white"}}>
+                                <div style={{fontWeight:600,color:"#7c3aed"}}>{p.serie||"—"}-{p.folio||"s/f"}</div>
+                                <div style={{textAlign:"right",fontWeight:700}}>{fmtT(p.toneladas)}</div>
+                                <div style={{paddingLeft:8,color:"#64748b"}}>{c?c.nombre:"sin cliente"}</div>
+                                <div style={{textAlign:"right",color:"#94a3b8"}}>{p.fecha_carga}</div>
+                              </div>
+                            );
+                          })}
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr 1fr",padding:"10px 16px",borderTop:"2px solid #e2e8f0",background:plantaBg[planta]||"#f1f5f9"}}>
+                            <div style={{fontWeight:800,color:plantaColor[planta]}}>TOTAL</div>
+                            <div style={{textAlign:"right",fontWeight:800,color:plantaColor[planta]}}>{fmtT(total_ton)} ton</div>
+                            <div></div>
+                            <div></div>
+                          </div>
+                        </div>
+                      )}
+                      {!plantaExpandida[planta]&&(
+                        <div onClick={()=>setPlantaExpandida(p=>({...p,[planta]:true}))} style={{padding:"8px 16px",fontSize:12,color:"#94a3b8",cursor:"pointer",textAlign:"center"}}>
+                          Ver {remisiones.length} remisiones ▼
+                        </div>
+                      )}
                     </div>
                   );
+                  return [
+                    puEntry&&card(puEntry),
+                    agEntry&&card(agEntry),
+                    hasGranel&&(
+                      <div key="total-granel" style={{background:"linear-gradient(135deg,#1e3a5f,#2563eb)",borderRadius:10,padding:"14px 16px",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <div>
+                          <div style={{fontSize:10,opacity:.75,fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:4}}>⚡ TOTAL GRANEL (PU + AG)</div>
+                          <div style={{fontSize:11,opacity:.6}}>{periodoLabel()}</div>
+                        </div>
+                        <div style={{fontWeight:900,fontSize:26,letterSpacing:-1}}>{fmtT(totalGranel)} ton</div>
+                      </div>
+                    ),
+                    bqEntry&&card(bqEntry),
+                    ...otherEntries.map(card),
+                  ].filter(Boolean);
                 })()}
               </div>
             }
