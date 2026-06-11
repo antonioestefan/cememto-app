@@ -1605,8 +1605,6 @@ function App() {
                     </div>
                   );
                   return [
-                    puEntry&&card(puEntry),
-                    agEntry&&card(agEntry),
                     hasGranel&&(
                       <div key="total-granel" style={{background:"white",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px #00000010"}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",background:"#e8edf5"}}>
@@ -1621,6 +1619,8 @@ function App() {
                         </div>
                       </div>
                     ),
+                    puEntry&&card(puEntry),
+                    agEntry&&card(agEntry),
                     bqEntry&&card(bqEntry),
                     ...otherEntries.map(card),
                   ].filter(Boolean);
