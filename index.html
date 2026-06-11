@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Cruz Azul — Antonio</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏗️</text></svg>">
-  <script src="config.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -36,8 +35,6 @@
 <div id="root"></div>
 <script type="text/babel">
 const { useState, useMemo, useEffect, useRef } = React;
-
-const ANTHROPIC_API_KEY = window.ANTHROPIC_API_KEY || '';
 
 const fmt  = (n) => new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN",maximumFractionDigits:0}).format(n||0);
 const fmtT = (n) => (parseFloat(n)||0).toFixed(2);
@@ -2604,12 +2601,12 @@ function App() {
               }
               if(!found){setLectorError("No hay imagen en el portapapeles");setLectorStep("idle");return;}
             }
-            const resp=await fetch('https://api.anthropic.com/v1/messages',{
+            const resp=await fetch('/.netlify/functions/claude-proxy',{
               method:'POST',
-              headers:{'x-api-key':ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01','content-type':'application/json'},
+              headers:{'content-type':'application/json'},
               body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1024,messages:[{role:'user',content:[...blocks,{type:'text',text:PROMPT_LECTOR}]}]})
             });
-            if(!resp.ok){const err=await resp.json();throw new Error(err.error?.message||`Error ${resp.status}`);}
+            if(!resp.ok){const err=await resp.json();throw new Error(err.error?.message||err.error||`Error ${resp.status}`);}
             const data=await resp.json();
             const raw=data.content[0].text;
             const cleaned=raw.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
