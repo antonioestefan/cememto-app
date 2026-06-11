@@ -36,6 +36,8 @@
 <script type="text/babel">
 const { useState, useMemo, useEffect, useRef } = React;
 
+const ANTHROPIC_API_KEY = 'TU_API_KEY_AQUI';
+
 const fmt  = (n) => new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN",maximumFractionDigits:0}).format(n||0);
 const fmtT = (n) => (parseFloat(n)||0).toFixed(2);
 const todayISO   = () => new Date().toISOString().slice(0,10);
@@ -267,6 +269,13 @@ function App() {
   const [reporteRangoInicio,setReporteRangoInicio] = useState("");
   const [reporteRangoFin,setReporteRangoFin]   = useState("");
   const [historialExpandido,setHistorialExpandido] = useState({});
+  const [showLector,setShowLector]               = useState(false);
+  const [lectorOV,setLectorOV]                   = useState(null);
+  const [lectorStep,setLectorStep]               = useState("idle"); // idle|loading|confirm|success|error
+  const [lectorData,setLectorData]               = useState(null);
+  const [lectorFiles,setLectorFiles]             = useState({a:null,b:null});
+  const [lectorMode,setLectorMode]               = useState("single");
+  const [lectorError,setLectorError]             = useState("");
 
   useEffect(()=>{
     if(!dbReady){window.addEventListener("dbReady",()=>setDbReady(true)); return;}
@@ -2073,6 +2082,7 @@ function App() {
                 {NEXT[selected.status]&&<button onClick={()=>advance(selected.id)} style={{background:"#1e3a5f",color:"white",border:"none",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>{NEXT_LABEL[selected.status]}</button>}
                 <button onClick={()=>reprogramar(selected.id)} style={{background:"#fef2f2",color:"#dc2626",border:"1px solid #fecaca",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>↻ Reprogramar</button>
                 {selected.status==="entregado"&&<button onClick={()=>upd(selected.id,{remision_firmada:!selected.remision_firmada})} style={{background:selected.remision_firmada?"#f1f5f9":"#7c3aed",color:selected.remision_firmada?"#64748b":"white",border:"none",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>{selected.remision_firmada?"↩ Quitar firma":"✓ Remisión firmada"}</button>}
+                <button onClick={()=>{setLectorOV(selected);setShowLector(true);setLectorStep("idle");setLectorData(null);setLectorFiles({a:null,b:null});setLectorError("");}} style={{background:"#ecfeff",color:"#0891b2",border:"1px solid #bae6fd",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>📄 Leer remisión</button>
                 <button onClick={()=>{const precioActual=parseFloat(selected.precio_ton)||parseFloat(cliById(selected.clienteId)?.precio_ton)||0;setForm({...selected,precio_ton:precioActual});setShowForm(true);setSelected(null);}} style={{background:"#f1f5f9",color:"#1e3a5f",border:"1px solid #e2e8f0",borderRadius:8,padding:"9px 16px",fontWeight:600,cursor:"pointer",fontSize:13}}>✏️ Editar</button>
                 <button onClick={()=>deleteOV(selected.id)} style={{background:"#fef2f2",color:"#dc2626",border:"1px solid #fecaca",borderRadius:8,padding:"9px 16px",fontWeight:600,cursor:"pointer",fontSize:13}}>🗑 Eliminar</button>
               </div>
@@ -2543,6 +2553,175 @@ function App() {
                 <button onClick={()=>setCompForm(null)} style={{flex:1,background:"#f1f5f9",color:"#64748b",border:"none",borderRadius:8,padding:"11px",fontWeight:600,cursor:"pointer",fontSize:14}}>Cancelar</button>
                 <button onClick={generarComprobante} disabled={!formOk} style={{flex:2,background:formOk?"#1e3a5f":"#cbd5e1",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:formOk?"pointer":"default",fontSize:14}}>⬇ Generar imagen</button>
               </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* LECTOR DE REMISIONES */}
+      {showLector&&lectorOV&&(()=>{
+        const PROMPT_LECTOR = "Extrae los siguientes datos de esta remisión de cemento Cruz Azul: Número de remisión (formato: AG-XXXXXX, PU-XXXXXX o BQ-XXXXXX), Número de OV (Orden de Venta), Fecha de remisión, Peso neto en toneladas (usar el del ticket de báscula/reverso si hay dos valores). Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto";
+
+        const toBase64 = (file) => new Promise((resolve,reject)=>{
+          const r=new FileReader();
+          r.onload=e=>resolve(e.target.result.split(',')[1]);
+          r.onerror=reject;
+          r.readAsDataURL(file);
+        });
+
+        const fileToBlock = async (file) => {
+          const b64=await toBase64(file);
+          if(file.type==='application/pdf') return {type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}};
+          return {type:"image",source:{type:"base64",media_type:file.type||"image/jpeg",data:b64}};
+        };
+
+        const leerRemision = async () => {
+          setLectorStep("loading"); setLectorError("");
+          try {
+            let blocks=[];
+            if(lectorMode==="single"){
+              if(!lectorFiles.a){setLectorError("Selecciona un archivo");setLectorStep("idle");return;}
+              blocks.push(await fileToBlock(lectorFiles.a));
+            } else if(lectorMode==="dual"){
+              if(!lectorFiles.a||!lectorFiles.b){setLectorError("Selecciona ambos archivos");setLectorStep("idle");return;}
+              blocks.push(await fileToBlock(lectorFiles.a));
+              blocks.push(await fileToBlock(lectorFiles.b));
+            } else if(lectorMode==="clipboard"){
+              const items=await navigator.clipboard.read();
+              let found=false;
+              for(const item of items){
+                for(const type of item.types){
+                  if(type.startsWith('image/')){
+                    const blob=await item.getType(type);
+                    const arr=await blob.arrayBuffer();
+                    const b64=btoa(String.fromCharCode(...new Uint8Array(arr)));
+                    blocks.push({type:"image",source:{type:"base64",media_type:type,data:b64}});
+                    found=true; break;
+                  }
+                }
+                if(found) break;
+              }
+              if(!found){setLectorError("No hay imagen en el portapapeles");setLectorStep("idle");return;}
+            }
+            const resp=await fetch('https://api.anthropic.com/v1/messages',{
+              method:'POST',
+              headers:{'x-api-key':ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01','content-type':'application/json'},
+              body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1024,messages:[{role:'user',content:[...blocks,{type:'text',text:PROMPT_LECTOR}]}]})
+            });
+            if(!resp.ok){const err=await resp.json();throw new Error(err.error?.message||`Error ${resp.status}`);}
+            const data=await resp.json();
+            const raw=data.content[0].text;
+            const cleaned=raw.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
+            setLectorData(JSON.parse(cleaned));
+            setLectorStep("confirm");
+          } catch(e){
+            setLectorError(e.message||"Error al procesar");
+            setLectorStep("error");
+          }
+        };
+
+        const lectorConfirmar = () => {
+          upd(lectorOV.id,{folio:lectorData.numeroRemision,fecha_carga:lectorData.fecha,toneladas:parseFloat(lectorData.pesoNeto)});
+          setLectorStep("success");
+        };
+
+        const cerrarLector = () => {setShowLector(false);setLectorOV(null);setLectorStep("idle");setLectorData(null);setLectorFiles({a:null,b:null});setLectorError("");};
+
+        const tabBtn = (mode,label) => (
+          <button key={mode} onClick={()=>{setLectorMode(mode);setLectorStep("idle");setLectorError("");}} style={{padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer",border:"none",borderRadius:6,background:lectorMode===mode?"#1e3a5f":"#f1f5f9",color:lectorMode===mode?"white":"#64748b"}}>{label}</button>
+        );
+
+        return (
+          <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+            <div style={{background:"white",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"90vh",overflowY:"auto"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                <div style={{fontWeight:800,fontSize:17}}>📄 Lector de Remisiones</div>
+                <button onClick={cerrarLector} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#94a3b8"}}>✕</button>
+              </div>
+              <div style={{background:"#f8fafc",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#475569",marginBottom:14}}>
+                OV: <strong>{lectorOV.num_ov}</strong>{lectorOV.serie?` · Serie: ${lectorOV.serie}`:""}
+              </div>
+
+              {lectorStep==="success"?(
+                <div style={{textAlign:"center",padding:"30px 20px"}}>
+                  <div style={{fontSize:42,marginBottom:10}}>✅</div>
+                  <div style={{fontWeight:700,fontSize:15,color:"#16a34a",marginBottom:6}}>Remisión registrada</div>
+                  <div style={{fontSize:13,color:"#64748b",marginBottom:20}}>Folio, fecha y toneladas actualizados en la OV</div>
+                  <button onClick={cerrarLector} style={{background:"#1e3a5f",color:"white",border:"none",borderRadius:8,padding:"10px 28px",fontWeight:700,cursor:"pointer",fontSize:14}}>Cerrar</button>
+                </div>
+              ):(
+                <>
+                  <div style={{display:"flex",gap:6,marginBottom:14}}>
+                    {tabBtn("single","📎 Archivo único")}
+                    {tabBtn("clipboard","📋 Portapapeles")}
+                    {tabBtn("dual","🔁 Frente + reverso")}
+                  </div>
+
+                  {(lectorStep==="idle"||lectorStep==="error")&&(
+                    <>
+                      {lectorMode==="single"&&(
+                        <div style={{marginBottom:14}}>
+                          <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:4}}>Imagen JPG o PDF de la remisión</label>
+                          <input type="file" accept="image/*,.pdf" onChange={e=>setLectorFiles(f=>({...f,a:e.target.files[0]||null}))} style={{...inS,padding:"6px 8px"}}/>
+                          {lectorFiles.a&&<div style={{fontSize:11,color:"#0891b2",marginTop:4}}>✓ {lectorFiles.a.name}</div>}
+                        </div>
+                      )}
+                      {lectorMode==="dual"&&(
+                        <div style={{marginBottom:14}}>
+                          <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:4}}>Frente (portada de la remisión AG)</label>
+                          <input type="file" accept="image/*,.pdf" onChange={e=>setLectorFiles(f=>({...f,a:e.target.files[0]||null}))} style={{...inS,padding:"6px 8px"}}/>
+                          {lectorFiles.a&&<div style={{fontSize:11,color:"#0891b2",marginTop:4,marginBottom:8}}>✓ {lectorFiles.a.name}</div>}
+                          <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:4,marginTop:6}}>Reverso (ticket de báscula — peso neto)</label>
+                          <input type="file" accept="image/*,.pdf" onChange={e=>setLectorFiles(f=>({...f,b:e.target.files[0]||null}))} style={{...inS,padding:"6px 8px"}}/>
+                          {lectorFiles.b&&<div style={{fontSize:11,color:"#0891b2",marginTop:4}}>✓ {lectorFiles.b.name}</div>}
+                        </div>
+                      )}
+                      {lectorMode==="clipboard"&&(
+                        <div style={{marginBottom:14,background:"#f8fafc",borderRadius:8,padding:"18px",textAlign:"center"}}>
+                          <div style={{fontSize:32,marginBottom:8}}>📋</div>
+                          <div style={{fontSize:13,color:"#475569",marginBottom:4}}>Copia una imagen al portapapeles</div>
+                          <div style={{fontSize:11,color:"#94a3b8"}}>Ctrl+C sobre la imagen, o "Copiar imagen" en el menú contextual</div>
+                        </div>
+                      )}
+                      {lectorError&&<div style={{background:"#fef2f2",color:"#dc2626",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:12,border:"1px solid #fecaca"}}>{lectorError}</div>}
+                      <button onClick={leerRemision} style={{width:"100%",background:"#1e3a5f",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:"pointer",fontSize:14}}>
+                        {lectorMode==="clipboard"?"📋 Leer imagen del portapapeles":"🔍 Analizar con IA"}
+                      </button>
+                    </>
+                  )}
+
+                  {lectorStep==="loading"&&(
+                    <div style={{textAlign:"center",padding:"32px 20px",color:"#64748b"}}>
+                      <div style={{fontSize:36,marginBottom:10}}>⏳</div>
+                      <div style={{fontSize:14,fontWeight:700,color:"#1e3a5f"}}>Analizando remisión...</div>
+                      <div style={{fontSize:12,color:"#94a3b8",marginTop:4}}>Claude está leyendo los datos</div>
+                    </div>
+                  )}
+
+                  {lectorStep==="confirm"&&lectorData&&(
+                    <div>
+                      <div style={{fontWeight:700,fontSize:13,color:"#1e3a5f",marginBottom:10}}>Datos extraídos — confirma antes de guardar:</div>
+                      <div style={{background:"#f8fafc",borderRadius:8,padding:"14px",marginBottom:14,border:"1px solid #e2e8f0"}}>
+                        <div style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:"8px 12px",alignItems:"center",fontSize:13}}>
+                          <span style={{fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>No. Remisión</span>
+                          <span style={{fontWeight:700,color:"#0891b2",fontSize:14}}>{lectorData.numeroRemision||"—"}</span>
+                          <span style={{fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>No. OV</span>
+                          <span style={{fontWeight:600}}>{lectorData.numeroOV||"—"}</span>
+                          <span style={{fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>Fecha</span>
+                          <span style={{fontWeight:600}}>{lectorData.fecha||"—"}</span>
+                          <span style={{fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>Peso neto</span>
+                          <span style={{fontWeight:700,color:"#16a34a",fontSize:14}}>{lectorData.pesoNeto||"—"} ton</span>
+                        </div>
+                      </div>
+                      <div style={{fontSize:11,color:"#94a3b8",marginBottom:12}}>Se actualizará en la OV: folio de remisión, fecha de carga y toneladas pesadas</div>
+                      <div style={{display:"flex",gap:10}}>
+                        <button onClick={()=>{setLectorStep("idle");setLectorData(null);}} style={{flex:1,background:"#f1f5f9",color:"#64748b",border:"none",borderRadius:8,padding:"10px",fontWeight:600,cursor:"pointer",fontSize:14}}>← Volver</button>
+                        <button onClick={lectorConfirmar} style={{flex:2,background:"#16a34a",color:"white",border:"none",borderRadius:8,padding:"10px",fontWeight:700,cursor:"pointer",fontSize:14}}>✓ Confirmar y guardar</button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         );
