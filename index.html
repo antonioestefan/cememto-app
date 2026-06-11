@@ -620,7 +620,16 @@ function App() {
 
     ws.addRow([]);
 
-    // Sección anticipos
+    // Sección anticipos — filtradas por período
+    const pStart=reportePeriodo==="mensual"?(reporteMes+"-01"):reportePeriodo==="rango"?(reporteRangoInicio||null):null;
+    const pEnd=reportePeriodo==="mensual"?(reporteMes+"-31"):reportePeriodo==="rango"?(reporteRangoFin||null):null;
+    const histAntes=pStart?historial.filter(a=>(a.fecha||"")<pStart):[];
+    const histPer=pStart?historial.filter(a=>{const f=a.fecha||"";return f>=pStart&&(!pEnd||f<=pEnd);}):historial;
+    const montoAntes=histAntes.reduce((s,a)=>s+(parseFloat(a.monto)||0),0);
+    const entregadoAntes=pStart?ovs.filter(p=>p.clienteId===cuenta.id&&p.status==="entregado"&&(p.fecha_carga||"")<pStart).reduce((s,p)=>s+valorOV(p),0):0;
+    const saldoAnt=montoAntes-entregadoAntes;
+    const haySaldoAnt=!!(pStart&&saldoAnt>0);
+
     r=ws.addRow(["ANTICIPOS / PAGOS"]);
     mergeRow(r.number); r.height=20;
     Object.assign(r.getCell(1),{font:fw("FFFFFF",11,true),fill:fill(BLUE),alignment:mid});
@@ -628,12 +637,20 @@ function App() {
     r=ws.addRow(["Fecha","Monto"]); r.height=18;
     for(let c=1;c<=2;c++) Object.assign(r.getCell(c),{font:fw("FFFFFF",10,true),fill:fill(NAVY),alignment:mid});
 
-    if(historial.length===0){
-      r=ws.addRow(["Sin anticipos registrados"]); mergeRow(r.number);
+    if(!haySaldoAnt&&histPer.length===0){
+      r=ws.addRow(["Sin anticipos en este período"]); mergeRow(r.number);
       Object.assign(r.getCell(1),{font:{...fw("94A3B8",10),italic:true},alignment:mid});
     } else {
-      historial.forEach((a,i)=>{
-        const bg=i%2===1?ALTGRAY:"FFFFFF";
+      let ri=0;
+      if(haySaldoAnt){
+        r=ws.addRow([`Saldo anterior al ${pStart}`,saldoAnt]);
+        r.getCell(1).fill=fill("FEF9C3"); r.getCell(1).font=fw("92400E",10,true);
+        r.getCell(2).fill=fill("FEF9C3"); r.getCell(2).font=fw("92400E",10,true);
+        r.getCell(2).numFmt='"$"#,##0'; r.getCell(2).alignment={horizontal:"right"};
+        ri=1;
+      }
+      histPer.forEach((a,i)=>{
+        const bg=(ri+i)%2===1?ALTGRAY:"FFFFFF";
         r=ws.addRow([a.fecha||"—",parseFloat(a.monto)||0]);
         r.getCell(1).fill=fill(bg);
         r.getCell(2).fill=fill(bg); r.getCell(2).numFmt='"$"#,##0'; r.getCell(2).alignment={horizontal:"right"};
