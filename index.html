@@ -231,6 +231,9 @@ function App() {
   const [compPendForm,setCompPendForm]         = useState(null);
   const [progEntradas,setProgEntradas]         = useState([]);
   const [progMensaje,setProgMensaje]           = useState("");
+  const [reportePeriodo,setReportePeriodo]     = useState("mensual");
+  const [reporteRangoInicio,setReporteRangoInicio] = useState("");
+  const [reporteRangoFin,setReporteRangoFin]   = useState("");
 
   useEffect(()=>{
     if(!dbReady){window.addEventListener("dbReady",()=>setDbReady(true)); return;}
@@ -248,6 +251,21 @@ function App() {
 
   const cliById = (id) => clientes.find(c=>c.id===id)||null;
   const valorOV = (p)  => { const precio=parseFloat(p.precio_ton)||(parseFloat(cliById(p.clienteId)?.precio_ton)||0); return (parseFloat(p.toneladas)||0)*precio; };
+
+  const filtrarPeriodo = (lista) => {
+    if(reportePeriodo==="historico") return lista;
+    if(reportePeriodo==="mensual") return lista.filter(p=>(p.fecha_carga||"").startsWith(reporteMes));
+    if(reportePeriodo==="rango") return lista.filter(p=>{
+      const f=p.fecha_carga||"";
+      return(!reporteRangoInicio||f>=reporteRangoInicio)&&(!reporteRangoFin||f<=reporteRangoFin);
+    });
+    return lista;
+  };
+  const periodoLabel = () => {
+    if(reportePeriodo==="historico") return "Histórico";
+    if(reportePeriodo==="mensual") return mesLabel(reporteMes);
+    return `${reporteRangoInicio||"—"} al ${reporteRangoFin||"—"}`;
+  };
 
   const estadoCuenta = useMemo(()=>clientes.map(c=>{
     const ent=ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado");
@@ -297,10 +315,7 @@ function App() {
 
   /* reporte mensual por planta */
   const reportePlanta = useMemo(()=>{
-    const ovsMes = ovs.filter(p=>{
-      const fecha = p.fecha_carga||"";
-      return fecha.startsWith(reporteMes) && p.status!=="ov_asignada" && p.status!=="fletera_planta";
-    });
+    const ovsMes = filtrarPeriodo(ovs.filter(p=>p.status!=="ov_asignada"&&p.status!=="fletera_planta"));
     const grupos = {};
     ovsMes.forEach(p=>{
       const planta=plantaDeSerie(p.serie);
@@ -313,7 +328,7 @@ function App() {
       total_ton: remisiones.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0),
       total_valor: remisiones.reduce((s,p)=>s+valorOV(p),0),
     }));
-  },[ovs,reporteMes,clientes]);
+  },[ovs,reporteMes,reportePeriodo,reporteRangoInicio,reporteRangoFin,clientes]);
 
   /* meses disponibles para selector */
   const mesesDisponibles = useMemo(()=>{
@@ -324,7 +339,7 @@ function App() {
 
   /* detalle mensual por cliente */
   const detalleClienteMes = useMemo(()=>{
-    const ovsMes=ovs.filter(p=>(p.fecha_carga||"").startsWith(reporteMes)&&p.status==="entregado");
+    const ovsMes=filtrarPeriodo(ovs.filter(p=>p.status==="entregado"));
     const grupos={};
     ovsMes.forEach(p=>{
       const cid=p.clienteId||"__sin__";
@@ -340,7 +355,7 @@ function App() {
         total_valor:rems.reduce((s,p)=>s+valorOV(p),0),
       }))
       .sort((a,b)=>a.nombre.localeCompare(b.nombre,"es"));
-  },[ovs,reporteMes,clientes]);
+  },[ovs,reporteMes,reportePeriodo,reporteRangoInicio,reporteRangoFin,clientes]);
 
   /* gráfica últimos 6 meses por planta */
   const graficaPlantas = useMemo(()=>{
@@ -523,7 +538,7 @@ function App() {
   const exportExcel = (clienteId)=>{
     if(clienteId){ const c=estadoCuenta.find(ec=>ec.id===clienteId); if(c) exportExcelCliente(c); return; }
     const wb=XLSX.utils.book_new();
-    const ws=XLSX.utils.json_to_sheet(ovs.map(p=>({
+    const ws=XLSX.utils.json_to_sheet(filtrarPeriodo(ovs).map(p=>({
       "No. OV":p.num_ov, Cliente:cliById(p.clienteId)?.nombre||"(sin asignar)",
       Planta:plantaDeSerie(p.serie), Serie:p.serie, Folio:p.folio,
       Toneladas:p.toneladas, "Precio/ton":parseFloat(p.precio_ton)||(parseFloat(cliById(p.clienteId)?.precio_ton)||0), Valor:valorOV(p),
@@ -542,7 +557,9 @@ function App() {
 
   const exportExcelCliente = async (cuenta)=>{ try {
     const clienteData=cliById(cuenta.id);
-    const remisiones=ovs.filter(p=>p.clienteId===cuenta.id&&p.status==="entregado").sort((a,b)=>(a.fecha_entrega||"").localeCompare(b.fecha_entrega||""));
+    const remisiones=filtrarPeriodo(ovs.filter(p=>p.clienteId===cuenta.id&&p.status==="entregado")).sort((a,b)=>(a.fecha_entrega||"").localeCompare(b.fecha_entrega||""));
+    const tonFilt=remisiones.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+    const valFilt=remisiones.reduce((s,p)=>s+valorOV(p),0);
     const historial=clienteData?.historial_anticipos||[];
 
     const wb=new ExcelJS.Workbook();
@@ -583,10 +600,8 @@ function App() {
       r=ws.addRow(["Sin remisiones entregadas"]); mergeRow(r.number);
       Object.assign(r.getCell(1),{font:{...fw("94A3B8",10),italic:true},alignment:mid});
     } else {
-      let totalTon=0;
       remisiones.forEach((p,i)=>{
         const ton=parseFloat(p.toneladas)||0, precio=parseFloat(p.precio_ton)||(parseFloat(cuenta.precio_ton)||0), monto=ton*precio;
-        totalTon+=ton;
         r=ws.addRow([`${p.serie||"—"}-${p.folio||"s/f"}`,p.fecha_carga||"—",p.fecha_entrega||"—",ton,precio,monto]);
         const bg=i%2===1?ALTGRAY:"FFFFFF";
         for(let c=1;c<=N;c++){
@@ -595,7 +610,7 @@ function App() {
           if(c===5||c===6){r.getCell(c).numFmt='"$"#,##0'; r.getCell(c).alignment={horizontal:"right"};}
         }
       });
-      r=ws.addRow(["","","TOTAL",totalTon,"",cuenta.valor_entregado]); r.height=18;
+      r=ws.addRow(["","","TOTAL",tonFilt,"",valFilt]); r.height=18;
       for(let c=1;c<=N;c++){
         r.getCell(c).font=fw("1E293B",10,true); r.getCell(c).fill=fill(LGRAY);
         if(c===4){r.getCell(c).numFmt="0.00"; r.getCell(c).alignment={horizontal:"right"};}
@@ -638,8 +653,8 @@ function App() {
       row.getCell(2).fill=fill(LGRAY); if(fmt) row.getCell(2).numFmt=fmt;
       row.getCell(2).alignment={horizontal:"right"};
     };
-    addR("Total entregado (ton):",parseFloat(cuenta.ton_entregadas)||0,"0.00");
-    addR("Total entregado ($):",cuenta.valor_entregado,'"$"#,##0');
+    addR("Total entregado (ton):",tonFilt,"0.00");
+    addR("Total entregado ($):",valFilt,'"$"#,##0');
     addR("Total pagado (anticipos):",parseFloat(cuenta.anticipo)||0,'"$"#,##0');
 
     const pos=cuenta.saldo>=0;
@@ -716,17 +731,21 @@ function App() {
 
   const reporteWA = (clienteId)=>{
     const cuentas=clienteId?estadoCuenta.filter(c=>c.id===clienteId):estadoCuenta;
-    let t=`*REPORTE SEMANAL — ${todayISO()}*\n_Distribuidora Cruz Azul_\n\n`;
+    let t=`*REPORTE — ${periodoLabel()}*\n_Distribuidora Cruz Azul_\n\n`;
     cuentas.forEach(c=>{
-      t+=`*${c.nombre}*\nEntregado: ${fmtT(c.ton_entregadas)} ton (${fmt(c.valor_entregado)})\n`;
+      const entsFilt=filtrarPeriodo(ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado"));
+      const tonPer=entsFilt.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+      const valPer=entsFilt.reduce((s,p)=>s+valorOV(p),0);
+      t+=`*${c.nombre}*\nEntregado: ${fmtT(tonPer)} ton (${fmt(valPer)})\n`;
       if(clienteId){
-        const entregas=ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado").sort((a,b)=>(a.fecha_entrega||"").localeCompare(b.fecha_entrega||""));
-        entregas.forEach(p=>{ t+=`  • ${p.serie||"—"}-${p.folio||"s/f"} | ${p.fecha_entrega||"—"} | ${fmtT(p.toneladas)} ton | ${fmt(valorOV(p))}\n`; });
+        entsFilt.sort((a,b)=>(a.fecha_entrega||"").localeCompare(b.fecha_entrega||""))
+          .forEach(p=>{ t+=`  • ${p.serie||"—"}-${p.folio||"s/f"} | ${p.fecha_entrega||"—"} | ${fmtT(p.toneladas)} ton | ${fmt(valorOV(p))}\n`; });
       }
       t+=`Anticipo: ${fmt(c.anticipo)}\n`;
       t+=c.saldo>=0?`Saldo a favor: ${fmt(c.saldo)}\n\n`:`*Adeudo: ${fmt(-c.saldo)}*\n\n`;
     });
-    t+=`_Total entregado: ${fmt(cuentas.reduce((s,c)=>s+c.valor_entregado,0))}_`;
+    const totalVal=cuentas.reduce((s,c)=>s+filtrarPeriodo(ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado")).reduce((ss,p)=>ss+valorOV(p),0),0);
+    t+=`_Total entregado: ${fmt(totalVal)}_`;
     if(navigator.clipboard) navigator.clipboard.writeText(t);
     window.open(`https://wa.me/?text=${encodeURIComponent(t)}`,"_blank");
   };
@@ -1245,6 +1264,26 @@ function App() {
                 {clientes.map(c=><option key={c.id} value={c.id}>{c.nombre}</option>)}
               </select>
             </div>
+            {/* SELECTOR PERÍODO */}
+            <div style={{background:"white",borderRadius:10,padding:"14px 16px",boxShadow:"0 1px 4px #00000010",marginBottom:14}}>
+              <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Período del reporte</div>
+              <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+                {[["mensual","📅 Mensual"],["historico","📂 Histórico"],["rango","📆 Rango"]].map(([k,l])=>(
+                  <button key={k} onClick={()=>setReportePeriodo(k)} style={{background:reportePeriodo===k?"#1e3a5f":"#f1f5f9",color:reportePeriodo===k?"white":"#475569",border:"none",borderRadius:20,padding:"6px 14px",fontWeight:700,fontSize:12,cursor:"pointer"}}>{l}</button>
+                ))}
+              </div>
+              {reportePeriodo==="mensual"&&(
+                <select value={reporteMes} onChange={e=>setReporteMes(e.target.value)} style={{...inS,background:"white"}}>
+                  {mesesDisponibles.map(ym=><option key={ym} value={ym}>{mesLabel(ym)}</option>)}
+                </select>
+              )}
+              {reportePeriodo==="rango"&&(
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <div><label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Fecha inicio</label><input type="date" value={reporteRangoInicio} onChange={e=>setReporteRangoInicio(e.target.value)} style={inS}/></div>
+                  <div><label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Fecha fin</label><input type="date" value={reporteRangoFin} onChange={e=>setReporteRangoFin(e.target.value)} style={inS}/></div>
+                </div>
+              )}
+            </div>
             <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
               <button onClick={()=>exportExcel(reporteCliente)} style={{background:"#16a34a",color:"white",border:"none",borderRadius:8,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13}}>⬇ {reporteCliente?`Excel — ${cliById(reporteCliente)?.nombre}`:"Excel — Todos"}</button>
               <button onClick={()=>reporteWA(reporteCliente)} style={{background:"#25D366",color:"white",border:"none",borderRadius:8,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13}}>💬 {reporteCliente?`WhatsApp — ${cliById(reporteCliente)?.nombre}`:"WhatsApp — Todos"}</button>
@@ -1266,17 +1305,12 @@ function App() {
               </div>
             }
 
-            {/* DETALLE MENSUAL POR CLIENTE */}
+            {/* DETALLE POR PERÍODO */}
             <div style={{marginTop:28}}>
-              <div style={{fontWeight:700,fontSize:14,color:"#1e293b",marginBottom:4}}>📋 Detalle mensual por cliente</div>
-              <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>Remisiones entregadas en el mes seleccionado.</div>
-              <div style={{marginBottom:14}}>
-                <select value={reporteMes} onChange={e=>setReporteMes(e.target.value)} style={{...inS,background:"white"}}>
-                  {mesesDisponibles.map(ym=><option key={ym} value={ym}>{mesLabel(ym)}</option>)}
-                </select>
-              </div>
+              <div style={{fontWeight:700,fontSize:14,color:"#1e293b",marginBottom:4}}>📋 Detalle por período: <span style={{color:"#1e3a5f"}}>{periodoLabel()}</span></div>
+              <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>Remisiones entregadas agrupadas por período seleccionado.</div>
               {detalleClienteMes.length===0
-                ?<EmptyState icon="📋" msg={`Sin remisiones entregadas en ${mesLabel(reporteMes)}.`}/>
+                ?<EmptyState icon="📋" msg="Sin remisiones para el período seleccionado."/>
                 :<div style={{display:"flex",flexDirection:"column",gap:10}}>
                   {detalleClienteMes.map(g=>{
                     const exp=!!clienteExpandido[g.cid];
@@ -1393,13 +1427,27 @@ function App() {
               </div>
             </div>
 
-            <div style={{background:"#f5f3ff",borderRadius:10,padding:"12px 16px",marginBottom:14,fontSize:13,color:"#5b21b6"}}>🏭 <b>Reporte mensual por planta</b> — cemento retirado a pagar a Cruz Azul. La planta se detecta automáticamente por la serie (PU = Puebla, AG = Aguascalientes, BQ = Bodega Querétaro).</div>
+            <div style={{background:"#f5f3ff",borderRadius:10,padding:"12px 16px",marginBottom:14,fontSize:13,color:"#5b21b6"}}>🏭 <b>Reporte por planta</b> — cemento retirado a pagar a Cruz Azul. La planta se detecta automáticamente por la serie (PU = Puebla, AG = Aguascalientes, BQ = Bodega Querétaro).</div>
 
-            {/* SELECTOR MES */}
-            <div style={{marginBottom:14}}>
-              <select value={reporteMes} onChange={e=>setReporteMes(e.target.value)} style={{...inS,background:"white"}}>
-                {mesesDisponibles.map(ym=><option key={ym} value={ym}>{mesLabel(ym)}</option>)}
-              </select>
+            {/* SELECTOR PERÍODO */}
+            <div style={{background:"white",borderRadius:10,padding:"14px 16px",boxShadow:"0 1px 4px #00000010",marginBottom:14}}>
+              <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Período del reporte</div>
+              <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+                {[["mensual","📅 Mensual"],["historico","📂 Histórico"],["rango","📆 Rango"]].map(([k,l])=>(
+                  <button key={k} onClick={()=>setReportePeriodo(k)} style={{background:reportePeriodo===k?"#1e3a5f":"#f1f5f9",color:reportePeriodo===k?"white":"#475569",border:"none",borderRadius:20,padding:"6px 14px",fontWeight:700,fontSize:12,cursor:"pointer"}}>{l}</button>
+                ))}
+              </div>
+              {reportePeriodo==="mensual"&&(
+                <select value={reporteMes} onChange={e=>setReporteMes(e.target.value)} style={{...inS,background:"white"}}>
+                  {mesesDisponibles.map(ym=><option key={ym} value={ym}>{mesLabel(ym)}</option>)}
+                </select>
+              )}
+              {reportePeriodo==="rango"&&(
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <div><label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Fecha inicio</label><input type="date" value={reporteRangoInicio} onChange={e=>setReporteRangoInicio(e.target.value)} style={inS}/></div>
+                  <div><label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Fecha fin</label><input type="date" value={reporteRangoFin} onChange={e=>setReporteRangoFin(e.target.value)} style={inS}/></div>
+                </div>
+              )}
             </div>
 
             <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
@@ -1408,7 +1456,7 @@ function App() {
             </div>
 
             {reportePlanta.length===0
-              ?<EmptyState icon="🏭" msg={`Sin remisiones registradas para ${mesLabel(reporteMes)}.`}/>
+              ?<EmptyState icon="🏭" msg={`Sin remisiones registradas para ${periodoLabel()}.`}/>
               :<div style={{display:"flex",flexDirection:"column",gap:14}}>
                 {reportePlanta.map(({planta,remisiones,total_ton,total_valor})=>(
                   <div key={planta} style={{background:"white",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px #00000010"}}>
