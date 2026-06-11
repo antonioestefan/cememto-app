@@ -1,2 +1,5 @@
+[build]
+  environment = { SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES = "AIza" }
+
 [functions]
   directory = "netlify/functions"
