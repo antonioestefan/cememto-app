@@ -738,10 +738,13 @@ function App() {
     };
     addR("Total entregado (ton):",tonFilt,"0.00");
     addR("Total entregado ($):",valFilt,'"$"#,##0');
-    addR("Total pagado (anticipos):",histPer.reduce((s,a)=>s+(parseFloat(a.monto)||0),0),'"$"#,##0');
+    const pagadoPer=histPer.reduce((s,a)=>s+(parseFloat(a.monto)||0),0);
+    addR("Total pagado (anticipos):",pagadoPer,'"$"#,##0');
+    if(pStart) addR("Saldo anterior:",saldoAnt,'"$"#,##0');
 
-    const pos=cuenta.saldo>=0;
-    r=ws.addRow([pos?"✓ Saldo a favor":"⚠ Adeudo",Math.abs(cuenta.saldo)]); r.height=24;
+    const netSaldo=valFilt-pagadoPer-saldoAnt;
+    const pos=netSaldo<=0;
+    r=ws.addRow([pos?"✅ Saldo a favor:":"⚠ Adeudo:",Math.abs(netSaldo)]); r.height=24;
     const sc=pos?[GFG,GBG]:[RFG,RBG];
     r.getCell(1).font=fw(sc[0],12,true); r.getCell(1).fill=fill(sc[1]);
     r.getCell(2).font=fw(sc[0],12,true); r.getCell(2).fill=fill(sc[1]); r.getCell(2).numFmt='"$"#,##0'; r.getCell(2).alignment={horizontal:"right"};
