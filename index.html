@@ -1995,9 +1995,10 @@ function App() {
                       <div key={f.id} style={{background:"white",borderRadius:10,padding:"14px 16px",boxShadow:"0 1px 4px #00000010",borderLeft:`4px solid ${f.estatus==="Cancelada"?"#ef4444":"#1e3a5f"}`}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
                           <div style={{flex:1}}>
-                            <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{f.folio_fiscal||"(sin folio)"}</div>
-                            <div style={{fontSize:12,color:"#64748b",marginTop:2}}>{cli?.nombre||"—"} · {f.fecha}</div>
+                            <div style={{fontWeight:800,fontSize:16,color:"#1e293b",lineHeight:1.2}}>{cli?.nombre||"—"}</div>
+                            <div style={{fontWeight:600,fontSize:13,color:"#475569",marginTop:3}}>{f.folio_fiscal||"(sin folio)"}</div>
                             <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap",alignItems:"center"}}>
+                              <span style={{fontSize:11,color:"#94a3b8"}}>{f.fecha}</span>
                               <span style={{fontSize:11,background:f.tipo==="Complemento"?"#f5f3ff":"#eff6ff",color:f.tipo==="Complemento"?"#7c3aed":"#1e40af",borderRadius:20,padding:"2px 8px",fontWeight:600}}>{f.tipo}</span>
                               <span style={{fontSize:11,background:f.estatus==="Cancelada"?"#fef2f2":"#f0fdf4",color:f.estatus==="Cancelada"?"#dc2626":"#16a34a",borderRadius:20,padding:"2px 8px",fontWeight:600}}>{f.estatus}</span>
                               <span style={{fontSize:14,fontWeight:800,color:f.estatus==="Cancelada"?"#94a3b8":"#1e3a5f",marginLeft:"auto"}}>{fmt(f.total_con_iva)}</span>
