@@ -1387,9 +1387,19 @@ function App() {
                   const entFilt=filtrarPeriodo(ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado"));
                   const tonFilt=entFilt.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
                   const valFilt=entFilt.reduce((s,p)=>s+valorOV(p),0);
+                  const cliOVs=ovs.filter(p=>p.clienteId===c.id);
+                  const tieneGranel=cliOVs.some(p=>(p.tipo||"granel")==="granel");
+                  const tieneSaco=cliOVs.some(p=>p.tipo==="saco");
                   return(
                   <div key={c.id} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",padding:"11px 14px",fontSize:12,borderTop:"1px solid #f1f5f9",background:i%2?"#fafafa":"white"}}>
-                    <div style={{fontWeight:600}}>{c.nombre}<div style={{fontSize:10,color:"#94a3b8"}}>{fmtT(tonFilt)} ton</div></div>
+                    <div style={{fontWeight:600}}>
+                      <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
+                        <span>{c.nombre}</span>
+                        {tieneGranel&&<span style={{fontSize:9,background:"#eff6ff",color:"#1e40af",borderRadius:10,padding:"1px 6px",fontWeight:700,flexShrink:0}}>⚡ Granel</span>}
+                        {tieneSaco&&<span style={{fontSize:9,background:"#f0fdf4",color:"#15803d",borderRadius:10,padding:"1px 6px",fontWeight:700,flexShrink:0}}>📦 Saco</span>}
+                      </div>
+                      <div style={{fontSize:10,color:"#94a3b8"}}>{fmtT(tonFilt)} ton</div>
+                    </div>
                     <div style={{textAlign:"right"}}>{fmt(valFilt)}</div>
                     <div style={{textAlign:"right",color:"#16a34a"}}>{fmt(anticipoFiltrado(c))}</div>
                     <div style={{textAlign:"right",fontWeight:700,color:c.saldo>=0?"#2563eb":"#ef4444"}}>{c.saldo>=0?fmt(c.saldo):`-${fmt(-c.saldo)}`}</div>
