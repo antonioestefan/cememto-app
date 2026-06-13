@@ -1462,6 +1462,26 @@ function App() {
         {/* ---- REPORTE PLANTAS ---- */}
         {tab==="plantas"&&(
           <>
+            {/* SELECTOR PERÍODO */}
+            <div style={{background:"white",borderRadius:10,padding:"14px 16px",boxShadow:"0 1px 4px #00000010",marginBottom:14}}>
+              <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Período del reporte</div>
+              <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+                {[["mensual","📅 Mensual"],["historico","📂 Histórico"],["rango","📆 Rango"]].map(([k,l])=>(
+                  <button key={k} onClick={()=>setReportePeriodo(k)} style={{background:reportePeriodo===k?"#1e3a5f":"#f1f5f9",color:reportePeriodo===k?"white":"#475569",border:"none",borderRadius:20,padding:"6px 14px",fontWeight:700,fontSize:12,cursor:"pointer"}}>{l}</button>
+                ))}
+              </div>
+              {reportePeriodo==="mensual"&&(
+                <select value={reporteMes} onChange={e=>setReporteMes(e.target.value)} style={{...inS,background:"white"}}>
+                  {mesesDisponibles.map(ym=><option key={ym} value={ym}>{mesLabel(ym)}</option>)}
+                </select>
+              )}
+              {reportePeriodo==="rango"&&(
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <div><label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Fecha inicio</label><input type="date" value={reporteRangoInicio} onChange={e=>setReporteRangoInicio(e.target.value)} style={inS}/></div>
+                  <div><label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Fecha fin</label><input type="date" value={reporteRangoFin} onChange={e=>setReporteRangoFin(e.target.value)} style={inS}/></div>
+                </div>
+              )}
+            </div>
             {(()=>{
               const puE=reportePlanta.find(r=>r.planta==="Puebla");
               const agE=reportePlanta.find(r=>r.planta==="Aguascalientes");
@@ -1552,27 +1572,6 @@ function App() {
             </div>
 
             <div style={{background:"#f5f3ff",borderRadius:10,padding:"12px 16px",marginBottom:14,fontSize:13,color:"#5b21b6"}}>🏭 <b>Reporte por planta</b> — cemento retirado a pagar a Cruz Azul. La planta se detecta automáticamente por la serie (PU = Puebla, AG = Aguascalientes, BQ = Bodega Querétaro).</div>
-
-            {/* SELECTOR PERÍODO */}
-            <div style={{background:"white",borderRadius:10,padding:"14px 16px",boxShadow:"0 1px 4px #00000010",marginBottom:14}}>
-              <div style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Período del reporte</div>
-              <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
-                {[["mensual","📅 Mensual"],["historico","📂 Histórico"],["rango","📆 Rango"]].map(([k,l])=>(
-                  <button key={k} onClick={()=>setReportePeriodo(k)} style={{background:reportePeriodo===k?"#1e3a5f":"#f1f5f9",color:reportePeriodo===k?"white":"#475569",border:"none",borderRadius:20,padding:"6px 14px",fontWeight:700,fontSize:12,cursor:"pointer"}}>{l}</button>
-                ))}
-              </div>
-              {reportePeriodo==="mensual"&&(
-                <select value={reporteMes} onChange={e=>setReporteMes(e.target.value)} style={{...inS,background:"white"}}>
-                  {mesesDisponibles.map(ym=><option key={ym} value={ym}>{mesLabel(ym)}</option>)}
-                </select>
-              )}
-              {reportePeriodo==="rango"&&(
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  <div><label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Fecha inicio</label><input type="date" value={reporteRangoInicio} onChange={e=>setReporteRangoInicio(e.target.value)} style={inS}/></div>
-                  <div><label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Fecha fin</label><input type="date" value={reporteRangoFin} onChange={e=>setReporteRangoFin(e.target.value)} style={inS}/></div>
-                </div>
-              )}
-            </div>
 
             <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
               <button onClick={exportExcelPlanta} style={{background:"#16a34a",color:"white",border:"none",borderRadius:8,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13}}>⬇ Excel por planta</button>
