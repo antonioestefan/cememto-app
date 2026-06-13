@@ -1383,14 +1383,19 @@ function App() {
                 <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",background:"#1e3a5f",color:"white",padding:"10px 14px",fontSize:11,fontWeight:700}}>
                   <div>Cliente</div><div style={{textAlign:"right"}}>Entregado</div><div style={{textAlign:"right"}}>Anticipo</div><div style={{textAlign:"right"}}>Saldo</div>
                 </div>
-                {(reporteCliente?estadoCuenta.filter(c=>c.id===reporteCliente):estadoCuenta).map((c,i)=>(
+                {(reporteCliente?estadoCuenta.filter(c=>c.id===reporteCliente):estadoCuenta).map((c,i)=>{
+                  const entFilt=filtrarPeriodo(ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado"));
+                  const tonFilt=entFilt.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+                  const valFilt=entFilt.reduce((s,p)=>s+valorOV(p),0);
+                  return(
                   <div key={c.id} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",padding:"11px 14px",fontSize:12,borderTop:"1px solid #f1f5f9",background:i%2?"#fafafa":"white"}}>
-                    <div style={{fontWeight:600}}>{c.nombre}<div style={{fontSize:10,color:"#94a3b8"}}>{fmtT(c.ton_entregadas)} ton</div></div>
-                    <div style={{textAlign:"right"}}>{fmt(c.valor_entregado)}</div>
+                    <div style={{fontWeight:600}}>{c.nombre}<div style={{fontSize:10,color:"#94a3b8"}}>{fmtT(tonFilt)} ton</div></div>
+                    <div style={{textAlign:"right"}}>{fmt(valFilt)}</div>
                     <div style={{textAlign:"right",color:"#16a34a"}}>{fmt(anticipoFiltrado(c))}</div>
                     <div style={{textAlign:"right",fontWeight:700,color:c.saldo>=0?"#2563eb":"#ef4444"}}>{c.saldo>=0?fmt(c.saldo):`-${fmt(-c.saldo)}`}</div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             }
 
