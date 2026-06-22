@@ -421,6 +421,17 @@ function App() {
     if(reportePeriodo==="rango") return hist.filter(a=>{const f=a.fecha||"";return(!reporteRangoInicio||f>=reporteRangoInicio)&&(!reporteRangoFin||f<=reporteRangoFin);}).reduce((s,a)=>s+(parseFloat(a.monto)||0),0);
     return parseFloat(c.anticipo)||0;
   };
+  const saldoAnterior = (c)=>{
+    if(reportePeriodo==="historico") return 0;
+    let cutoff="";
+    if(reportePeriodo==="mensual") cutoff=`${reporteMes}-01`;
+    else if(reportePeriodo==="rango") cutoff=reporteRangoInicio||"";
+    if(!cutoff) return 0;
+    const hist=c.historial_anticipos||[];
+    const antAntes=hist.filter(a=>(a.fecha||"")<cutoff).reduce((s,a)=>s+(parseFloat(a.monto)||0),0);
+    const entAntes=ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado"&&(p.fecha_carga||"")<cutoff).reduce((s,p)=>s+valorOV(p),0);
+    return antAntes-entAntes;
+  };
 
   const estadoCuenta = useMemo(()=>clientes.map(c=>{
     const ent=ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado");
@@ -1544,6 +1555,9 @@ function App() {
                   const entFilt=filtrarPeriodo(ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado"));
                   const tonFilt=entFilt.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
                   const valFilt=entFilt.reduce((s,p)=>s+valorOV(p),0);
+                  const saldoAnt=saldoAnterior(c);
+                  const antPeriodo=saldoAnt+anticipoFiltrado(c);
+                  const saldoPeriodo=antPeriodo-valFilt;
                   const cliOVs=ovs.filter(p=>p.clienteId===c.id);
                   const tieneGranel=cliOVs.some(p=>(p.tipo||"granel")==="granel");
                   const tieneSaco=cliOVs.some(p=>p.tipo==="saco");
@@ -1558,8 +1572,11 @@ function App() {
                       <div style={{fontSize:10,color:"#94a3b8"}}>{fmtT(tonFilt)} ton</div>
                     </div>
                     <div style={{textAlign:"right"}}>{fmt(valFilt)}</div>
-                    <div style={{textAlign:"right",color:"#16a34a"}}>{fmt(anticipoFiltrado(c))}</div>
-                    <div style={{textAlign:"right",fontWeight:700,color:c.saldo>=0?"#2563eb":"#ef4444"}}>{c.saldo>=0?fmt(c.saldo):`-${fmt(-c.saldo)}`}</div>
+                    <div style={{textAlign:"right",color:"#16a34a"}}>
+                      {fmt(antPeriodo)}
+                      {reportePeriodo!=="historico"&&saldoAnt!==0&&<div style={{fontSize:9,color:"#94a3b8",marginTop:1}}>ant: {saldoAnt>=0?fmt(saldoAnt):`-${fmt(-saldoAnt)}`}</div>}
+                    </div>
+                    <div style={{textAlign:"right",fontWeight:700,color:saldoPeriodo>=0?"#2563eb":"#ef4444"}}>{saldoPeriodo>=0?fmt(saldoPeriodo):`-${fmt(-saldoPeriodo)}`}</div>
                   </div>
                   );
                 })}
