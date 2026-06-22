@@ -59,6 +59,21 @@ const plantaBg    = {Puebla:"#f5f3ff",Aguascalientes:"#ecfeff","Bodega Querétar
 const GRANEL_CONFIG = [{label:"Puebla",color:"#7c3aed"},{label:"Aguascalientes",color:"#0891b2"}];
 const SACO_CONFIG   = [{label:"Bodega Querétaro",color:"#15803d"}];
 
+/* ---- días hábiles México ---- */
+const festivosMexico = (year) => {
+  const s=new Set([`${year}-01-01`,`${year}-02-05`,`${year}-03-21`,`${year}-05-01`,`${year}-09-16`,`${year}-11-20`,`${year}-12-25`]);
+  const d1=new Date(year,1,1); while(d1.getDay()!==1)d1.setDate(d1.getDate()+1); s.add(d1.toISOString().slice(0,10));
+  const d2=new Date(year,2,1); let cnt=0; while(cnt<3){if(d2.getDay()===1)cnt++;if(cnt<3)d2.setDate(d2.getDate()+1);} s.add(d2.toISOString().slice(0,10));
+  return s;
+};
+const esDiaHabilBase = (iso) => { const d=new Date(iso+"T12:00"); return d.getDay()!==0&&!festivosMexico(d.getFullYear()).has(iso); };
+const esDiaHabilReal = (iso, overrides) => iso in overrides ? overrides[iso] : esDiaHabilBase(iso);
+const contarDiasHabiles = (startISO, endISO, overrides) => {
+  let n=0; const d=new Date(startISO+"T12:00"); const end=new Date(endISO+"T12:00");
+  while(d<=end){const iso=d.toISOString().slice(0,10); if(esDiaHabilReal(iso,overrides))n++; d.setDate(d.getDate()+1);}
+  return n;
+};
+
 const STATUSES = [
   {key:"ov_asignada",      label:"OV asignada",          color:"#7c3aed",bg:"#f5f3ff",hint:"Permiso de carga de corporativo"},
   {key:"fletera_planta",   label:"Fletera en planta",    color:"#d97706",bg:"#fffbeb",hint:"Tráiler formándose para cargar"},
@@ -159,7 +174,96 @@ function GraficaVolumenClientes({labels,mesActual,mesAnterior,curLabel,prevLabel
   return <canvas ref={canvasRef} style={{maxHeight:240}}/>;
 }
 
-const emptyOV = {id:"",num_ov:"",clienteId:"",serie:"",folio:"",toneladas:0,precio_ton:"",fecha_carga:todayISO(),fecha_entrega:"",status:"ov_asignada",confirm:"por_confirmar",motivo:"",remision_firmada:false,notas:"",tipo:"granel"};
+function GraficaComparativoMes({comparativo}){
+  const canvasRef=useRef(null);
+  const chartRef=useRef(null);
+  useEffect(()=>{
+    if(!canvasRef.current||!window.Chart||!comparativo) return;
+    if(chartRef.current){chartRef.current.destroy();chartRef.current=null;}
+    const {curYM,prevYM,puActual,agActual,puPrevio,agPrevio,totalActual,totalPrevio,prevCutoff}=comparativo;
+    const prevDay=parseInt((prevCutoff||"").slice(8)||"0");
+    chartRef.current=new window.Chart(canvasRef.current,{
+      type:"bar",
+      data:{
+        labels:["Puebla","Aguascalientes","Total Granel"],
+        datasets:[
+          {label:mesLabel(curYM),data:[puActual,agActual,totalActual],backgroundColor:"#1e3a5f",borderRadius:6,borderSkipped:false},
+          {label:`${mesLabel(prevYM)} (hasta día ${prevDay})`,data:[puPrevio,agPrevio,totalPrevio],backgroundColor:"#94a3b8",borderRadius:6,borderSkipped:false},
+        ],
+      },
+      options:{
+        responsive:true,
+        plugins:{
+          legend:{position:"top",labels:{font:{size:11},usePointStyle:true,boxWidth:12}},
+          tooltip:{callbacks:{label:(ctx)=>`${ctx.dataset.label}: ${(ctx.parsed.y||0).toFixed(2)} ton`}},
+        },
+        scales:{
+          x:{grid:{display:false},ticks:{font:{size:11}}},
+          y:{beginAtZero:true,ticks:{callback:(v)=>`${v}t`,font:{size:11}},grid:{color:"#f1f5f9"}},
+        },
+      },
+    });
+    return()=>{if(chartRef.current){chartRef.current.destroy();chartRef.current=null;}};
+  },[comparativo]);
+  return <canvas ref={canvasRef} style={{maxHeight:240}}/>;
+}
+
+function CalendarioHabiles({diasHabiles, onToggle}){
+  const [offset,setOffset]=useState(0);
+  const today=todayISO();
+  const vDate=new Date(new Date(today+"T12:00").getFullYear(),new Date(today+"T12:00").getMonth()+offset,1);
+  const vY=vDate.getFullYear(), vM=vDate.getMonth();
+  const ym=`${vY}-${String(vM+1).padStart(2,"0")}`;
+  const firstDow=vDate.getDay();
+  const startShift=firstDow===0?6:firstDow-1;
+  const daysInMonth=new Date(vY,vM+1,0).getDate();
+  const festivos=festivosMexico(vY);
+  const cells=[];
+  for(let i=0;i<startShift;i++)cells.push(null);
+  for(let d=1;d<=daysInMonth;d++)cells.push(`${ym}-${String(d).padStart(2,"0")}`);
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <button onClick={()=>setOffset(o=>o-1)} style={{background:"#f1f5f9",border:"none",borderRadius:8,padding:"6px 14px",fontWeight:700,fontSize:17,cursor:"pointer",lineHeight:1}}>‹</button>
+        <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{mesLabel(ym)}</div>
+        <button onClick={()=>setOffset(o=>o+1)} style={{background:"#f1f5f9",border:"none",borderRadius:8,padding:"6px 14px",fontWeight:700,fontSize:17,cursor:"pointer",lineHeight:1}}>›</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3,marginBottom:4,textAlign:"center"}}>
+        {["L","M","X","J","V","S","D"].map(l=><div key={l} style={{fontSize:10,fontWeight:700,color:"#94a3b8",padding:"2px 0"}}>{l}</div>)}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+        {cells.map((iso,i)=>{
+          if(!iso) return <div key={`e${i}`}/>;
+          const actual=esDiaHabilReal(iso,diasHabiles);
+          const hasOverride=iso in diasHabiles;
+          const isFestivo=festivos.has(iso);
+          const isToday=iso===today;
+          const day=parseInt(iso.slice(8));
+          return(
+            <div key={iso} onClick={()=>onToggle(iso)} style={{
+              background:actual?"#dcfce7":"#fee2e2",color:actual?"#15803d":"#dc2626",
+              borderRadius:6,textAlign:"center",padding:"7px 2px",fontSize:12,fontWeight:700,cursor:"pointer",
+              border:isToday?"2px solid #1e3a5f":hasOverride?"2px solid currentColor":"2px solid transparent",
+              position:"relative",opacity:iso>today?0.5:1,userSelect:"none",
+            }}>
+              {day}
+              {(isFestivo&&!hasOverride)&&<span style={{position:"absolute",top:1,right:2,fontSize:6,opacity:.7}}>★</span>}
+              {hasOverride&&<span style={{position:"absolute",top:1,right:2,fontSize:7,fontWeight:900}}>✎</span>}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{marginTop:12,display:"flex",gap:12,flexWrap:"wrap",fontSize:11,color:"#64748b"}}>
+        <div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:12,height:12,background:"#dcfce7",border:"1px solid #16a34a",borderRadius:2}}/> Trabajado</div>
+        <div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:12,height:12,background:"#fee2e2",border:"1px solid #dc2626",borderRadius:2}}/> No trabajado</div>
+        <div style={{display:"flex",alignItems:"center",gap:4}}>★ Festivo oficial</div>
+        <div style={{display:"flex",alignItems:"center",gap:4}}>✎ Ajustado manualmente</div>
+      </div>
+    </div>
+  );
+}
+
+const emptyOV ={id:"",num_ov:"",clienteId:"",serie:"",folio:"",toneladas:0,precio_ton:"",fecha_carga:todayISO(),fecha_entrega:"",status:"ov_asignada",confirm:"por_confirmar",motivo:"",remision_firmada:false,notas:"",tipo:"granel"};
 const emptyCliente = {id:"",nombre:"",nombre_fiscal:"",rfc:"",ciudad:"",precio_ton:"",anticipo:0,telefono:""};
 const emptyNota    = {id:"",texto:"",fecha_vencimiento:todayISO(),prioridad:"media",clienteId:"",num_ov:"",completada:false};
 const emptyProsp   = {id:"",nombre:"",telefono:"",contacto:"",vol_mensual:0,etapa:"contacto",notas:"",fecha_seguimiento:todayISO()};
@@ -274,6 +378,8 @@ function App() {
   const [lectorFiles,setLectorFiles]             = useState({a:null,b:null});
   const [lectorMode,setLectorMode]               = useState("single");
   const [lectorError,setLectorError]             = useState("");
+  const [diasHabiles,setDiasHabiles]             = useState({});
+  const [showCalHabiles,setShowCalHabiles]       = useState(false);
 
   useEffect(()=>{
     if(!dbReady){window.addEventListener("dbReady",()=>setDbReady(true)); return;}
@@ -283,7 +389,8 @@ function App() {
     const u3=window.__onSnapshot(window.__col(db,"notas"),snap=>{setNotas(snap.docs.map(d=>({id:d.id,...d.data()})));});
     const u4=window.__onSnapshot(window.__col(db,"prospectos"),snap=>{setProspectos(snap.docs.map(d=>({id:d.id,...d.data()})));});
     const u5=window.__onSnapshot(window.__col(db,"facturas"),snap=>{setFacturas(snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||"")));});
-    return ()=>{u1();u2();u3();u4();u5();};
+    const u6=window.__onSnapshot(window.__col(db,"diasHabiles"),snap=>{const ov={};snap.docs.forEach(d=>{ov[d.id]=d.data().trabajado;});setDiasHabiles(ov);});
+    return ()=>{u1();u2();u3();u4();u5();u6();};
   },[dbReady]);
 
   const saveToDb    = async (col,id,data)=>{ const {id:_,...rest}=data; await window.__setDoc(window.__doc(window.__db,col,id),rest); };
@@ -442,6 +549,46 @@ function App() {
     return {Puebla:pu,Aguascalientes:ag,"Bodega Querétaro":bq,totalGranel:pu+ag,totalSaco:bq,total:pu+ag+bq};
   },[ovs]);
 
+  /* comparativo mes actual vs mes anterior al mismo día hábil */
+  const comparativoMes = useMemo(()=>{
+    const today=todayISO();
+    const curYM=today.slice(0,7);
+    const [cy,cm]=curYM.split("-").map(Number);
+    const pd=new Date(cy,cm-2,1);
+    const prevYM=`${pd.getFullYear()}-${String(pd.getMonth()+1).padStart(2,"0")}`;
+    const curStart=`${curYM}-01`;
+    const diasActual=contarDiasHabiles(curStart,today,diasHabiles);
+    const prevStart=`${prevYM}-01`;
+    const [py,pm]=prevYM.split("-").map(Number);
+    const prevMonthEnd=new Date(py,pm,0).getDate();
+    const prevEndISO=`${prevYM}-${String(prevMonthEnd).padStart(2,"0")}`;
+    let count2=0; let prevCutoff=prevEndISO;
+    const dd=new Date(prevStart+"T12:00"); const endDD=new Date(prevEndISO+"T12:00");
+    while(dd<=endDD){
+      const iso=dd.toISOString().slice(0,10);
+      if(esDiaHabilReal(iso,diasHabiles)){count2++;if(count2===diasActual){prevCutoff=iso;break;}}
+      dd.setDate(dd.getDate()+1);
+    }
+    const calcT=(planta,ym,cutoff)=>ovs.filter(p=>(p.fecha_carga||"").startsWith(ym)&&(p.fecha_carga||"")<=cutoff&&plantaDeSerie(p.serie)===planta&&p.status!=="ov_asignada"&&p.status!=="fletera_planta").reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+    const puA=calcT("Puebla",curYM,today),agA=calcT("Aguascalientes",curYM,today);
+    const puP=calcT("Puebla",prevYM,prevCutoff),agP=calcT("Aguascalientes",prevYM,prevCutoff);
+    return {curYM,prevYM,puActual:puA,agActual:agA,puPrevio:puP,agPrevio:agP,totalActual:puA+agA,totalPrevio:puP+agP,diasActual,prevCutoff};
+  },[ovs,diasHabiles]);
+
+  /* días hábiles en el período del reporte */
+  const diasHabilesEnPeriodo = useMemo(()=>{
+    if(reportePeriodo==="historico") return 0;
+    if(reportePeriodo==="mensual"){
+      const cur=currentYM();
+      if(reporteMes===cur) return contarDiasHabiles(`${reporteMes}-01`,todayISO(),diasHabiles);
+      const [y,m]=reporteMes.split("-").map(Number);
+      return contarDiasHabiles(`${reporteMes}-01`,`${reporteMes}-${String(new Date(y,m,0).getDate()).padStart(2,"0")}`,diasHabiles);
+    }
+    if(reportePeriodo==="rango"&&reporteRangoInicio&&reporteRangoFin)
+      return contarDiasHabiles(reporteRangoInicio,reporteRangoFin,diasHabiles);
+    return 0;
+  },[reportePeriodo,reporteMes,reporteRangoInicio,reporteRangoFin,diasHabiles]);
+
   const upd = async (id,patch)=>{
     const p=ovs.find(x=>x.id===id); if(!p) return;
     const updated={...p,...patch};
@@ -476,6 +623,16 @@ function App() {
     if(!confirm("¿Eliminar esta OV?")) return;
     setOVs(prev=>prev.filter(p=>p.id!==id)); setSelected(null);
     await deleteFromDb("ovs",id);
+  };
+  const toggleDiaHabil = async (iso)=>{
+    const newVal=!esDiaHabilReal(iso,diasHabiles);
+    if(newVal===esDiaHabilBase(iso)){
+      setDiasHabiles(prev=>{const n={...prev};delete n[iso];return n;});
+      await deleteFromDb("diasHabiles",iso);
+    } else {
+      setDiasHabiles(prev=>({...prev,[iso]:newVal}));
+      await saveToDb("diasHabiles",iso,{id:iso,trabajado:newVal});
+    }
   };
   const saveCliente = async ()=>{
     const id=cliForm.id||`CLI-${Date.now()}`;
@@ -1528,6 +1685,7 @@ function App() {
                     <div style={{fontSize:10,opacity:.7,marginBottom:6,fontWeight:700,textTransform:"uppercase",letterSpacing:.8}}>🏭 {planta}</div>
                     <div style={{fontSize:38,fontWeight:900,lineHeight:1,letterSpacing:-1}}>{fmtT(ton)}</div>
                     <div style={{fontSize:11,opacity:.6,marginTop:6}}>{mesLabel(reporteMes)}</div>
+                    {diasHabilesEnPeriodo>0&&<div style={{fontSize:11,opacity:.8,marginTop:3,fontWeight:600}}>📊 {fmtT(ton/diasHabilesEnPeriodo)} ton/día hábil</div>}
                   </div>
                 );
               })}
@@ -1540,6 +1698,7 @@ function App() {
                   <div style={{fontSize:10,opacity:.7,marginBottom:6,fontWeight:700,textTransform:"uppercase",letterSpacing:.8}}>📦 Bodega Querétaro — Saco</div>
                   <div style={{fontSize:38,fontWeight:900,lineHeight:1,letterSpacing:-1}}>{fmtT(bqTon)}</div>
                   <div style={{fontSize:11,opacity:.6,marginTop:6}}>{mesLabel(reporteMes)}</div>
+                  {diasHabilesEnPeriodo>0&&<div style={{fontSize:11,opacity:.8,marginTop:3,fontWeight:600}}>📊 {fmtT(bqTon/diasHabilesEnPeriodo)} ton/día hábil</div>}
                 </div>
               );
             })()}
@@ -1549,6 +1708,27 @@ function App() {
               <div style={{fontWeight:700,fontSize:13,color:"#1e293b",marginBottom:12}}>📈 Granel — últimos 6 meses (Puebla + Aguascalientes)</div>
               <GraficaPlantas meses={graficaPlantas.meses} data={graficaPlantas.data} plantasConfig={GRANEL_CONFIG}/>
             </div>
+            {/* COMPARATIVO MES ACTUAL VS MES ANTERIOR */}
+            <div style={{background:"white",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000010",marginBottom:10}}>
+              <div style={{fontWeight:700,fontSize:13,color:"#1e293b",marginBottom:2}}>📊 Comparativo mes actual vs mes anterior</div>
+              <div style={{fontSize:11,color:"#64748b",marginBottom:10}}>
+                {mesLabel(comparativoMes.curYM)} vs {mesLabel(comparativoMes.prevYM)} · mismo día hábil ({comparativoMes.diasActual} días hábiles)
+              </div>
+              <GraficaComparativoMes comparativo={comparativoMes}/>
+              {comparativoMes.diasActual>0&&(
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
+                  <div style={{background:"#eff6ff",borderRadius:8,padding:"8px 10px"}}>
+                    <div style={{fontSize:10,color:"#64748b",fontWeight:700,marginBottom:2}}>Actual · ton/día hábil</div>
+                    <div style={{fontSize:16,fontWeight:800,color:"#1e3a5f"}}>{fmtT(comparativoMes.totalActual/comparativoMes.diasActual)}</div>
+                  </div>
+                  <div style={{background:"#f8fafc",borderRadius:8,padding:"8px 10px"}}>
+                    <div style={{fontSize:10,color:"#64748b",fontWeight:700,marginBottom:2}}>Anterior · ton/día hábil</div>
+                    <div style={{fontSize:16,fontWeight:800,color:"#64748b"}}>{fmtT(comparativoMes.totalPrevio/comparativoMes.diasActual)}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div style={{background:"white",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000010",marginBottom:12}}>
               <div style={{fontWeight:700,fontSize:13,color:"#1e293b",marginBottom:12}}>📦 Saco — últimos 6 meses (Bodega Querétaro)</div>
               <GraficaPlantas meses={graficaPlantas.meses} data={graficaPlantas.data} plantasConfig={SACO_CONFIG}/>
@@ -1591,6 +1771,7 @@ function App() {
             <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
               <button onClick={exportExcelPlanta} style={{background:"#16a34a",color:"white",border:"none",borderRadius:8,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13}}>⬇ Excel por planta</button>
               <button onClick={reporteWAPlanta} style={{background:"#25D366",color:"white",border:"none",borderRadius:8,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13}}>💬 WhatsApp</button>
+              <button onClick={()=>setShowCalHabiles(true)} style={{background:"#f5f3ff",color:"#7c3aed",border:"1px solid #ddd6fe",borderRadius:8,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13}}>📅 Días hábiles</button>
             </div>
 
             {reportePlanta.length===0
@@ -2742,6 +2923,25 @@ function App() {
           </div>
         );
       })()}
+
+      {/* MODAL CALENDARIO DÍAS HÁBILES */}
+      {showCalHabiles&&(
+        <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setShowCalHabiles(false);}}>
+          <div style={{background:"white",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:500,padding:"22px 20px 30px",maxHeight:"88vh",overflowY:"auto"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:16,color:"#1e293b"}}>📅 Días hábiles</div>
+                <div style={{fontSize:12,color:"#64748b",marginTop:2}}>Toca cualquier día para marcar/desmarcar. Se guarda automáticamente.</div>
+              </div>
+              <button onClick={()=>setShowCalHabiles(false)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#94a3b8",padding:4}}>✕</button>
+            </div>
+            <div style={{background:"#f5f3ff",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#5b21b6",marginBottom:14}}>
+              Base: lunes a sábado · Festivos MX excluidos automáticamente (1 ene, 5 feb, 21 mar, 1 may, 16 sep, 20 nov, 25 dic + primer lunes de feb y tercer lunes de mar)
+            </div>
+            <CalendarioHabiles diasHabiles={diasHabiles} onToggle={toggleDiaHabil}/>
+          </div>
+        </div>
+      )}
 
     </div>
   );
