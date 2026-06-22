@@ -1556,8 +1556,8 @@ function App() {
                   const tonFilt=entFilt.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
                   const valFilt=entFilt.reduce((s,p)=>s+valorOV(p),0);
                   const saldoAnt=saldoAnterior(c);
-                  const antPeriodo=saldoAnt+anticipoFiltrado(c);
-                  const saldoPeriodo=antPeriodo-valFilt;
+                  const antFilt=anticipoFiltrado(c);
+                  const saldoPeriodo=saldoAnt+antFilt-valFilt;
                   const cliOVs=ovs.filter(p=>p.clienteId===c.id);
                   const tieneGranel=cliOVs.some(p=>(p.tipo||"granel")==="granel");
                   const tieneSaco=cliOVs.some(p=>p.tipo==="saco");
@@ -1572,8 +1572,8 @@ function App() {
                       <div style={{fontSize:10,color:"#94a3b8"}}>{fmtT(tonFilt)} ton</div>
                     </div>
                     <div style={{textAlign:"right"}}>{fmt(valFilt)}</div>
-                    <div style={{textAlign:"right",color:antPeriodo>=0?"#16a34a":"#ef4444"}}>
-                      {antPeriodo>=0?fmt(antPeriodo):`-${fmt(-antPeriodo)}`}
+                    <div style={{textAlign:"right",color:antFilt>=0?"#16a34a":"#ef4444"}}>
+                      {antFilt>=0?fmt(antFilt):`-${fmt(-antFilt)}`}
                       {reportePeriodo!=="historico"&&saldoAnt!==0&&<div style={{fontSize:9,color:"#94a3b8",marginTop:1}}>ant: {saldoAnt>=0?fmt(saldoAnt):`-${fmt(-saldoAnt)}`}</div>}
                     </div>
                     <div style={{textAlign:"right",fontWeight:700,color:saldoPeriodo>=0?"#2563eb":"#ef4444"}}>{saldoPeriodo>=0?fmt(saldoPeriodo):`-${fmt(-saldoPeriodo)}`}</div>
