@@ -211,6 +211,285 @@ function GraficaComparativoMes({comparativo}){
   return <canvas ref={canvasRef} style={{maxHeight:240}}/>;
 }
 
+function GraficaDashboardCliente({antYM,prevYM,curYM,tonAnte,tonPrev,tonActual,antDay,prevDay}){
+  const canvasRef=useRef(null);
+  const chartRef=useRef(null);
+  useEffect(()=>{
+    if(!canvasRef.current||!window.Chart) return;
+    if(chartRef.current){chartRef.current.destroy();chartRef.current=null;}
+    const fmtYM=(ym)=>{const[y,m]=ym.split("-");return new Date(+y,+m-1,1).toLocaleDateString("es-MX",{month:"short",year:"2-digit"});};
+    chartRef.current=new window.Chart(canvasRef.current,{
+      type:"bar",
+      data:{
+        labels:[`${fmtYM(antYM)} (d.${antDay})`,`${fmtYM(prevYM)} (d.${prevDay})`,fmtYM(curYM)],
+        datasets:[{data:[tonAnte,tonPrev,tonActual],backgroundColor:["#cbd5e1","#94a3b8","#1e3a5f"],borderRadius:8,borderSkipped:false}],
+      },
+      options:{
+        responsive:true,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:(ctx)=>`${(ctx.parsed.y||0).toFixed(2)} ton`}}},
+        scales:{
+          x:{grid:{display:false},ticks:{font:{size:12}}},
+          y:{beginAtZero:true,ticks:{callback:(v)=>`${v}t`,font:{size:11}},grid:{color:"#f1f5f9"}},
+        },
+      },
+    });
+    return()=>{if(chartRef.current){chartRef.current.destroy();chartRef.current=null;}};
+  },[antYM,prevYM,curYM,tonAnte,tonPrev,tonActual]);
+  return <canvas ref={canvasRef} style={{maxHeight:200}}/>;
+}
+
+function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV,onClose}){
+  const curYM=todayISO().slice(0,7);
+  const ec=estadoCuenta.find(c=>c.id===cliente.id)||{saldo:0,ton_entregadas:0,valor_entregado:0};
+
+  const cliOVs=ovs.filter(p=>p.clienteId===cliente.id);
+  const tieneGranel=cliOVs.some(p=>(p.tipo||"granel")==="granel");
+  const tieneSaco=cliOVs.some(p=>p.tipo==="saco");
+
+  const ovsEntMes=ovs.filter(p=>p.clienteId===cliente.id&&p.status==="entregado"&&(p.fecha_carga||"").startsWith(curYM)).sort((a,b)=>(a.fecha_carga||"").localeCompare(b.fecha_carga||""));
+  const tonMes=ovsEntMes.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+  const valMes=ovsEntMes.reduce((s,p)=>s+valorOV(p),0);
+
+  const historial=cliente.historial_anticipos||[];
+  const anticiposMes=historial.filter(a=>(a.fecha||"").startsWith(curYM)).sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
+  const totalAnticiposMes=anticiposMes.reduce((s,a)=>s+(parseFloat(a.monto)||0),0);
+
+  const cutoff=`${curYM}-01`;
+  const antAntes=historial.filter(a=>(a.fecha||"")<cutoff).reduce((s,a)=>s+(parseFloat(a.monto)||0),0);
+  const entAntes=ovs.filter(p=>p.clienteId===cliente.id&&p.status==="entregado"&&(p.fecha_carga||"")<cutoff).reduce((s,p)=>s+valorOV(p),0);
+  const saldoAnt=antAntes-entAntes;
+  const saldoMes=saldoAnt+totalAnticiposMes-valMes;
+
+  const today=todayISO();
+  const [cy,cm]=curYM.split("-").map(Number);
+  const mkYM=(offset)=>{const d=new Date(cy,cm-1+offset,1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;};
+  const prevYM=mkYM(-1);
+  const antYM=mkYM(-2);
+  const diasActual=contarDiasHabiles(`${curYM}-01`,today,diasHabiles);
+  const findCutoff=(ym)=>{
+    const[y,m]=ym.split("-").map(Number);
+    const lastDay=new Date(y,m,0).getDate();
+    const endISO=`${ym}-${String(lastDay).padStart(2,"0")}`;
+    if(diasActual===0) return endISO;
+    let cnt=0; const d=new Date(`${ym}-01T12:00`); const end=new Date(endISO+"T12:00");
+    while(d<=end){const iso=d.toISOString().slice(0,10);if(esDiaHabilReal(iso,diasHabiles)){cnt++;if(cnt===diasActual)return iso;}d.setDate(d.getDate()+1);}
+    return endISO;
+  };
+  const prevCutoff=findCutoff(prevYM);
+  const antCutoff=findCutoff(antYM);
+  const prevDay=parseInt(prevCutoff.slice(8)||"0");
+  const antDay=parseInt(antCutoff.slice(8)||"0");
+  const tonActual=ovsEntMes.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+  const tonPrev=ovs.filter(p=>p.clienteId===cliente.id&&p.status==="entregado"&&(p.fecha_carga||"").startsWith(prevYM)&&(p.fecha_carga||"")<=prevCutoff).reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+  const tonAnte=ovs.filter(p=>p.clienteId===cliente.id&&p.status==="entregado"&&(p.fecha_carga||"").startsWith(antYM)&&(p.fecha_carga||"")<=antCutoff).reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+
+  const facturasCliente=facturas.filter(f=>f.clienteId===cliente.id).sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
+  const saldo=ec.saldo!=null?ec.saldo:(parseFloat(cliente.anticipo)||0)-(ec.valor_entregado||0);
+
+  const secH=(titulo)=>(
+    <div style={{fontWeight:700,fontSize:13,color:"#1e293b",marginBottom:8,display:"flex",alignItems:"center",gap:6}}>{titulo}</div>
+  );
+
+  return(
+    <div style={{position:"fixed",inset:0,background:"#f8fafc",zIndex:500,overflowY:"auto"}}>
+      {/* HEADER FIJO */}
+      <div style={{background:"#1e3a5f",color:"white",padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:10,boxShadow:"0 2px 12px #00000030"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,0.15)",border:"none",borderRadius:8,padding:"6px 12px",color:"white",fontWeight:700,cursor:"pointer",fontSize:13,flexShrink:0}}>← Volver</button>
+          <div>
+            <div style={{fontWeight:800,fontSize:15,lineHeight:1.2}}>{cliente.nombre}</div>
+            <div style={{fontSize:10,opacity:0.7}}>Dashboard del cliente</div>
+          </div>
+        </div>
+        <div style={{textAlign:"right",flexShrink:0}}>
+          <div style={{fontSize:10,opacity:0.7}}>Saldo total</div>
+          <div style={{fontWeight:900,fontSize:19,color:saldo>=0?"#4ade80":"#f87171"}}>{saldo>=0?fmt(saldo):"-"+fmt(-saldo)}</div>
+        </div>
+      </div>
+
+      <div style={{padding:"16px 16px",maxWidth:700,margin:"0 auto"}}>
+
+        {/* 1 — ENCABEZADO */}
+        <div style={{background:"white",borderRadius:12,padding:"16px",boxShadow:"0 1px 6px #00000012",marginBottom:14,borderLeft:`5px solid ${saldo>=0?"#16a34a":"#ef4444"}`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:800,fontSize:17,color:"#1e293b",marginBottom:3}}>{cliente.nombre}</div>
+              {cliente.nombre_fiscal&&<div style={{fontSize:12,color:"#64748b",marginBottom:1}}>{cliente.nombre_fiscal}</div>}
+              {cliente.rfc&&<div style={{fontSize:11,color:"#94a3b8",marginBottom:1}}>RFC: {cliente.rfc}</div>}
+              {cliente.ciudad&&<div style={{fontSize:12,color:"#475569",marginBottom:6}}>📍 {cliente.ciudad}</div>}
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                {tieneGranel&&<span style={{fontSize:11,background:"#eff6ff",color:"#1e40af",borderRadius:10,padding:"2px 8px",fontWeight:700}}>⚡ Granel</span>}
+                {tieneSaco&&<span style={{fontSize:11,background:"#f0fdf4",color:"#15803d",borderRadius:10,padding:"2px 8px",fontWeight:700}}>📦 Saco</span>}
+                {cliente.precio_ton>0&&<span style={{fontSize:11,background:"#f8fafc",color:"#64748b",borderRadius:10,padding:"2px 8px",fontWeight:600}}>{fmt(cliente.precio_ton)}/ton</span>}
+                {cliente.telefono&&<span style={{fontSize:11,color:"#64748b"}}>📞 {cliente.telefono}</span>}
+              </div>
+            </div>
+            <div style={{background:saldo>=0?"#f0fdf4":"#fef2f2",borderRadius:12,padding:"12px 16px",textAlign:"center",minWidth:120,flexShrink:0}}>
+              <div style={{fontSize:10,color:"#64748b",fontWeight:700,marginBottom:2}}>{saldo>=0?"Saldo a favor":"Adeudo"}</div>
+              <div style={{fontWeight:900,fontSize:22,color:saldo>=0?"#16a34a":"#ef4444"}}>{fmt(Math.abs(saldo))}</div>
+              <div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>acumulado total</div>
+            </div>
+          </div>
+        </div>
+
+        {/* 2 — RESUMEN MES ACTUAL */}
+        <div style={{marginBottom:14}}>
+          {secH(`📅 Resumen — ${mesLabel(curYM)}`)}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            {[
+              {label:"Entregado (mes)",val:fmt(valMes),sub:`${fmtT(tonMes)} ton`,color:"#1e3a5f",bg:"#f0f9ff"},
+              {label:"Anticipos (mes)",val:fmt(totalAnticiposMes),sub:`${anticiposMes.length} depósito${anticiposMes.length!==1?"s":""}`,color:"#16a34a",bg:"#f0fdf4"},
+              {label:"Saldo anterior",val:saldoAnt>=0?fmt(saldoAnt):"-"+fmt(-saldoAnt),sub:"al inicio del mes",color:saldoAnt>=0?"#2563eb":"#ef4444",bg:"#f8fafc"},
+              {label:"Saldo del mes",val:saldoMes>=0?fmt(saldoMes):"-"+fmt(-saldoMes),sub:"ant + dep − entregado",color:saldoMes>=0?"#2563eb":"#ef4444",bg:saldoMes>=0?"#eff6ff":"#fef2f2"},
+            ].map(({label,val,sub,color,bg})=>(
+              <div key={label} style={{background:"white",borderRadius:10,padding:"12px 14px",boxShadow:"0 1px 4px #00000010",borderTop:`3px solid ${color}`}}>
+                <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>{label}</div>
+                <div style={{fontWeight:800,fontSize:17,color}}>{val}</div>
+                <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{sub}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 3 — GRÁFICA TENDENCIA */}
+        <div style={{background:"white",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px #00000010",marginBottom:14}}>
+          {secH("📊 Volumen — últimos 3 meses")}
+          <div style={{fontSize:11,color:"#64748b",marginBottom:12}}>Al mismo día hábil ({diasActual} días hábiles transcurridos en el mes)</div>
+          <GraficaDashboardCliente antYM={antYM} prevYM={prevYM} curYM={curYM} tonAnte={tonAnte} tonPrev={tonPrev} tonActual={tonActual} antDay={antDay} prevDay={prevDay}/>
+          {diasActual>0&&(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginTop:12}}>
+              {[[antYM,tonAnte,"#94a3b8"],[prevYM,tonPrev,"#64748b"],[curYM,tonActual,"#1e3a5f"]].map(([ym,ton,color])=>(
+                <div key={ym} style={{background:"#f8fafc",borderRadius:8,padding:"8px",textAlign:"center"}}>
+                  <div style={{fontSize:9,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>{mesLabel(ym).split(" ")[0]}</div>
+                  <div style={{fontSize:15,fontWeight:800,color}}>{fmtT(ton/diasActual)}</div>
+                  <div style={{fontSize:9,color:"#94a3b8"}}>ton/día hábil</div>
+                  <div style={{fontSize:10,color:"#64748b",marginTop:1}}>{fmtT(ton)} ton total</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 4 — ENTREGAS DEL MES */}
+        <div style={{background:"white",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px #00000010",marginBottom:14}}>
+          {secH(`🚚 Entregas — ${mesLabel(curYM)}`)}
+          {ovsEntMes.length===0
+            ?<div style={{fontSize:13,color:"#94a3b8",textAlign:"center",padding:"20px 0"}}>Sin entregas este mes</div>
+            :(
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                  <thead>
+                    <tr style={{background:"#f8fafc",color:"#64748b",fontSize:10,fontWeight:700}}>
+                      <th style={{padding:"6px 8px",textAlign:"left"}}>Folio / OV</th>
+                      <th style={{padding:"6px 8px",textAlign:"center"}}>Carga</th>
+                      <th style={{padding:"6px 8px",textAlign:"center"}}>Entrega</th>
+                      <th style={{padding:"6px 8px",textAlign:"right"}}>Ton</th>
+                      <th style={{padding:"6px 8px",textAlign:"right"}}>Monto</th>
+                      <th style={{padding:"6px 8px",textAlign:"right"}}>Estatus</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ovsEntMes.map((p,i)=>(
+                      <tr key={p.id} style={{borderTop:"1px solid #f1f5f9",background:i%2?"#fafafa":"white"}}>
+                        <td style={{padding:"7px 8px",fontWeight:700,color:"#0891b2"}}>{p.folio||p.num_ov||"—"}</td>
+                        <td style={{padding:"7px 8px",textAlign:"center",color:"#475569"}}>{(p.fecha_carga||"").slice(5).replace("-","/")}</td>
+                        <td style={{padding:"7px 8px",textAlign:"center",color:"#475569"}}>{p.fecha_entrega?(p.fecha_entrega.slice(5).replace("-","/")):"—"}</td>
+                        <td style={{padding:"7px 8px",textAlign:"right",fontWeight:600}}>{fmtT(p.toneladas)}</td>
+                        <td style={{padding:"7px 8px",textAlign:"right",fontWeight:600,color:"#2563eb"}}>{fmt(valorOV(p))}</td>
+                        <td style={{padding:"7px 8px",textAlign:"right"}}><Badge status={p.status}/></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{background:"#eff6ff",borderTop:"2px solid #bfdbfe",fontWeight:700,fontSize:12}}>
+                      <td colSpan={3} style={{padding:"8px",color:"#1e3a5f"}}>Total del mes</td>
+                      <td style={{padding:"8px",textAlign:"right",color:"#1e3a5f"}}>{fmtT(tonMes)}</td>
+                      <td style={{padding:"8px",textAlign:"right",color:"#2563eb"}}>{fmt(valMes)}</td>
+                      <td/>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )
+          }
+        </div>
+
+        {/* 5 — ANTICIPOS / PAGOS */}
+        <div style={{background:"white",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px #00000010",marginBottom:14}}>
+          {secH("💰 Anticipos y pagos")}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #e2e8f0",fontSize:12,color:"#64748b"}}>
+            <span>Saldo al inicio del mes</span>
+            <span style={{fontWeight:700,color:saldoAnt>=0?"#2563eb":"#ef4444"}}>{saldoAnt>=0?fmt(saldoAnt):"-"+fmt(-saldoAnt)}</span>
+          </div>
+          {anticiposMes.length===0
+            ?<div style={{fontSize:12,color:"#94a3b8",padding:"12px 0",textAlign:"center"}}>Sin anticipos registrados este mes</div>
+            :anticiposMes.map((a,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #f1f5f9",fontSize:12}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{color:"#64748b"}}>{a.fecha}</span>
+                  <span style={{fontSize:10,background:a.estatus_factura==="facturado"?"#dcfce7":"#fff7ed",color:a.estatus_factura==="facturado"?"#15803d":"#c2410c",borderRadius:4,padding:"1px 6px",fontWeight:700}}>
+                    {a.estatus_factura==="facturado"?"✅ Facturado":"🟠 Pendiente"}
+                  </span>
+                </div>
+                <span style={{fontWeight:700,color:"#16a34a"}}>{fmt(a.monto)}</span>
+              </div>
+            ))
+          }
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0 4px",borderTop:"2px solid #e2e8f0",fontSize:13,marginTop:4}}>
+            <span style={{fontWeight:700,color:"#1e293b"}}>Saldo del mes</span>
+            <span style={{fontWeight:800,color:saldoMes>=0?"#2563eb":"#ef4444",fontSize:16}}>{saldoMes>=0?fmt(saldoMes):"-"+fmt(-saldoMes)}</span>
+          </div>
+          <div style={{marginTop:12,background:"#f8fafc",borderRadius:8,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{fontWeight:700,color:"#1e293b",fontSize:12}}>Anticipo acumulado (histórico)</div>
+              <div style={{fontSize:11,color:"#94a3b8",marginTop:1}}>{historial.length} depósito{historial.length!==1?"s":""} en total</div>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontWeight:800,fontSize:16,color:"#16a34a"}}>{fmt(parseFloat(cliente.anticipo)||0)}</div>
+              <div style={{fontSize:10,color:"#94a3b8"}}>total acumulado</div>
+            </div>
+          </div>
+        </div>
+
+        {/* 6 — FACTURAS */}
+        <div style={{background:"white",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px #00000010",marginBottom:28}}>
+          {secH("🧾 Facturas emitidas")}
+          {facturasCliente.length===0
+            ?<div style={{fontSize:13,color:"#94a3b8",textAlign:"center",padding:"20px 0"}}>Sin facturas registradas</div>
+            :(
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                  <thead>
+                    <tr style={{background:"#f8fafc",color:"#64748b",fontSize:10,fontWeight:700}}>
+                      <th style={{padding:"6px 8px",textAlign:"left"}}>Folio fiscal</th>
+                      <th style={{padding:"6px 8px",textAlign:"center"}}>Fecha</th>
+                      <th style={{padding:"6px 8px",textAlign:"right"}}>Monto</th>
+                      <th style={{padding:"6px 8px",textAlign:"right"}}>Estatus</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {facturasCliente.map((f,i)=>(
+                      <tr key={f.id} style={{borderTop:"1px solid #f1f5f9",background:i%2?"#fafafa":"white"}}>
+                        <td style={{padding:"7px 8px",fontWeight:700,color:"#7c3aed",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.folio_fiscal||"—"}</td>
+                        <td style={{padding:"7px 8px",textAlign:"center",color:"#475569"}}>{(f.fecha||"").slice(5).replace("-","/")}</td>
+                        <td style={{padding:"7px 8px",textAlign:"right",fontWeight:600}}>{fmt(parseFloat(f.total_con_iva)||parseFloat(f.monto_total)||0)}</td>
+                        <td style={{padding:"7px 8px",textAlign:"right"}}>
+                          <span style={{fontSize:10,background:f.estatus==="Cancelada"?"#fef2f2":f.estatus==="Pagada"?"#f0fdf4":"#eff6ff",color:f.estatus==="Cancelada"?"#dc2626":f.estatus==="Pagada"?"#16a34a":"#2563eb",borderRadius:4,padding:"2px 7px",fontWeight:700}}>{f.estatus||"Emitida"}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          }
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
 function CalendarioHabiles({diasHabiles, onToggle}){
   const [offset,setOffset]=useState(0);
   const today=todayISO();
@@ -383,6 +662,7 @@ function App() {
   const [lectorError,setLectorError]             = useState("");
   const [diasHabiles,setDiasHabiles]             = useState({});
   const [showCalHabiles,setShowCalHabiles]       = useState(false);
+  const [clienteDashboard,setClienteDashboard]   = useState(null);
 
   useEffect(()=>{
     if(!dbReady){window.addEventListener("dbReady",()=>setDbReady(true)); return;}
@@ -1454,7 +1734,8 @@ function App() {
                         {c.ciudad&&<div style={{fontSize:12,color:"#475569",marginTop:1}}>📍 {c.ciudad}</div>}
                         <div style={{fontSize:12,color:"#64748b",marginTop:1}}>Precio: {fmt(c.precio_ton)}/ton · {c.num_entregas} entregas{c.rfc?` · RFC: ${c.rfc}`:""}{c.telefono?` · 📞 ${c.telefono}`:""}</div>
                       </div>
-                      <div style={{display:"flex",gap:6}}>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                        <button onClick={()=>setClienteDashboard(c.id)} style={{background:"#1e3a5f",border:"none",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"white",fontWeight:700}}>📊 Dashboard</button>
                         <button onClick={()=>setCompForm({clienteId:c.id,verFacturados:false,selected:{},toneladas:"",precioTon:String(c.precio_ton||"")})} style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"#1e40af",fontWeight:600}}>🧾 Comprobante</button>
                         <button onClick={()=>{setCliForm(c);setShowCliForm(true);}} style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"#1e3a5f"}}>✏️</button>
                       </div>
@@ -3022,6 +3303,23 @@ function App() {
               )}
             </div>
           </div>
+        );
+      })()}
+
+      {/* DASHBOARD CLIENTE */}
+      {clienteDashboard&&(()=>{
+        const cli=clientes.find(c=>c.id===clienteDashboard);
+        if(!cli) return null;
+        return(
+          <DashboardCliente
+            cliente={cli}
+            ovs={ovs}
+            facturas={facturas}
+            diasHabiles={diasHabiles}
+            estadoCuenta={estadoCuenta}
+            valorOV={valorOV}
+            onClose={()=>setClienteDashboard(null)}
+          />
         );
       })()}
 
