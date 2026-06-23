@@ -180,14 +180,16 @@ function GraficaComparativoMes({comparativo}){
   useEffect(()=>{
     if(!canvasRef.current||!window.Chart||!comparativo) return;
     if(chartRef.current){chartRef.current.destroy();chartRef.current=null;}
-    const {curYM,prevYM,puActual,agActual,puPrevio,agPrevio,totalActual,totalPrevio,prevCutoff}=comparativo;
+    const {curYM,prevYM,antYM,puActual,agActual,puPrevio,agPrevio,puAnte,agAnte,totalActual,totalPrevio,totalAnte,prevCutoff,antCutoff}=comparativo;
     const prevDay=parseInt((prevCutoff||"").slice(8)||"0");
+    const antDay=parseInt((antCutoff||"").slice(8)||"0");
     chartRef.current=new window.Chart(canvasRef.current,{
       type:"bar",
       data:{
         labels:["Puebla","Aguascalientes","Total Granel"],
         datasets:[
-          {label:`${mesLabel(prevYM)} (hasta día ${prevDay})`,data:[puPrevio,agPrevio,totalPrevio],backgroundColor:"#94a3b8",borderRadius:6,borderSkipped:false},
+          {label:`${mesLabel(antYM)} (día ${antDay})`,data:[puAnte,agAnte,totalAnte],backgroundColor:"#cbd5e1",borderRadius:6,borderSkipped:false},
+          {label:`${mesLabel(prevYM)} (día ${prevDay})`,data:[puPrevio,agPrevio,totalPrevio],backgroundColor:"#94a3b8",borderRadius:6,borderSkipped:false},
           {label:mesLabel(curYM),data:[puActual,agActual,totalActual],backgroundColor:"#1e3a5f",borderRadius:6,borderSkipped:false},
         ],
       },
@@ -560,30 +562,37 @@ function App() {
     return {Puebla:pu,Aguascalientes:ag,"Bodega Querétaro":bq,totalGranel:pu+ag,totalSaco:bq,total:pu+ag+bq};
   },[ovs]);
 
-  /* comparativo mes actual vs mes anterior al mismo día hábil */
+  /* comparativo últimos 3 meses al mismo día hábil */
   const comparativoMes = useMemo(()=>{
     const today=todayISO();
     const curYM=today.slice(0,7);
     const [cy,cm]=curYM.split("-").map(Number);
-    const pd=new Date(cy,cm-2,1);
-    const prevYM=`${pd.getFullYear()}-${String(pd.getMonth()+1).padStart(2,"0")}`;
-    const curStart=`${curYM}-01`;
-    const diasActual=contarDiasHabiles(curStart,today,diasHabiles);
-    const prevStart=`${prevYM}-01`;
-    const [py,pm]=prevYM.split("-").map(Number);
-    const prevMonthEnd=new Date(py,pm,0).getDate();
-    const prevEndISO=`${prevYM}-${String(prevMonthEnd).padStart(2,"0")}`;
-    let count2=0; let prevCutoff=prevEndISO;
-    const dd=new Date(prevStart+"T12:00"); const endDD=new Date(prevEndISO+"T12:00");
-    while(dd<=endDD){
-      const iso=dd.toISOString().slice(0,10);
-      if(esDiaHabilReal(iso,diasHabiles)){count2++;if(count2===diasActual){prevCutoff=iso;break;}}
-      dd.setDate(dd.getDate()+1);
-    }
+    const mkYM=(offset)=>{const d=new Date(cy,cm-1+offset,1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;};
+    const prevYM=mkYM(-1);
+    const antYM=mkYM(-2);
+    const diasActual=contarDiasHabiles(`${curYM}-01`,today,diasHabiles);
+    const findCutoff=(ym)=>{
+      const [y,m]=ym.split("-").map(Number);
+      const lastDay=new Date(y,m,0).getDate();
+      const endISO=`${ym}-${String(lastDay).padStart(2,"0")}`;
+      if(diasActual===0) return endISO;
+      let cnt=0;
+      const d=new Date(`${ym}-01T12:00`);
+      const end=new Date(endISO+"T12:00");
+      while(d<=end){
+        const iso=d.toISOString().slice(0,10);
+        if(esDiaHabilReal(iso,diasHabiles)){cnt++;if(cnt===diasActual)return iso;}
+        d.setDate(d.getDate()+1);
+      }
+      return endISO;
+    };
+    const prevCutoff=findCutoff(prevYM);
+    const antCutoff=findCutoff(antYM);
     const calcT=(planta,ym,cutoff)=>ovs.filter(p=>(p.fecha_carga||"").startsWith(ym)&&(p.fecha_carga||"")<=cutoff&&plantaDeSerie(p.serie)===planta&&p.status!=="ov_asignada"&&p.status!=="fletera_planta").reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
-    const puA=calcT("Puebla",curYM,today),agA=calcT("Aguascalientes",curYM,today);
-    const puP=calcT("Puebla",prevYM,prevCutoff),agP=calcT("Aguascalientes",prevYM,prevCutoff);
-    return {curYM,prevYM,puActual:puA,agActual:agA,puPrevio:puP,agPrevio:agP,totalActual:puA+agA,totalPrevio:puP+agP,diasActual,prevCutoff};
+    const puA=calcT("Puebla",curYM,today),  agA=calcT("Aguascalientes",curYM,today);
+    const puP=calcT("Puebla",prevYM,prevCutoff), agP=calcT("Aguascalientes",prevYM,prevCutoff);
+    const puN=calcT("Puebla",antYM,antCutoff),  agN=calcT("Aguascalientes",antYM,antCutoff);
+    return {curYM,prevYM,antYM,puActual:puA,agActual:agA,totalActual:puA+agA,puPrevio:puP,agPrevio:agP,totalPrevio:puP+agP,puAnte:puN,agAnte:agN,totalAnte:puN+agN,diasActual,prevCutoff,antCutoff};
   },[ovs,diasHabiles]);
 
   /* días hábiles en el período del reporte */
@@ -1725,22 +1734,29 @@ function App() {
               <div style={{fontWeight:700,fontSize:13,color:"#1e293b",marginBottom:12}}>📈 Granel — últimos 6 meses (Puebla + Aguascalientes)</div>
               <GraficaPlantas meses={graficaPlantas.meses} data={graficaPlantas.data} plantasConfig={GRANEL_CONFIG}/>
             </div>
-            {/* COMPARATIVO MES ACTUAL VS MES ANTERIOR */}
+            {/* COMPARATIVO 3 MESES */}
             <div style={{background:"white",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000010",marginBottom:10}}>
-              <div style={{fontWeight:700,fontSize:13,color:"#1e293b",marginBottom:2}}>📊 Comparativo mes actual vs mes anterior</div>
+              <div style={{fontWeight:700,fontSize:13,color:"#1e293b",marginBottom:2}}>📊 Tendencia mensual — últimos 3 meses</div>
               <div style={{fontSize:11,color:"#64748b",marginBottom:10}}>
-                {mesLabel(comparativoMes.curYM)} vs {mesLabel(comparativoMes.prevYM)} · mismo día hábil ({comparativoMes.diasActual} días hábiles)
+                Puebla + Aguascalientes · mismo día hábil ({comparativoMes.diasActual} días hábiles)
               </div>
               <GraficaComparativoMes comparativo={comparativoMes}/>
               {comparativoMes.diasActual>0&&(
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
-                  <div style={{background:"#eff6ff",borderRadius:8,padding:"8px 10px"}}>
-                    <div style={{fontSize:10,color:"#64748b",fontWeight:700,marginBottom:2}}>Actual · ton/día hábil</div>
-                    <div style={{fontSize:16,fontWeight:800,color:"#1e3a5f"}}>{fmtT(comparativoMes.totalActual/comparativoMes.diasActual)}</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginTop:10}}>
+                  <div style={{background:"#f8fafc",borderRadius:8,padding:"8px 8px"}}>
+                    <div style={{fontSize:9,color:"#94a3b8",fontWeight:700,marginBottom:2,textTransform:"uppercase",letterSpacing:.4}}>{mesLabel(comparativoMes.antYM).split(" ")[0]}</div>
+                    <div style={{fontSize:15,fontWeight:800,color:"#cbd5e1"}}>{fmtT(comparativoMes.totalAnte/comparativoMes.diasActual)}</div>
+                    <div style={{fontSize:9,color:"#94a3b8",marginTop:1}}>ton/día hábil</div>
                   </div>
-                  <div style={{background:"#f8fafc",borderRadius:8,padding:"8px 10px"}}>
-                    <div style={{fontSize:10,color:"#64748b",fontWeight:700,marginBottom:2}}>Anterior · ton/día hábil</div>
-                    <div style={{fontSize:16,fontWeight:800,color:"#64748b"}}>{fmtT(comparativoMes.totalPrevio/comparativoMes.diasActual)}</div>
+                  <div style={{background:"#f1f5f9",borderRadius:8,padding:"8px 8px"}}>
+                    <div style={{fontSize:9,color:"#64748b",fontWeight:700,marginBottom:2,textTransform:"uppercase",letterSpacing:.4}}>{mesLabel(comparativoMes.prevYM).split(" ")[0]}</div>
+                    <div style={{fontSize:15,fontWeight:800,color:"#64748b"}}>{fmtT(comparativoMes.totalPrevio/comparativoMes.diasActual)}</div>
+                    <div style={{fontSize:9,color:"#94a3b8",marginTop:1}}>ton/día hábil</div>
+                  </div>
+                  <div style={{background:"#eff6ff",borderRadius:8,padding:"8px 8px"}}>
+                    <div style={{fontSize:9,color:"#1e3a5f",fontWeight:700,marginBottom:2,textTransform:"uppercase",letterSpacing:.4}}>{mesLabel(comparativoMes.curYM).split(" ")[0]}</div>
+                    <div style={{fontSize:15,fontWeight:800,color:"#1e3a5f"}}>{fmtT(comparativoMes.totalActual/comparativoMes.diasActual)}</div>
+                    <div style={{fontSize:9,color:"#64748b",marginTop:1}}>ton/día hábil</div>
                   </div>
                 </div>
               )}
