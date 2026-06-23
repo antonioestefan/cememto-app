@@ -1877,18 +1877,18 @@ function App() {
                   <div key={c.id} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",padding:"11px 14px",fontSize:12,borderTop:"1px solid #243447",background:i%2?"#182032":"#1e293b"}}>
                     <div style={{fontWeight:600}}>
                       <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
-                        <span>{c.nombre}</span>
+                        <span style={{color:"#f1f5f9"}}>{c.nombre}</span>
                         {tieneGranel&&<span style={{fontSize:9,background:"#10B98122",color:"#10B981",borderRadius:12,padding:"1px 6px",fontWeight:700,flexShrink:0}}>⚡ Granel</span>}
                         {tieneSaco&&<span style={{fontSize:9,background:"#f59e0b22",color:"#f59e0b",borderRadius:12,padding:"1px 6px",fontWeight:700,flexShrink:0}}>📦 Saco</span>}
                       </div>
                       <div style={{fontSize:10,color:"#94a3b8"}}>{fmtT(tonFilt)} ton</div>
                     </div>
-                    <div style={{textAlign:"right"}}>{fmt(valFilt)}</div>
+                    <div style={{textAlign:"right",color:"#f1f5f9"}}>{fmt(valFilt)}</div>
                     <div style={{textAlign:"right",color:antFilt>=0?"#16a34a":"#ef4444"}}>
                       {antFilt>=0?fmt(antFilt):`-${fmt(-antFilt)}`}
                       {reportePeriodo!=="historico"&&saldoAnt!==0&&<div style={{fontSize:9,color:"#94a3b8",marginTop:1}}>ant: {saldoAnt>=0?fmt(saldoAnt):`-${fmt(-saldoAnt)}`}</div>}
                     </div>
-                    <div style={{textAlign:"right",fontWeight:700,color:saldoPeriodo>=0?"#2563eb":"#ef4444"}}>{saldoPeriodo>=0?fmt(saldoPeriodo):`-${fmt(-saldoPeriodo)}`}</div>
+                    <div style={{textAlign:"right",fontWeight:700,color:saldoPeriodo>=0?"#10B981":"#ef4444"}}>{saldoPeriodo>=0?fmt(saldoPeriodo):`-${fmt(-saldoPeriodo)}`}</div>
                   </div>
                   );
                 })}
@@ -1942,7 +1942,7 @@ function App() {
                           <div style={{textAlign:"right"}}>Actual</div>
                         </div>
                         {gvc.labels.map((nombre,i)=>(
-                          <div key={nombre} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",padding:"6px 10px",fontSize:11,borderTop:i>0?"1px solid #f1f5f9":"none",background:i%2?"#182032":"#1e293b"}}>
+                          <div key={nombre} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",padding:"6px 10px",fontSize:11,borderTop:i>0?"1px solid #243447":"none",background:i%2?"#182032":"#1e293b"}}>
                             <div style={{fontWeight:600,color:"#f8fafc",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre}</div>
                             <div style={{textAlign:"right",color:"#94a3b8"}}>{gvc.mesAnte[i]>0?`${fmtT(gvc.mesAnte[i]/da)}t`:"—"}</div>
                             <div style={{textAlign:"right",color:"#64748b"}}>{gvc.mesAnterior[i]>0?`${fmtT(gvc.mesAnterior[i]/da)}t`:"—"}</div>
@@ -1968,7 +1968,7 @@ function App() {
                     return(
                       <div key={g.cid} style={{background:"#1e293b",borderRadius:12,boxShadow:"0 1px 4px #00000015",overflow:"hidden"}}>
                         <div onClick={()=>setClienteExpandido(prev=>({...prev,[g.cid]:!prev[g.cid]}))}
-                          style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",cursor:"pointer",userSelect:"none",background:exp?"#f0f9ff":"white"}}>
+                          style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",cursor:"pointer",userSelect:"none",background:exp?"#243447":"#1e293b"}}>
                           <div>
                             <div style={{fontWeight:700,fontSize:13,color:"#10B981"}}>{g.nombre}</div>
                             <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{fmtT(g.total_ton)} ton · {fmt(g.total_valor)}</div>
@@ -1986,8 +1986,8 @@ function App() {
                                 <div style={{color:"#94a3b8"}}>{p.fecha_carga||"—"}</div>
                                 <div style={{color:"#94a3b8"}}>{p.num_ov||"—"}</div>
                                 <div style={{color:"#94a3b8"}}>{p.fecha_entrega||"—"}</div>
-                                <div style={{textAlign:"right",color:"#334155"}}>{fmtT(p.toneladas)}</div>
-                                <div style={{textAlign:"right",color:"#334155"}}>{fmt(valorOV(p))}</div>
+                                <div style={{textAlign:"right",color:"#f1f5f9"}}>{fmtT(p.toneladas)}</div>
+                                <div style={{textAlign:"right",color:"#f1f5f9"}}>{fmt(valorOV(p))}</div>
                               </div>
                             ))}
                             <div style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 0.9fr 1fr 0.8fr 1fr",padding:"8px 14px",fontSize:11,borderTop:"2px solid #334155",fontWeight:700,background:"#10B98122",gap:4}}>
