@@ -142,7 +142,7 @@ function GraficaPlantas({meses,data,plantasConfig}){
   return <canvas ref={canvasRef} style={{maxHeight:260}}/>;
 }
 
-function GraficaVolumenClientes({labels,mesActual,mesAnterior,curLabel,prevLabel}){
+function GraficaVolumenClientes({labels,mesActual,mesAnterior,mesAnte,curLabel,prevLabel,antLabel}){
   const canvasRef=useRef(null);
   const chartRef=useRef(null);
   useEffect(()=>{
@@ -153,8 +153,9 @@ function GraficaVolumenClientes({labels,mesActual,mesAnterior,curLabel,prevLabel
       data:{
         labels,
         datasets:[
-          {label:curLabel,data:mesActual,backgroundColor:"#1e3a5f",borderRadius:5,borderSkipped:false},
+          {label:antLabel,data:mesAnte,backgroundColor:"#cbd5e1",borderRadius:5,borderSkipped:false},
           {label:prevLabel,data:mesAnterior,backgroundColor:"#94a3b8",borderRadius:5,borderSkipped:false},
+          {label:curLabel,data:mesActual,backgroundColor:"#1e3a5f",borderRadius:5,borderSkipped:false},
         ],
       },
       options:{
@@ -170,7 +171,7 @@ function GraficaVolumenClientes({labels,mesActual,mesAnterior,curLabel,prevLabel
       },
     });
     return()=>{if(chartRef.current){chartRef.current.destroy();chartRef.current=null;}};
-  },[labels,mesActual,mesAnterior]);
+  },[labels,mesActual,mesAnterior,mesAnte]);
   return <canvas ref={canvasRef} style={{maxHeight:240}}/>;
 }
 
@@ -536,23 +537,44 @@ function App() {
     return {meses,data};
   },[ovs]);
 
-  /* gráfica volumen por cliente: mes actual vs mes anterior al mismo día */
+  /* gráfica volumen por cliente: últimos 3 meses al mismo día hábil */
   const graficaVolumenClientes = useMemo(()=>{
     const today=todayISO();
     const curYM=today.slice(0,7);
     const [cy,cm]=curYM.split("-").map(Number);
-    const pd=new Date(cy,cm-2,1);
-    const prevYM=`${pd.getFullYear()}-${String(pd.getMonth()+1).padStart(2,"0")}`;
-    const todayDay=today.slice(8,10);
-    const prevCutoff=`${prevYM}-${todayDay}`;
+    const mkYM=(offset)=>{const d=new Date(cy,cm-1+offset,1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;};
+    const prevYM=mkYM(-1);
+    const antYM=mkYM(-2);
+    const diasActual=contarDiasHabiles(`${curYM}-01`,today,diasHabiles);
+    const findCutoff=(ym)=>{
+      const [y,m]=ym.split("-").map(Number);
+      const lastDay=new Date(y,m,0).getDate();
+      const endISO=`${ym}-${String(lastDay).padStart(2,"0")}`;
+      if(diasActual===0) return endISO;
+      let cnt=0;
+      const d=new Date(`${ym}-01T12:00`);
+      const end=new Date(endISO+"T12:00");
+      while(d<=end){
+        const iso=d.toISOString().slice(0,10);
+        if(esDiaHabilReal(iso,diasHabiles)){cnt++;if(cnt===diasActual)return iso;}
+        d.setDate(d.getDate()+1);
+      }
+      return endISO;
+    };
+    const prevCutoff=findCutoff(prevYM);
+    const antCutoff=findCutoff(antYM);
     const cls=estadoCuenta.filter(c=>c.id!=="__sin__");
     const labels=cls.map(c=>c.nombre);
-    const mesActual=cls.map(c=>ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado"&&(p.fecha_carga||"").startsWith(curYM)).reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0));
+    const mesActual =cls.map(c=>ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado"&&(p.fecha_carga||"").startsWith(curYM)).reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0));
     const mesAnterior=cls.map(c=>ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado"&&(p.fecha_carga||"").startsWith(prevYM)&&(p.fecha_carga||"")<=prevCutoff).reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0));
+    const mesAnte    =cls.map(c=>ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado"&&(p.fecha_carga||"").startsWith(antYM)&&(p.fecha_carga||"")<=antCutoff).reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0));
+    const prevDay=parseInt(prevCutoff.slice(8)||"0");
+    const antDay=parseInt(antCutoff.slice(8)||"0");
     const curLabel=mesLabel(curYM);
-    const prevLabel=`${mesLabel(prevYM)} (1-${parseInt(todayDay)})`;
-    return {labels,mesActual,mesAnterior,curLabel,prevLabel};
-  },[ovs,estadoCuenta]);
+    const prevLabel=`${mesLabel(prevYM)} (día ${prevDay})`;
+    const antLabel=`${mesLabel(antYM)} (día ${antDay})`;
+    return {labels,mesActual,mesAnterior,mesAnte,curLabel,prevLabel,antLabel,curYM,prevYM,antYM,diasActual};
+  },[ovs,estadoCuenta,diasHabiles]);
 
   /* acumulado anual por planta */
   const acumuladoAnual = useMemo(()=>{
@@ -1595,15 +1617,61 @@ function App() {
             {/* GRÁFICA VOLUMEN POR CLIENTE */}
             {graficaVolumenClientes.labels.length>0&&(
               <div style={{background:"white",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px #00000010",marginBottom:20,marginTop:8}}>
-                <div style={{fontWeight:700,fontSize:13,color:"#1e293b",marginBottom:4}}>📊 Volumen por cliente — mes actual vs mes anterior</div>
-                <div style={{fontSize:11,color:"#64748b",marginBottom:12}}>{graficaVolumenClientes.curLabel} vs {graficaVolumenClientes.prevLabel}</div>
+                <div style={{fontWeight:700,fontSize:13,color:"#1e293b",marginBottom:2}}>📊 Volumen por cliente — últimos 3 meses</div>
+                <div style={{fontSize:11,color:"#64748b",marginBottom:12}}>Mismo día hábil ({graficaVolumenClientes.diasActual} días hábiles)</div>
                 <GraficaVolumenClientes
                   labels={graficaVolumenClientes.labels}
                   mesActual={graficaVolumenClientes.mesActual}
                   mesAnterior={graficaVolumenClientes.mesAnterior}
+                  mesAnte={graficaVolumenClientes.mesAnte}
                   curLabel={graficaVolumenClientes.curLabel}
                   prevLabel={graficaVolumenClientes.prevLabel}
+                  antLabel={graficaVolumenClientes.antLabel}
                 />
+                {graficaVolumenClientes.diasActual>0&&(()=>{
+                  const gvc=graficaVolumenClientes;
+                  const sumA=gvc.mesAnte.reduce((s,v)=>s+v,0);
+                  const sumP=gvc.mesAnterior.reduce((s,v)=>s+v,0);
+                  const sumC=gvc.mesActual.reduce((s,v)=>s+v,0);
+                  const da=gvc.diasActual;
+                  return(
+                    <div style={{marginTop:12}}>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:10}}>
+                        <div style={{background:"#f8fafc",borderRadius:8,padding:"8px",textAlign:"center"}}>
+                          <div style={{fontSize:9,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:.4}}>{mesLabel(gvc.antYM).split(" ")[0]}</div>
+                          <div style={{fontSize:14,fontWeight:800,color:"#94a3b8"}}>{fmtT(sumA/da)}</div>
+                          <div style={{fontSize:9,color:"#94a3b8"}}>ton/día hábil</div>
+                        </div>
+                        <div style={{background:"#f1f5f9",borderRadius:8,padding:"8px",textAlign:"center"}}>
+                          <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:.4}}>{mesLabel(gvc.prevYM).split(" ")[0]}</div>
+                          <div style={{fontSize:14,fontWeight:800,color:"#64748b"}}>{fmtT(sumP/da)}</div>
+                          <div style={{fontSize:9,color:"#94a3b8"}}>ton/día hábil</div>
+                        </div>
+                        <div style={{background:"#eff6ff",borderRadius:8,padding:"8px",textAlign:"center"}}>
+                          <div style={{fontSize:9,color:"#1e3a5f",fontWeight:700,textTransform:"uppercase",letterSpacing:.4}}>{mesLabel(gvc.curYM).split(" ")[0]}</div>
+                          <div style={{fontSize:14,fontWeight:800,color:"#1e3a5f"}}>{fmtT(sumC/da)}</div>
+                          <div style={{fontSize:9,color:"#64748b"}}>ton/día hábil</div>
+                        </div>
+                      </div>
+                      <div style={{background:"#f8fafc",borderRadius:8,overflow:"hidden"}}>
+                        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",padding:"6px 10px",fontSize:10,fontWeight:700,color:"#94a3b8",borderBottom:"1px solid #e2e8f0"}}>
+                          <div>Cliente</div>
+                          <div style={{textAlign:"right"}}>{mesLabel(gvc.antYM).split(" ")[0]}</div>
+                          <div style={{textAlign:"right"}}>{mesLabel(gvc.prevYM).split(" ")[0]}</div>
+                          <div style={{textAlign:"right"}}>Actual</div>
+                        </div>
+                        {gvc.labels.map((nombre,i)=>(
+                          <div key={nombre} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",padding:"6px 10px",fontSize:11,borderTop:i>0?"1px solid #f1f5f9":"none",background:i%2?"#fafafa":"white"}}>
+                            <div style={{fontWeight:600,color:"#1e293b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre}</div>
+                            <div style={{textAlign:"right",color:"#94a3b8"}}>{gvc.mesAnte[i]>0?`${fmtT(gvc.mesAnte[i]/da)}t`:"—"}</div>
+                            <div style={{textAlign:"right",color:"#64748b"}}>{gvc.mesAnterior[i]>0?`${fmtT(gvc.mesAnterior[i]/da)}t`:"—"}</div>
+                            <div style={{textAlign:"right",fontWeight:700,color:"#1e3a5f"}}>{gvc.mesActual[i]>0?`${fmtT(gvc.mesActual[i]/da)}t`:"—"}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
