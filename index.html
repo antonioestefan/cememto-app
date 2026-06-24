@@ -1659,11 +1659,11 @@ function App() {
                     const pr=PRIORIDAD[n.prioridad]||PRIORIDAD.media;
                     const c=n.clienteId?cliById(n.clienteId):null;
                     return(
-                      <div key={n.id} style={{background:vencida?"#fef2f2":"#fffbeb",borderRadius:12,padding:"12px 14px",borderLeft:`4px solid ${vencida?"#ef4444":"#d97706"}`}}>
+                      <div key={n.id} style={{background:vencida?"#ef444422":"#d9770622",borderRadius:12,padding:"12px 14px",borderLeft:`4px solid ${vencida?"#ef4444":"#d97706"}`}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
                           <div style={{flex:1}}>
                             <div style={{fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",marginBottom:2}}>📝 Nota</div>
-                            <div style={{fontWeight:700,fontSize:13}}>{n.texto}</div>
+                            <div style={{fontWeight:700,fontSize:13,color:"#f1f5f9"}}>{n.texto}</div>
                             <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"center"}}>
                               <span style={{background:pr.bg,color:pr.color,borderRadius:20,padding:"1px 7px",fontSize:11,fontWeight:700}}>{pr.label}</span>
                               <span style={{fontSize:11,color:vencida?"#dc2626":"#d97706",fontWeight:700}}>{vencida?"⚠ Vencida:":"🔔 Hoy:"} {diaLabel(n.fecha_vencimiento)}</span>
@@ -1683,11 +1683,11 @@ function App() {
                     const et=getEtapa(p.etapa);
                     const vencido=(p.fecha_seguimiento||"")<todayISO();
                     return(
-                      <div key={p.id} style={{background:vencido?"#fef2f2":"#fffbeb",borderRadius:12,padding:"12px 14px",borderLeft:`4px solid ${vencido?"#ef4444":"#d97706"}`}}>
+                      <div key={p.id} style={{background:vencido?"#ef444422":"#d9770622",borderRadius:12,padding:"12px 14px",borderLeft:`4px solid ${vencido?"#ef4444":"#d97706"}`}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
                           <div style={{flex:1}}>
                             <div style={{fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",marginBottom:2}}>🎯 Prospecto</div>
-                            <div style={{fontWeight:700,fontSize:13}}>{p.nombre}</div>
+                            <div style={{fontWeight:700,fontSize:13,color:"#f1f5f9"}}>{p.nombre}</div>
                             <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"center"}}>
                               <span style={{background:et.bg,color:et.color,borderRadius:20,padding:"1px 7px",fontSize:11,fontWeight:700}}>{et.label}</span>
                               <span style={{fontSize:11,color:vencido?"#dc2626":"#d97706",fontWeight:700}}>{vencido?"⚠ Seg. vencido:":"🔔 Seg. hoy:"} {diaLabel(p.fecha_seguimiento)}</span>
