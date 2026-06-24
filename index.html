@@ -1430,7 +1430,7 @@ function App() {
 
       {/* TABS */}
       <div style={{background:"#1e293b",borderBottom:"2px solid #334155",padding:"0 16px",display:"flex",overflowX:"auto"}}>
-        {[["confirmar",`📌 Hoy${(totales.porConf+notasBadge+prospBadge)>0?` (${totales.porConf+notasBadge+prospBadge})`:""}`],["ordenes","📋 Órdenes"],["clientes","👥 Clientes"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","📅 Calendario"],["prospectos",`🎯 Prospectos${prospBadge?` (${prospBadge})`:""}`],["facturas","🧾 Facturas"],["programacion","📋 Prog. Semanal"]].map(([k,l])=>(
+        {[["confirmar",`📌 Hoy${(totales.porConf+notasBadge+prospBadge)>0?` (${totales.porConf+notasBadge+prospBadge})`:""}`],["ordenes","📋 Órdenes"],["clientes","👥 Clientes"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","📅 Calendario"],["prospectos",`🎯 Prospectos${prospBadge?` (${prospBadge})`:""}`],["facturas","🧾 Facturas"],["programacion","📋 Prog. Semanal"],["inteligencia","📈 Inteligencia"]].map(([k,l])=>(
           <button key={k} onClick={()=>setTab(k)} style={{background:"none",border:"none",borderBottom:tab===k?"3px solid #10B981":"3px solid transparent",padding:"12px 14px",cursor:"pointer",fontWeight:tab===k?700:500,color:tab===k?"#10B981":"#64748b",fontSize:13,whiteSpace:"nowrap"}}>{l}</button>
         ))}
       </div>
@@ -2540,6 +2540,219 @@ function App() {
             )}
           </>
         )}
+
+        {/* ---- INTELIGENCIA DE NEGOCIO ---- */}
+        {tab==="inteligencia"&&(()=>{
+          const META=20000;
+          const HITOS=[5000,10000,15000,20000];
+          const today=todayISO();
+          const curYM=currentYM();
+          const [cy,cm]=curYM.split("-").map(Number);
+          const mkYMoff=(off)=>{const d=new Date(cy,cm-1+off,1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;};
+          const prevYM=mkYMoff(-1);
+
+          const lastDayCur=new Date(cy,cm,0).getDate();
+          const lastDayCurISO=`${curYM}-${String(lastDayCur).padStart(2,"0")}`;
+          const lastDayPrev=new Date(cy,cm-1,0).getDate();
+          const lastDayPrevISO=`${prevYM}-${String(lastDayPrev).padStart(2,"0")}`;
+
+          const diasTranscurridos=contarDiasHabiles(`${curYM}-01`,today,diasHabiles);
+          const totalDiasMes=contarDiasHabiles(`${curYM}-01`,lastDayCurISO,diasHabiles);
+          const diasRestantes=totalDiasMes-diasTranscurridos;
+
+          const ovsEntCur=ovs.filter(p=>p.status==="entregado"&&(p.fecha_carga||"").startsWith(curYM));
+          const tonMesActual=ovsEntCur.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+
+          const findCutoffPrev=()=>{
+            if(diasTranscurridos===0) return lastDayPrevISO;
+            let cnt=0;
+            const d=new Date(`${prevYM}-01T12:00`);
+            const end=new Date(lastDayPrevISO+"T12:00");
+            while(d<=end){
+              const iso=d.toISOString().slice(0,10);
+              if(esDiaHabilReal(iso,diasHabiles)){cnt++;if(cnt===diasTranscurridos)return iso;}
+              d.setDate(d.getDate()+1);
+            }
+            return lastDayPrevISO;
+          };
+          const prevCutoff=findCutoffPrev();
+          const ovsEntPrev=ovs.filter(p=>p.status==="entregado"&&(p.fecha_carga||"").startsWith(prevYM)&&(p.fecha_carga||"")<=prevCutoff);
+          const tonMesPrev=ovsEntPrev.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+
+          const ritmoActual=diasTranscurridos>0?tonMesActual/diasTranscurridos:0;
+          const ritmoPrev=diasTranscurridos>0&&tonMesPrev>0?tonMesPrev/diasTranscurridos:0;
+          const proyeccion=tonMesActual+ritmoActual*diasRestantes;
+          const pct=Math.min((tonMesActual/META)*100,100);
+          const ritmoNecesario=diasRestantes>0?(META-tonMesActual)/diasRestantes:0;
+
+          const clientesSemaforo=clientes.map(c=>{
+            const ovsCliCur=ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado"&&(p.fecha_carga||"").startsWith(curYM));
+            const ovsCliPrev=ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado"&&(p.fecha_carga||"").startsWith(prevYM)&&(p.fecha_carga||"")<=prevCutoff);
+            const tonCur=ovsCliCur.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+            const tonPrev=ovsCliPrev.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+            const ratio=tonPrev>0?tonCur/tonPrev:(tonCur>0?1:0);
+            const allDels=ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado"&&p.fecha_carga).sort((a,b)=>b.fecha_carga.localeCompare(a.fecha_carga));
+            const lastDel=allDels[0]?.fecha_carga;
+            const diasSinEntrega=lastDel?Math.max(0,contarDiasHabiles(lastDel,today,diasHabiles)-1):999;
+            const ec=estadoCuenta.find(e=>e.id===c.id)||{};
+            const saldo=ec.saldo!=null?ec.saldo:0;
+            const precioTon=parseFloat(c.precio_ton)||0;
+            const causas=[];
+            if(diasSinEntrega>5) causas.push("Sin entregas recientes");
+            if(tonPrev>0&&ratio<0.7) causas.push("Volumen bajo");
+            if(saldo<0) causas.push("Sin anticipo");
+            let semaforo="verde";
+            if(diasSinEntrega>5||(tonPrev>0&&ratio<0.7)) semaforo="rojo";
+            else if(tonPrev>0&&ratio<1.0) semaforo="amarillo";
+            return {...c,tonCur,tonPrev,ratio,diasSinEntrega,saldo,semaforo,causas,precioTon};
+          }).filter(c=>c.tonCur>0||c.tonPrev>0).sort((a,b)=>({rojo:0,amarillo:1,verde:2}[a.semaforo]-({rojo:0,amarillo:1,verde:2}[b.semaforo])));
+
+          const alertas=[];
+          if(diasTranscurridos>2&&ritmoActual<ritmoNecesario&&ritmoNecesario>0){
+            alertas.push({tipo:"rojo",icon:"📉",titulo:"Ritmo insuficiente para la meta",desc:`Necesitas ${fmtT(ritmoNecesario)} ton/día hábil para alcanzar ${META.toLocaleString()} ton. Ritmo actual: ${fmtT(ritmoActual)} ton/día hábil.`});
+          }
+          clientesSemaforo.forEach(c=>{
+            if(c.saldo>0&&c.precioTon>0&&(c.saldo/(30*c.precioTon))<2){
+              alertas.push({tipo:"amarillo",icon:"💰",titulo:`${c.nombre} — Anticipo bajo`,desc:`Saldo: ${fmt(c.saldo)} (menos de 2 entregas estimadas)`});
+            }
+            if(c.diasSinEntrega>5&&c.tonPrev>0){
+              alertas.push({tipo:"rojo",icon:"⏱",titulo:`${c.nombre} — Sin actividad`,desc:`${c.diasSinEntrega} días hábiles sin entregas`});
+            }
+          });
+
+          const semColor={verde:"#10B981",amarillo:"#f59e0b",rojo:"#ef4444"};
+          const semBg={verde:"#10B98122",amarillo:"#f59e0b22",rojo:"#ef444422"};
+          const semLabel={verde:"✅ Al ritmo",amarillo:"⚠️ Bajo ritmo",rojo:"🔴 Crítico"};
+
+          return(<>
+            {/* ENCABEZADO */}
+            <div style={{background:"linear-gradient(135deg,#10B981,#059669)",borderRadius:14,padding:"18px 20px",color:"white",marginBottom:14}}>
+              <div style={{fontSize:10,opacity:.7,fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:4}}>📈 Inteligencia de Negocio</div>
+              <div style={{fontSize:22,fontWeight:900}}>{mesLabel(curYM)}</div>
+              <div style={{fontSize:11,opacity:.6,marginTop:4}}>{diasTranscurridos} días hábiles transcurridos · {diasRestantes} restantes de {totalDiasMes}</div>
+            </div>
+
+            {/* TERMÓMETRO 20K */}
+            <div style={{background:"#1e293b",borderRadius:12,padding:"18px 16px",marginBottom:12,boxShadow:"0 1px 4px #00000040"}}>
+              <div style={{fontWeight:800,fontSize:14,color:"#f8fafc",marginBottom:2}}>🎯 Termómetro Plan 20,000 ton/mes</div>
+              <div style={{fontSize:11,color:"#64748b",marginBottom:14}}>Progreso hacia la meta mensual de volumen</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
+                <div style={{background:"#243447",borderRadius:10,padding:"12px",textAlign:"center"}}>
+                  <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Actual</div>
+                  <div style={{fontSize:22,fontWeight:900,color:"#10B981"}}>{fmtT(tonMesActual)}</div>
+                  <div style={{fontSize:9,color:"#94a3b8"}}>toneladas</div>
+                </div>
+                <div style={{background:"#243447",borderRadius:10,padding:"12px",textAlign:"center"}}>
+                  <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Proyección</div>
+                  <div style={{fontSize:22,fontWeight:900,color:proyeccion>=META?"#10B981":"#f59e0b"}}>{fmtT(proyeccion)}</div>
+                  <div style={{fontSize:9,color:"#94a3b8"}}>ton estimadas</div>
+                </div>
+                <div style={{background:"#243447",borderRadius:10,padding:"12px",textAlign:"center"}}>
+                  <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Ritmo</div>
+                  <div style={{fontSize:22,fontWeight:900,color:"#f8fafc"}}>{fmtT(ritmoActual)}</div>
+                  <div style={{fontSize:9,color:"#94a3b8"}}>ton/día hábil</div>
+                </div>
+              </div>
+              <div style={{position:"relative",height:28,background:"#243447",borderRadius:14,overflow:"hidden",marginBottom:6}}>
+                <div style={{position:"absolute",left:0,top:0,height:"100%",width:`${pct}%`,background:"linear-gradient(90deg,#059669,#10B981)",borderRadius:14}}/>
+                {HITOS.slice(0,-1).map(h=>(
+                  <div key={h} style={{position:"absolute",left:`${(h/META)*100}%`,top:0,bottom:0,width:2,background:"#0F172A",opacity:.6}}/>
+                ))}
+                <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"white",textShadow:"0 1px 3px #00000080"}}>{pct.toFixed(1)}%</div>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,paddingLeft:"0%"}}>
+                {HITOS.map(h=>(
+                  <div key={h} style={{textAlign:"center",flex:1}}>
+                    <div style={{fontSize:9,color:tonMesActual>=h?"#10B981":"#475569",fontWeight:700}}>{(h/1000).toFixed(0)}K {tonMesActual>=h?"✓":""}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* PROYECCIÓN CIERRE */}
+            <div style={{background:"#1e293b",borderRadius:12,padding:"16px",marginBottom:12,boxShadow:"0 1px 4px #00000040"}}>
+              <div style={{fontWeight:800,fontSize:14,color:"#f8fafc",marginBottom:12}}>📊 Proyección de cierre de mes</div>
+              <div style={{background:proyeccion>=META?"#10B98122":"#f59e0b22",borderRadius:10,padding:"14px 16px",marginBottom:12,borderLeft:`4px solid ${proyeccion>=META?"#10B981":"#f59e0b"}`}}>
+                <div style={{fontSize:11,color:"#94a3b8",marginBottom:4}}>A este ritmo cerrarás el mes con:</div>
+                <div style={{fontSize:28,fontWeight:900,color:proyeccion>=META?"#10B981":"#f59e0b"}}>{fmtT(proyeccion)} ton</div>
+                {proyeccion<META
+                  ?<div style={{fontSize:12,color:"#94a3b8",marginTop:4}}>Faltan {fmtT(META-proyeccion)} ton · Necesitas {fmtT(ritmoNecesario)} ton/día hábil</div>
+                  :<div style={{fontSize:12,color:"#10B981",marginTop:4}}>✅ En camino a superar la meta de {META.toLocaleString()} ton</div>
+                }
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div style={{background:"#243447",borderRadius:10,padding:"12px"}}>
+                  <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>{mesLabel(curYM).split(" ")[0]} (actual)</div>
+                  <div style={{fontSize:18,fontWeight:800,color:"#10B981"}}>{fmtT(tonMesActual)} ton</div>
+                  <div style={{fontSize:10,color:"#94a3b8"}}>{fmtT(ritmoActual)} ton/día hábil</div>
+                </div>
+                <div style={{background:"#243447",borderRadius:10,padding:"12px"}}>
+                  <div style={{fontSize:9,color:"#64748b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>{mesLabel(prevYM).split(" ")[0]} (mismo día)</div>
+                  <div style={{fontSize:18,fontWeight:800,color:"#94a3b8"}}>{fmtT(tonMesPrev)} ton</div>
+                  <div style={{fontSize:10,color:"#64748b"}}>{fmtT(ritmoPrev)} ton/día hábil</div>
+                </div>
+              </div>
+              {ritmoPrev>0&&(
+                <div style={{marginTop:10,fontSize:12,fontWeight:700,textAlign:"center",color:ritmoActual>=ritmoPrev?"#10B981":"#f59e0b"}}>
+                  {ritmoActual>=ritmoPrev?"▲":"▼"} {Math.abs(((ritmoActual-ritmoPrev)/ritmoPrev)*100).toFixed(1)}% vs mismo período {mesLabel(prevYM).split(" ")[0]}
+                </div>
+              )}
+            </div>
+
+            {/* SEMÁFORO DE CLIENTES */}
+            <div style={{background:"#1e293b",borderRadius:12,padding:"16px",marginBottom:12,boxShadow:"0 1px 4px #00000040"}}>
+              <div style={{fontWeight:800,fontSize:14,color:"#f8fafc",marginBottom:4}}>🚦 Semáforo de clientes</div>
+              <div style={{fontSize:11,color:"#64748b",marginBottom:12}}>Ritmo de entrega comparado con el mismo período del mes anterior</div>
+              {clientesSemaforo.length===0
+                ?<div style={{fontSize:13,color:"#94a3b8",textAlign:"center",padding:"20px 0"}}>Sin entregas registradas este mes o el anterior</div>
+                :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {clientesSemaforo.map(c=>(
+                    <div key={c.id} style={{background:"#243447",borderRadius:10,padding:"12px 14px",borderLeft:`4px solid ${semColor[c.semaforo]}`}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                        <div style={{flex:1}}>
+                          <div style={{fontWeight:700,fontSize:13,color:"#f1f5f9"}}>{c.nombre}</div>
+                          <div style={{display:"flex",gap:10,marginTop:4,flexWrap:"wrap"}}>
+                            <span style={{fontSize:11,color:"#94a3b8"}}>Actual: <b style={{color:"#f1f5f9"}}>{fmtT(c.tonCur)} ton</b></span>
+                            {c.tonPrev>0&&<span style={{fontSize:11,color:"#94a3b8"}}>Anterior: <b style={{color:"#64748b"}}>{fmtT(c.tonPrev)} ton</b></span>}
+                            {c.diasSinEntrega<999&&<span style={{fontSize:11,color:"#94a3b8"}}>{c.diasSinEntrega} día{c.diasSinEntrega!==1?"s":""} sin entrega</span>}
+                          </div>
+                          {c.causas.length>0&&(
+                            <div style={{display:"flex",gap:4,marginTop:6,flexWrap:"wrap"}}>
+                              {c.causas.map(ca=>(
+                                <span key={ca} style={{fontSize:10,background:semBg[c.semaforo],color:semColor[c.semaforo],borderRadius:20,padding:"2px 8px",fontWeight:700}}>{ca}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{textAlign:"right",flexShrink:0}}>
+                          <div style={{fontSize:10,fontWeight:700,color:semColor[c.semaforo]}}>{semLabel[c.semaforo]}</div>
+                          {c.tonPrev>0&&<div style={{fontSize:14,fontWeight:800,color:c.ratio>=1?"#10B981":c.ratio>=.7?"#f59e0b":"#ef4444"}}>{(c.ratio*100).toFixed(0)}%</div>}
+                          {c.tonPrev===0&&c.tonCur>0&&<div style={{fontSize:10,color:"#64748b"}}>Nuevo</div>}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              }
+            </div>
+
+            {/* ALERTAS INTELIGENTES */}
+            <div style={{background:"#1e293b",borderRadius:12,padding:"16px",marginBottom:20,boxShadow:"0 1px 4px #00000040"}}>
+              <div style={{fontWeight:800,fontSize:14,color:"#f8fafc",marginBottom:12}}>⚡ Alertas inteligentes</div>
+              {alertas.length===0
+                ?<div style={{background:"#10B98122",borderRadius:8,padding:"12px 14px",fontSize:13,color:"#10B981",fontWeight:600}}>✅ Sin alertas activas — todo en orden</div>
+                :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {alertas.map((a,i)=>(
+                    <div key={i} style={{background:semBg[a.tipo],borderRadius:10,padding:"12px 14px",borderLeft:`4px solid ${semColor[a.tipo]}`}}>
+                      <div style={{fontWeight:700,fontSize:13,color:semColor[a.tipo]}}>{a.icon} {a.titulo}</div>
+                      <div style={{fontSize:12,color:"#94a3b8",marginTop:3}}>{a.desc}</div>
+                    </div>
+                  ))}
+                </div>
+              }
+            </div>
+          </>);
+        })()}
 
         {/* ---- FACTURAS ---- */}
         {tab==="facturas"&&(()=>{
