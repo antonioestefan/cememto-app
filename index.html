@@ -660,6 +660,8 @@ function App() {
   const [lectorFiles,setLectorFiles]             = useState({a:null,b:null});
   const [lectorMode,setLectorMode]               = useState("single");
   const [lectorError,setLectorError]             = useState("");
+  const [showOVMenu,setShowOVMenu]               = useState(false);
+  const [showLectorNuevo,setShowLectorNuevo]     = useState(false);
   const [diasHabiles,setDiasHabiles]             = useState({});
   const [showCalHabiles,setShowCalHabiles]       = useState(false);
   const [clienteDashboard,setClienteDashboard]   = useState(null);
@@ -1424,7 +1426,18 @@ function App() {
         </div>
         <div style={{display:"flex",gap:8}}>
           <button onClick={()=>exportExcel("")} style={{background:"#16a34a",color:"white",border:"none",borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13}}>⬇ Excel</button>
-          <button onClick={()=>{setForm({...emptyOV,fecha_carga:todayISO()});setShowForm(true);}} style={{background:"#e63946",color:"white",border:"none",borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13}}>+ OV</button>
+          <div style={{position:"relative"}}>
+            <button onClick={()=>setShowOVMenu(v=>!v)} style={{background:"#e63946",color:"white",border:"none",borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13}}>+ OV ▾</button>
+            {showOVMenu&&(
+              <>
+                <div style={{position:"fixed",inset:0,zIndex:199}} onClick={()=>setShowOVMenu(false)}/>
+                <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",background:"#1e293b",borderRadius:10,border:"1px solid #334155",boxShadow:"0 8px 24px #00000090",zIndex:200,overflow:"hidden",minWidth:220}}>
+                  <button onClick={()=>{setShowOVMenu(false);setForm({...emptyOV,fecha_carga:todayISO()});setShowForm(true);}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#f1f5f9",fontSize:13,cursor:"pointer",fontWeight:600}}>✏️ Captura manual</button>
+                  <button onClick={()=>{setShowOVMenu(false);setShowLectorNuevo(true);setLectorStep("idle");setLectorData(null);setLectorFiles({a:null,b:null});setLectorError("");setLectorMode("single");}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#0891b2",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid #334155"}}>📄 Leer remisión con IA</button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -3513,6 +3526,176 @@ function App() {
                     </div>
                   )}
                 </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* LECTOR NUEVA OV — sin OV previa */}
+      {showLectorNuevo&&(()=>{
+        const PROMPT_LECTOR = "Extrae los siguientes datos de esta remisión de cemento Cruz Azul: Número de remisión (formato: AG-XXXXXX, PU-XXXXXX o BQ-XXXXXX), Número de OV (Orden de Venta), Fecha de remisión, Peso neto en toneladas (usar el del ticket de báscula/reverso si hay dos valores). Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto";
+
+        const toBase64 = (file) => new Promise((resolve,reject)=>{
+          const r=new FileReader();
+          r.onload=e=>resolve(e.target.result.split(',')[1]);
+          r.onerror=reject;
+          r.readAsDataURL(file);
+        });
+
+        const fileToBlock = async (file) => {
+          const b64=await toBase64(file);
+          if(file.type==='application/pdf') return {type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}};
+          return {type:"image",source:{type:"base64",media_type:file.type||"image/jpeg",data:b64}};
+        };
+
+        const leerRemision = async () => {
+          setLectorStep("loading"); setLectorError("");
+          try {
+            let blocks=[];
+            if(lectorMode==="single"){
+              if(!lectorFiles.a){setLectorError("Selecciona un archivo");setLectorStep("idle");return;}
+              blocks.push(await fileToBlock(lectorFiles.a));
+            } else if(lectorMode==="dual"){
+              if(!lectorFiles.a||!lectorFiles.b){setLectorError("Selecciona ambos archivos");setLectorStep("idle");return;}
+              blocks.push(await fileToBlock(lectorFiles.a));
+              blocks.push(await fileToBlock(lectorFiles.b));
+            } else if(lectorMode==="clipboard"){
+              const items=await navigator.clipboard.read();
+              let found=false;
+              for(const item of items){
+                for(const type of item.types){
+                  if(type.startsWith('image/')){
+                    const blob=await item.getType(type);
+                    const arr=await blob.arrayBuffer();
+                    const b64=btoa(String.fromCharCode(...new Uint8Array(arr)));
+                    blocks.push({type:"image",source:{type:"base64",media_type:type,data:b64}});
+                    found=true; break;
+                  }
+                }
+                if(found) break;
+              }
+              if(!found){setLectorError("No hay imagen en el portapapeles");setLectorStep("idle");return;}
+            }
+            const resp=await fetch('/.netlify/functions/claude-proxy',{
+              method:'POST',
+              headers:{'content-type':'application/json'},
+              body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1024,messages:[{role:'user',content:[...blocks,{type:'text',text:PROMPT_LECTOR}]}]})
+            });
+            if(!resp.ok){const err=await resp.json();throw new Error(err.error?.message||err.error||`Error ${resp.status}`);}
+            const data=await resp.json();
+            const raw=data.content[0].text;
+            const cleaned=raw.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
+            setLectorData(JSON.parse(cleaned));
+            setLectorStep("confirm");
+          } catch(e){
+            setLectorError(e.message||"Error al procesar");
+            setLectorStep("error");
+          }
+        };
+
+        const cerrarLectorNuevo = () => {
+          setShowLectorNuevo(false);
+          setLectorStep("idle"); setLectorData(null); setLectorFiles({a:null,b:null}); setLectorError("");
+        };
+
+        const lectorNuevoConfirmar = async () => {
+          const {numeroRemision,numeroOV,fecha,pesoNeto}=lectorData;
+          const serie=(numeroRemision||"").split("-")[0].toUpperCase();
+          const id=`OV-${Date.now()}`;
+          const nuevaOV={...emptyOV,id,num_ov:numeroOV||"",folio:numeroRemision||"",fecha_carga:fecha||todayISO(),toneladas:parseFloat(pesoNeto)||0,serie};
+          setOVs(prev=>[nuevaOV,...prev]);
+          await saveToDb("ovs",id,nuevaOV);
+          cerrarLectorNuevo();
+          setForm({...nuevaOV,precio_ton:""});
+          setShowForm(true);
+        };
+
+        const tabBtn = (mode,label) => (
+          <button key={mode} onClick={()=>{setLectorMode(mode);setLectorStep("idle");setLectorError("");}} style={{padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer",border:"none",borderRadius:6,background:lectorMode===mode?"#10B981":"#243447",color:lectorMode===mode?"white":"#94a3b8"}}>{label}</button>
+        );
+
+        return (
+          <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+            <div style={{background:"#1e293b",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"90vh",overflowY:"auto"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                <div style={{fontWeight:800,fontSize:17}}>📄 Nueva OV desde Remisión</div>
+                <button onClick={cerrarLectorNuevo} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#94a3b8"}}>✕</button>
+              </div>
+              <div style={{background:"#243447",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#94a3b8",marginBottom:14}}>
+                La IA extraerá los datos. Podrás asignar el cliente y precio en el formulario siguiente.
+              </div>
+
+              <div style={{display:"flex",gap:6,marginBottom:14}}>
+                {tabBtn("single","📎 Archivo único")}
+                {tabBtn("clipboard","📋 Portapapeles")}
+                {tabBtn("dual","🔁 Frente + reverso")}
+              </div>
+
+              {(lectorStep==="idle"||lectorStep==="error")&&(
+                <>
+                  {lectorMode==="single"&&(
+                    <div style={{marginBottom:14}}>
+                      <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:4}}>Imagen JPG o PDF de la remisión</label>
+                      <input type="file" accept="image/*,.pdf" onChange={e=>setLectorFiles(f=>({...f,a:e.target.files[0]||null}))} style={{...inS,padding:"6px 8px"}}/>
+                      {lectorFiles.a&&<div style={{fontSize:11,color:"#0891b2",marginTop:4}}>✓ {lectorFiles.a.name}</div>}
+                    </div>
+                  )}
+                  {lectorMode==="dual"&&(
+                    <div style={{marginBottom:14}}>
+                      <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:4}}>Frente (portada de la remisión AG)</label>
+                      <input type="file" accept="image/*,.pdf" onChange={e=>setLectorFiles(f=>({...f,a:e.target.files[0]||null}))} style={{...inS,padding:"6px 8px"}}/>
+                      {lectorFiles.a&&<div style={{fontSize:11,color:"#0891b2",marginTop:4,marginBottom:8}}>✓ {lectorFiles.a.name}</div>}
+                      <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:4,marginTop:6}}>Reverso (ticket de báscula — peso neto)</label>
+                      <input type="file" accept="image/*,.pdf" onChange={e=>setLectorFiles(f=>({...f,b:e.target.files[0]||null}))} style={{...inS,padding:"6px 8px"}}/>
+                      {lectorFiles.b&&<div style={{fontSize:11,color:"#0891b2",marginTop:4}}>✓ {lectorFiles.b.name}</div>}
+                    </div>
+                  )}
+                  {lectorMode==="clipboard"&&(
+                    <div style={{marginBottom:14,background:"#243447",borderRadius:8,padding:"18px",textAlign:"center"}}>
+                      <div style={{fontSize:32,marginBottom:8}}>📋</div>
+                      <div style={{fontSize:13,color:"#94a3b8",marginBottom:4}}>Copia una imagen al portapapeles</div>
+                      <div style={{fontSize:11,color:"#94a3b8"}}>Ctrl+C sobre la imagen, o "Copiar imagen" en el menú contextual</div>
+                    </div>
+                  )}
+                  {lectorError&&<div style={{background:"#ef444422",color:"#dc2626",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:12,border:"1px solid #fecaca"}}>{lectorError}</div>}
+                  <button onClick={leerRemision} style={{width:"100%",background:"#10B981",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:"pointer",fontSize:14}}>
+                    {lectorMode==="clipboard"?"📋 Leer imagen del portapapeles":"🔍 Analizar con IA"}
+                  </button>
+                </>
+              )}
+
+              {lectorStep==="loading"&&(
+                <div style={{textAlign:"center",padding:"32px 20px",color:"#64748b"}}>
+                  <div style={{fontSize:36,marginBottom:10}}>⏳</div>
+                  <div style={{fontSize:14,fontWeight:700,color:"#10B981"}}>Analizando remisión...</div>
+                  <div style={{fontSize:12,color:"#94a3b8",marginTop:4}}>Claude está leyendo los datos</div>
+                </div>
+              )}
+
+              {lectorStep==="confirm"&&lectorData&&(
+                <div>
+                  <div style={{fontWeight:700,fontSize:13,color:"#10B981",marginBottom:10}}>Datos extraídos — confirma para crear la OV:</div>
+                  <div style={{background:"#243447",borderRadius:8,padding:"14px",marginBottom:14,border:"1px solid #334155"}}>
+                    <div style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:"8px 12px",alignItems:"center",fontSize:13}}>
+                      <span style={{fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>No. Remisión</span>
+                      <span style={{fontWeight:700,color:"#0891b2",fontSize:14}}>{lectorData.numeroRemision||"—"}</span>
+                      <span style={{fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>No. OV</span>
+                      <span style={{fontWeight:600}}>{lectorData.numeroOV||"—"}</span>
+                      <span style={{fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>Fecha</span>
+                      <span style={{fontWeight:600}}>{lectorData.fecha||"—"}</span>
+                      <span style={{fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>Peso neto</span>
+                      <span style={{fontWeight:700,color:"#16a34a",fontSize:14}}>{lectorData.pesoNeto||"—"} ton</span>
+                      <span style={{fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>Planta</span>
+                      <span style={{fontWeight:600}}>{plantaDeSerie((lectorData.numeroRemision||"").split("-")[0])||"—"}</span>
+                    </div>
+                  </div>
+                  <div style={{fontSize:11,color:"#94a3b8",marginBottom:12}}>Se creará la OV. A continuación asignarás el cliente y precio.</div>
+                  <div style={{display:"flex",gap:10}}>
+                    <button onClick={()=>{setLectorStep("idle");setLectorData(null);}} style={{flex:1,background:"#243447",color:"#64748b",border:"none",borderRadius:8,padding:"10px",fontWeight:600,cursor:"pointer",fontSize:14}}>← Volver</button>
+                    <button onClick={lectorNuevoConfirmar} style={{flex:2,background:"#16a34a",color:"white",border:"none",borderRadius:8,padding:"10px",fontWeight:700,cursor:"pointer",fontSize:14}}>✓ Crear OV y completar datos</button>
+                  </div>
+                </div>
               )}
             </div>
           </div>
