@@ -3411,7 +3411,7 @@ function App() {
             const resp=await fetch('/.netlify/functions/claude-proxy',{
               method:'POST',
               headers:{'content-type':'application/json'},
-              body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1024,messages:[{role:'user',content:[...blocks,{type:'text',text:PROMPT_LECTOR}]}]})
+              body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1024,messages:[{role:'user',content:[...blocks,{type:'text',text:PROMPT_LECTOR}]}]})
             });
             if(!resp.ok){const err=await resp.json();throw new Error(err.error?.message||err.error||`Error ${resp.status}`);}
             const data=await resp.json();
@@ -3580,7 +3580,7 @@ function App() {
             const resp=await fetch('/.netlify/functions/claude-proxy',{
               method:'POST',
               headers:{'content-type':'application/json'},
-              body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1024,messages:[{role:'user',content:[...blocks,{type:'text',text:PROMPT_LECTOR}]}]})
+              body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1024,messages:[{role:'user',content:[...blocks,{type:'text',text:PROMPT_LECTOR}]}]})
             });
             if(!resp.ok){const err=await resp.json();throw new Error(err.error?.message||err.error||`Error ${resp.status}`);}
             const data=await resp.json();
