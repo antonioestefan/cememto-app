@@ -3180,7 +3180,7 @@ function App() {
           const tot=idxs.reduce((acc,i)=>acc+(parseFloat(historial[i]?.monto)||0),0);
           const sub=tot/1.16;
           const prec=parseFloat(compForm.precioTon)||0;
-          return prec>0&&sub>0?(sub/prec).toFixed(5):"";
+          return prec>0&&tot>0?(tot/prec).toFixed(5):"";
         };
         return(
           <div style={{position:"fixed",inset:0,background:"#00000070",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
@@ -3251,7 +3251,7 @@ function App() {
                 </div>
                 <div>
                   <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Precio / ton</label>
-                  <input type="number" value={compForm.precioTon} onChange={e=>{const prec=parseFloat(e.target.value)||0;const autoTons=prec>0&&subtotal>0?(subtotal/prec).toFixed(5):"";setCompForm(f=>({...f,precioTon:e.target.value,toneladas:autoTons}));}} style={inS} min="0" step="1" placeholder="0"/>
+                  <input type="number" value={compForm.precioTon} onChange={e=>{const prec=parseFloat(e.target.value)||0;const autoTons=prec>0&&total>0?(total/prec).toFixed(5):"";setCompForm(f=>({...f,precioTon:e.target.value,toneladas:autoTons}));}} style={inS} min="0" step="1" placeholder="0"/>
                 </div>
               </div>
 
