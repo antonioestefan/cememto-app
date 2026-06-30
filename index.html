@@ -38,7 +38,7 @@ const { useState, useMemo, useEffect, useRef } = React;
 
 const fmt  = (n) => new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN",maximumFractionDigits:0}).format(n||0);
 const fmtT = (n) => (parseFloat(n)||0).toFixed(2);
-const todayISO   = () => new Date().toISOString().slice(0,10);
+const todayISO   = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
 const addDays    = (iso,n) => { const d=new Date((iso||todayISO())+"T12:00"); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
 const tomorrowISO   = () => addDays(todayISO(),1);
 const nextWorkdayISO= () => new Date().getDay()===6 ? addDays(todayISO(),2) : addDays(todayISO(),1);
@@ -1736,7 +1736,7 @@ function App() {
                       </div>
                       <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
                         <button onClick={()=>setClienteDashboard(c.id)} style={{background:"#10B981",border:"none",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"white",fontWeight:700}}>📊 Dashboard</button>
-                        <button onClick={()=>setCompForm({clienteId:c.id,selected:{}})} style={{background:"#10B98122",border:"1px solid #10B98133",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"#10B981",fontWeight:600}}>🧾 Generar comprobante</button>
+                        <button onClick={()=>setCompForm({clienteId:c.id,selected:{},toneladas:"",precioTon:String(c.precio_ton||"")})} style={{background:"#10B98122",border:"1px solid #10B98133",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"#10B981",fontWeight:600}}>🧾 Generar comprobante</button>
                         <button onClick={()=>{setCliForm(c);setShowCliForm(true);}} style={{background:"#243447",border:"1px solid #334155",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"#10B981"}}>✏️</button>
                       </div>
                     </div>
@@ -3165,13 +3165,23 @@ function App() {
         const todosAnticipos=historial
           .map((a,idx)=>({...a,realIdx:idx,_epago:cliEstatuses[idx]||{estatus:"pendiente"}}))
           .reverse();
+        const seleccionables=todosAnticipos.filter(a=>a._epago.estatus!=="facturado");
         const selIndices=Object.entries(compForm.selected).filter(([,v])=>v).map(([k])=>parseInt(k));
         const total=selIndices.reduce((s,idx)=>s+(parseFloat(historial[idx]?.monto)||0),0);
         const subtotal=total/1.16;
         const iva=total-subtotal;
+        const tons=parseFloat(compForm.toneladas)||0;
+        const precioTon=parseFloat(compForm.precioTon)||0;
         const formOk=selIndices.length>0;
         const pagosSel=selIndices.map(idx=>historial[idx]).filter(Boolean).sort((a,b)=>(a.fecha||"").localeCompare(b.fecha||""));
-        const todosSeleccionados=todosAnticipos.length>0&&todosAnticipos.every(a=>compForm.selected[a.realIdx]);
+        const todosSeleccionados=seleccionables.length>0&&seleccionables.every(a=>compForm.selected[a.realIdx]);
+        const recalcTons=(ns)=>{
+          const idxs=Object.entries(ns).filter(([,v])=>v).map(([k])=>parseInt(k));
+          const tot=idxs.reduce((acc,i)=>acc+(parseFloat(historial[i]?.monto)||0),0);
+          const sub=tot/1.16;
+          const prec=parseFloat(compForm.precioTon)||0;
+          return prec>0&&sub>0?(sub/prec).toFixed(5):"";
+        };
         return(
           <div style={{position:"fixed",inset:0,background:"#00000070",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
             <div style={{background:"#1e293b",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:520,padding:"22px 20px",maxHeight:"94vh",overflowY:"auto"}}>
@@ -3186,8 +3196,8 @@ function App() {
                   :<>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                       <button onClick={()=>{
-                        if(todosSeleccionados){setCompForm(f=>({...f,selected:{}}));}
-                        else{const s={};todosAnticipos.forEach(a=>{s[a.realIdx]=true;});setCompForm(f=>({...f,selected:s}));}
+                        if(todosSeleccionados){setCompForm(f=>({...f,selected:{},toneladas:""}));}
+                        else{const s={};seleccionables.forEach(a=>{s[a.realIdx]=true;});setCompForm(f=>({...f,selected:s,toneladas:recalcTons(s)}));}
                       }} style={{background:"none",border:"none",color:"#10B981",fontSize:11,cursor:"pointer",padding:0,fontWeight:600}}>
                         {todosSeleccionados?"Deseleccionar todos":"Seleccionar todos"}
                       </button>
@@ -3195,23 +3205,27 @@ function App() {
                     </div>
                     <div style={{border:"1px solid #334155",borderRadius:8,overflow:"hidden"}}>
                       {todosAnticipos.map((a,i)=>{
+                        const yaFacturado=a._epago.estatus==="facturado";
                         const sub=parseFloat(a.monto)/1.16;
                         const iv=parseFloat(a.monto)-sub;
                         return(
-                          <label key={a.realIdx} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",background:compForm.selected[a.realIdx]?"#162032":"#1e293b",borderTop:i>0?"1px solid #334155":"none",cursor:"pointer"}}>
-                            <input type="checkbox" checked={!!compForm.selected[a.realIdx]} onChange={e=>{const ns={...compForm.selected,[a.realIdx]:e.target.checked};setCompForm(f=>({...f,selected:ns}));}} style={{marginTop:3,flexShrink:0}}/>
+                          <div key={a.realIdx} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",background:yaFacturado?"#162a20":compForm.selected[a.realIdx]?"#162032":"#1e293b",borderTop:i>0?"1px solid #334155":"none",opacity:yaFacturado?0.6:1}}>
+                            {yaFacturado
+                              ?<span style={{marginTop:3,flexShrink:0,fontSize:15}}>✅</span>
+                              :<input type="checkbox" checked={!!compForm.selected[a.realIdx]} onChange={e=>{const ns={...compForm.selected,[a.realIdx]:e.target.checked};setCompForm(f=>({...f,selected:ns,toneladas:recalcTons(ns)}));}} style={{marginTop:3,flexShrink:0}}/>
+                            }
                             <div style={{flex:1}}>
                               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                                 <span style={{fontSize:12,color:"#94a3b8"}}>{a.fecha}</span>
-                                <span style={{fontWeight:700,fontSize:13,color:"#f8fafc"}}>{fmt(parseFloat(a.monto)||0)}</span>
+                                <span style={{fontWeight:700,fontSize:13,color:yaFacturado?"#16a34a":"#f8fafc"}}>{fmt(parseFloat(a.monto)||0)}</span>
                               </div>
                               <div style={{display:"flex",gap:12,marginTop:3,fontSize:10,color:"#64748b"}}>
                                 <span>Subtotal: {fmt(sub)}</span>
                                 <span>IVA: {fmt(iv)}</span>
                               </div>
                             </div>
-                            <span style={{fontSize:10,fontWeight:700,color:a._epago.estatus==="facturado"?"#15803d":a._epago.estatus==="parcial"?"#b45309":"#c2410c",background:a._epago.estatus==="facturado"?"#dcfce7":a._epago.estatus==="parcial"?"#fefce8":"#fff7ed",borderRadius:4,padding:"2px 6px",whiteSpace:"nowrap",marginTop:2}}>{a._epago.estatus==="facturado"?"✅ Fact":a._epago.estatus==="parcial"?"🟡 Parc":"🟠 Pend"}</span>
-                          </label>
+                            <span style={{fontSize:10,fontWeight:700,color:yaFacturado?"#15803d":a._epago.estatus==="parcial"?"#b45309":"#c2410c",background:yaFacturado?"#dcfce7":a._epago.estatus==="parcial"?"#fefce8":"#fff7ed",borderRadius:4,padding:"2px 6px",whiteSpace:"nowrap",marginTop:2}}>{yaFacturado?"Ya facturado":a._epago.estatus==="parcial"?"🟡 Parcial":"🟠 Pendiente"}</span>
+                          </div>
                         );
                       })}
                     </div>
@@ -3221,13 +3235,25 @@ function App() {
 
               {/* RESUMEN EN TIEMPO REAL */}
               {formOk&&(
-                <div style={{background:"#243447",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:12}}>
+                <div style={{background:"#243447",borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:12}}>
                   <div style={{fontWeight:700,color:"#94a3b8",fontSize:10,textTransform:"uppercase",letterSpacing:.6,marginBottom:6}}>{selIndices.length} anticipo{selIndices.length>1?"s":""} seleccionado{selIndices.length>1?"s":""}</div>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{color:"#64748b"}}>Subtotal</span><span style={{fontWeight:600}}>{fmt(subtotal)}</span></div>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{color:"#64748b"}}>IVA 16%</span><span style={{fontWeight:600}}>{fmt(iva)}</span></div>
                   <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid #334155",paddingTop:6,marginTop:4}}><span style={{fontWeight:700,color:"#10B981"}}>Total</span><span style={{fontWeight:800,color:"#10B981",fontSize:14}}>{fmt(total)}</span></div>
                 </div>
               )}
+
+              {/* TONELADAS Y PRECIO */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+                <div>
+                  <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Toneladas <span style={{color:"#94a3b8"}}>(auto)</span></label>
+                  <input type="number" value={compForm.toneladas} onChange={e=>setCompForm(f=>({...f,toneladas:e.target.value}))} style={inS} min="0" step="0.00001" placeholder="0.00000"/>
+                </div>
+                <div>
+                  <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Precio / ton</label>
+                  <input type="number" value={compForm.precioTon} onChange={e=>{const prec=parseFloat(e.target.value)||0;const autoTons=prec>0&&subtotal>0?(subtotal/prec).toFixed(5):"";setCompForm(f=>({...f,precioTon:e.target.value,toneladas:autoTons}));}} style={inS} min="0" step="1" placeholder="0"/>
+                </div>
+              </div>
 
               {/* PREVIEW COMPROBANTE */}
               {formOk&&(
@@ -3254,6 +3280,8 @@ function App() {
                     ))}
                   </div>
                   <div style={{padding:"4px 20px 14px"}}>
+                    {tons>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:"1px solid #e2e8f0",fontSize:12}}><span style={{color:"#64748b"}}>Toneladas</span><span style={{fontWeight:600,color:"#1e293b"}}>{tons.toFixed(5)} ton</span></div>}
+                    {precioTon>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:"1px solid #e2e8f0",fontSize:12}}><span style={{color:"#64748b"}}>Precio / ton</span><span style={{fontWeight:600,color:"#1e293b"}}>{fmt(precioTon)}</span></div>}
                     <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:"1px solid #e2e8f0",fontSize:12}}><span style={{color:"#64748b"}}>Subtotal</span><span style={{fontWeight:600,color:"#1e293b"}}>{fmt(subtotal)}</span></div>
                     <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:"1px solid #e2e8f0",fontSize:12}}><span style={{color:"#64748b"}}>IVA 16%</span><span style={{fontWeight:600,color:"#1e293b"}}>{fmt(iva)}</span></div>
                     <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 4px",borderTop:"2px solid #10B981",marginTop:4,fontSize:15}}>
