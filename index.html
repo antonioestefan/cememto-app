@@ -12,6 +12,21 @@
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
+  <script>
+    /* OneDrive — pega aquí el Application (client) ID de Azure Portal */
+    window.__OD_CLIENT_ID = "";
+    (async()=>{
+      if(!window.__OD_CLIENT_ID) return;
+      try{
+        window.__msalInstance = new msal.PublicClientApplication({
+          auth:{clientId:window.__OD_CLIENT_ID,authority:"https://login.microsoftonline.com/common",redirectUri:window.location.origin},
+          cache:{cacheLocation:"localStorage",storeAuthStateInCookie:false}
+        });
+        await window.__msalInstance.initialize();
+      }catch(e){console.warn("MSAL:",e);}
+    })();
+  </script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -663,6 +678,18 @@ function App() {
   const [diasHabiles,setDiasHabiles]             = useState({});
   const [showCalHabiles,setShowCalHabiles]       = useState(false);
   const [clienteDashboard,setClienteDashboard]   = useState(null);
+  const [showOneDrive,setShowOneDrive]           = useState(false);
+  const [odStep,setOdStep]                       = useState("auth");
+  const [odToken,setOdToken]                     = useState(null);
+  const [odFolders,setOdFolders]                 = useState([]);
+  const [odSelectedFolder,setOdSelectedFolder]   = useState(null);
+  const [odFiles,setOdFiles]                     = useState([]);
+  const [odSelected,setOdSelected]               = useState(new Set());
+  const [odResults,setOdResults]                 = useState([]);
+  const [odLoading,setOdLoading]                 = useState(false);
+  const [odError,setOdError]                     = useState("");
+  const [odProgress,setOdProgress]               = useState({cur:0,tot:0});
+  const [procesados,setProcesados]               = useState({});
 
   useEffect(()=>{
     if(!dbReady){window.addEventListener("dbReady",()=>setDbReady(true)); return;}
@@ -673,7 +700,8 @@ function App() {
     const u4=window.__onSnapshot(window.__col(db,"prospectos"),snap=>{setProspectos(snap.docs.map(d=>({id:d.id,...d.data()})));});
     const u5=window.__onSnapshot(window.__col(db,"facturas"),snap=>{setFacturas(snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||"")));});
     const u6=window.__onSnapshot(window.__col(db,"diasHabiles"),snap=>{const ov={};snap.docs.forEach(d=>{ov[d.id]=d.data().trabajado;});setDiasHabiles(ov);});
-    return ()=>{u1();u2();u3();u4();u5();u6();};
+    const u7=window.__onSnapshot(window.__col(db,"remisiones_onedrive"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data();});setProcesados(m);});
+    return ()=>{u1();u2();u3();u4();u5();u6();u7();};
   },[dbReady]);
 
   const saveToDb    = async (col,id,data)=>{ const {id:_,...rest}=data; await window.__setDoc(window.__doc(window.__db,col,id),rest); };
@@ -946,6 +974,93 @@ function App() {
     setOVs(prev=>prev.filter(p=>p.id!==id)); setSelected(null);
     await deleteFromDb("ovs",id);
   };
+
+  /* ── OneDrive ── */
+  const OD_GRAPH="https://graph.microsoft.com/v1.0";
+  const OD_SCOPES=["Files.Read","User.Read"];
+  const OD_PROMPT="Extrae los siguientes datos de esta remisión de cemento Cruz Azul: Número de remisión (formato: AG-XXXXXX, PU-XXXXXX o BQ-XXXXXX), Número de OV (Orden de Venta) — el número de OV en la remisión puede aparecer en formato como 'SG-2292690-1.000'; extrae ÚNICAMENTE el número central (los dígitos entre el primer y segundo guión, ej. '2292690'), Fecha de remisión, Peso neto en toneladas (usar el del ticket de báscula/reverso si hay dos valores). Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto";
+  const odGetToken=async()=>{
+    const inst=window.__msalInstance;
+    if(!inst) throw new Error("MSAL no inicializado");
+    const accounts=inst.getAllAccounts();
+    const req={scopes:OD_SCOPES};
+    if(accounts.length>0) req.account=accounts[0];
+    try{const r=await inst.acquireTokenSilent(req);return r.accessToken;}
+    catch{const r=await inst.acquireTokenPopup({scopes:OD_SCOPES});return r.accessToken;}
+  };
+  const odGraph=async(path,token)=>{
+    const r=await fetch(`${OD_GRAPH}${path}`,{headers:{Authorization:`Bearer ${token}`,Accept:"application/json"}});
+    if(!r.ok) throw new Error(`Graph error ${r.status}`);
+    return r.json();
+  };
+  const odLogin=async()=>{
+    setOdLoading(true); setOdError("");
+    try{
+      const token=await odGetToken(); setOdToken(token);
+      const data=await odGraph("/me/drive/root/children?$select=id,name,folder&$top=100",token);
+      setOdFolders((data.value||[]).filter(i=>i.folder));
+      setOdStep("folders");
+    }catch(e){setOdError(e.message||"Error al conectar");}
+    setOdLoading(false);
+  };
+  const odSelectFolder=async(folder)=>{
+    setOdLoading(true); setOdError("");
+    try{
+      const token=odToken||await odGetToken();
+      const sub=await odGraph(`/me/drive/items/${folder.id}/children?$select=id,name,folder&$top=50`,token);
+      const remSub=(sub.value||[]).find(i=>i.folder&&i.name.toLowerCase()==="remisiones");
+      const match=clientes.find(c=>(c.nombre||"").trim().toLowerCase()===folder.name.trim().toLowerCase());
+      setOdSelectedFolder({...folder,clienteId:match?.id||null,clienteNombre:match?.nombre||null});
+      const targetId=remSub?remSub.id:folder.id;
+      const fd=await odGraph(`/me/drive/items/${targetId}/children?$select=id,name,size,file,lastModifiedDateTime&$top=200`,token);
+      const files=(fd.value||[]).filter(i=>i.file&&/\.(jpg|jpeg|png|pdf)$/i.test(i.name)).sort((a,b)=>(b.lastModifiedDateTime||"").localeCompare(a.lastModifiedDateTime||""));
+      setOdFiles(files); setOdSelected(new Set()); setOdStep("files");
+    }catch(e){setOdError(e.message);}
+    setOdLoading(false);
+  };
+  const odToggle=(id)=>setOdSelected(prev=>{const s=new Set(prev);s.has(id)?s.delete(id):s.add(id);return s;});
+  const odSelectAll=()=>setOdSelected(new Set(odFiles.filter(f=>!procesados[f.id]).map(f=>f.id)));
+  const odProcess=async()=>{
+    const toProcess=odFiles.filter(f=>odSelected.has(f.id)&&!procesados[f.id]);
+    if(!toProcess.length) return;
+    setOdStep("processing"); setOdProgress({cur:0,tot:toProcess.length});
+    const results=[];
+    for(let i=0;i<toProcess.length;i++){
+      setOdProgress({cur:i+1,tot:toProcess.length});
+      const file=toProcess[i];
+      try{
+        const token=odToken||await odGetToken();
+        const r=await fetch(`${OD_GRAPH}/me/drive/items/${file.id}/content`,{headers:{Authorization:`Bearer ${token}`}});
+        if(!r.ok) throw new Error(`Descarga fallida ${r.status}`);
+        const blob=await r.blob();
+        const b64=await new Promise((res,rej)=>{const rd=new FileReader();rd.onload=e=>res(e.target.result.split(",")[1]);rd.onerror=rej;rd.readAsDataURL(blob);});
+        const mediaType=blob.type||"image/jpeg";
+        const block=mediaType==="application/pdf"?{type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}}:{type:"image",source:{type:"base64",media_type:mediaType,data:b64}};
+        const resp=await fetch("/.netlify/functions/claude-proxy",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1024,messages:[{role:"user",content:[block,{type:"text",text:OD_PROMPT}]}]})});
+        if(!resp.ok){const err=await resp.json();throw new Error(err.error?.message||err.error||`Error ${resp.status}`);}
+        const apiData=await resp.json();
+        const raw=apiData.content[0].text;
+        const cleaned=raw.replace(/```json\n?/g,"").replace(/```\n?/g,"").trim();
+        results.push({file,data:JSON.parse(cleaned),ok:true});
+      }catch(e){results.push({file,data:null,ok:false,error:e.message});}
+    }
+    setOdResults(results); setOdStep("confirm");
+  };
+  const odConfirmar=async(res)=>{
+    const id=`OV-${Date.now()}`;
+    const serie=(res.data.numeroRemision||"").split("-")[0].toUpperCase();
+    const precio_ton=parseFloat(clientes.find(c=>c.id===odSelectedFolder?.clienteId)?.precio_ton)||0;
+    const nueva={...emptyOV,id,num_ov:res.data.numeroOV||"",folio:res.data.numeroRemision||"",fecha_carga:res.data.fecha||todayISO(),toneladas:parseFloat(res.data.pesoNeto)||0,serie,clienteId:odSelectedFolder?.clienteId||"",precio_ton};
+    setOVs(prev=>[nueva,...prev]);
+    await saveToDb("ovs",id,nueva);
+    await window.__setDoc(window.__doc(window.__db,"remisiones_onedrive",res.file.id),{ovId:id,fileName:res.file.name,fecha:todayISO(),clienteId:odSelectedFolder?.clienteId||""});
+  };
+  const odCerrar=()=>{
+    setShowOneDrive(false); setOdStep("auth"); setOdToken(null); setOdFolders([]);
+    setOdSelectedFolder(null); setOdFiles([]); setOdSelected(new Set());
+    setOdResults([]); setOdLoading(false); setOdError(""); setOdProgress({cur:0,tot:0});
+  };
+
   const toggleDiaHabil = async (iso)=>{
     const newVal=!esDiaHabilReal(iso,diasHabiles);
     if(newVal===esDiaHabilBase(iso)){
@@ -1421,6 +1536,7 @@ function App() {
                 <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",background:"#1e293b",borderRadius:10,border:"1px solid #334155",boxShadow:"0 8px 24px #00000090",zIndex:200,overflow:"hidden",minWidth:220}}>
                   <button onClick={()=>{setShowOVMenu(false);setForm({...emptyOV,fecha_carga:todayISO()});setShowForm(true);}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#f1f5f9",fontSize:13,cursor:"pointer",fontWeight:600}}>✏️ Captura manual</button>
                   <button onClick={()=>{setShowOVMenu(false);setShowLectorNuevo(true);setLectorStep("idle");setLectorData(null);setLectorFiles({a:null,b:null});setLectorError("");setLectorMode("single");}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#0891b2",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid #334155"}}>📄 Leer remisión con IA</button>
+                  <button onClick={()=>{setShowOVMenu(false);setShowOneDrive(true);setOdStep("auth");setOdError("");setOdResults([]);}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#7c3aed",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid #334155"}}>📂 Importar desde OneDrive</button>
                 </div>
               </>
             )}
@@ -3675,6 +3791,143 @@ function App() {
               Base: lunes a sábado · Festivos MX excluidos automáticamente (1 ene, 5 feb, 21 mar, 1 may, 16 sep, 20 nov, 25 dic + primer lunes de feb y tercer lunes de mar)
             </div>
             <CalendarioHabiles diasHabiles={diasHabiles} onToggle={toggleDiaHabil}/>
+          </div>
+        </div>
+      )}
+
+      {/* ONEDRIVE IMPORT */}
+      {showOneDrive&&(
+        <div style={{position:"fixed",inset:0,background:"#00000090",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div style={{background:"#1e293b",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"92vh",overflowY:"auto"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:17}}>📂 Importar desde OneDrive</div>
+                {odSelectedFolder&&<div style={{fontSize:12,color:"#64748b",marginTop:2}}>📁 {odSelectedFolder.name}{odSelectedFolder.clienteNombre&&<span style={{color:"#10B981"}}> → {odSelectedFolder.clienteNombre}</span>}</div>}
+              </div>
+              <button onClick={odCerrar} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#94a3b8"}}>✕</button>
+            </div>
+
+            {odError&&<div style={{background:"#ef444422",color:"#dc2626",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:12,border:"1px solid #fecaca"}}>{odError}</div>}
+
+            {odStep==="auth"&&(!window.__OD_CLIENT_ID?(
+              <div style={{textAlign:"center",padding:"20px 0"}}>
+                <div style={{fontSize:36,marginBottom:10}}>⚙️</div>
+                <div style={{fontWeight:700,fontSize:15,marginBottom:12}}>Configuración requerida</div>
+                <div style={{fontSize:12,color:"#94a3b8",lineHeight:1.8,textAlign:"left",background:"#243447",borderRadius:10,padding:"14px 16px"}}>
+                  <b>Pasos para conectar OneDrive:</b><br/>
+                  1. Ve a <b>portal.azure.com</b> → App registrations → New registration<br/>
+                  2. Nombre: "Cemento App" · Tipo: <i>Accounts in any organizational directory and personal Microsoft accounts</i><br/>
+                  3. Redirect URI: <b>Single-page application (SPA)</b> → <code style={{background:"#0F172A",padding:"1px 6px",borderRadius:4}}>{window.location.origin}</code><br/>
+                  4. Copia el <b>Application (client) ID</b><br/>
+                  5. En <code style={{background:"#0F172A",padding:"1px 6px",borderRadius:4}}>index.html</code> busca <code style={{background:"#0F172A",padding:"1px 6px",borderRadius:4}}>window.__OD_CLIENT_ID = ""</code> y pega el ID entre las comillas
+                </div>
+              </div>
+            ):(
+              <div style={{textAlign:"center",padding:"28px 0"}}>
+                <div style={{fontSize:40,marginBottom:12}}>☁️</div>
+                <div style={{fontWeight:700,fontSize:15,marginBottom:6}}>Conectar con OneDrive</div>
+                <div style={{fontSize:12,color:"#94a3b8",marginBottom:20}}>Inicia sesión con tu cuenta Microsoft</div>
+                <button onClick={odLogin} disabled={odLoading} style={{background:"#0078d4",color:"white",border:"none",borderRadius:8,padding:"12px 28px",fontWeight:700,cursor:odLoading?"default":"pointer",fontSize:14}}>
+                  {odLoading?"⏳ Conectando...":"🔑 Iniciar sesión con Microsoft"}
+                </button>
+              </div>
+            ))}
+
+            {odStep==="folders"&&(
+              <div>
+                <div style={{fontSize:12,color:"#94a3b8",marginBottom:12}}>Selecciona la carpeta del cliente:</div>
+                {odFolders.length===0&&<div style={{color:"#64748b",fontSize:13,textAlign:"center",padding:"24px 0"}}>No se encontraron carpetas en tu OneDrive</div>}
+                {odFolders.map(f=>{
+                  const match=clientes.find(c=>(c.nombre||"").trim().toLowerCase()===f.name.trim().toLowerCase());
+                  return(
+                    <button key={f.id} onClick={()=>odSelectFolder(f)} disabled={odLoading} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:"#243447",border:"1px solid #334155",borderRadius:8,padding:"12px 14px",cursor:"pointer",marginBottom:8,color:"#f1f5f9",textAlign:"left",opacity:odLoading?0.6:1}}>
+                      <span style={{fontSize:20}}>📁</span>
+                      <div style={{flex:1}}>
+                        <div style={{fontWeight:600,fontSize:14}}>{f.name}</div>
+                        <div style={{fontSize:11,marginTop:2,color:match?"#10B981":"#d97706"}}>{match?`✓ Cliente: ${match.nombre}`:"⚠ Sin coincidencia en catálogo"}</div>
+                      </div>
+                      <span style={{color:"#64748b",fontSize:18}}>›</span>
+                    </button>
+                  );
+                })}
+                {odLoading&&<div style={{textAlign:"center",color:"#64748b",padding:"12px 0",fontSize:13}}>Cargando...</div>}
+              </div>
+            )}
+
+            {odStep==="files"&&(
+              <div>
+                <button onClick={()=>setOdStep("folders")} style={{background:"none",border:"none",color:"#64748b",fontSize:12,cursor:"pointer",marginBottom:12,padding:0}}>← Carpetas</button>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{fontSize:12,color:"#94a3b8"}}>
+                    {odFiles.length} archivo{odFiles.length!==1?"s":""} · <span style={{color:"#f59e0b"}}>{odFiles.filter(f=>!procesados[f.id]).length} pendiente{odFiles.filter(f=>!procesados[f.id]).length!==1?"s":""}</span>
+                  </div>
+                  {odFiles.some(f=>!procesados[f.id])&&<button onClick={odSelectAll} style={{background:"none",border:"1px solid #334155",color:"#94a3b8",fontSize:11,padding:"3px 10px",borderRadius:6,cursor:"pointer"}}>Sel. todos</button>}
+                </div>
+                {odFiles.length===0&&<div style={{color:"#64748b",fontSize:13,textAlign:"center",padding:"24px 0"}}>No hay archivos JPG/PNG/PDF en la carpeta Remisiones</div>}
+                {odFiles.map(f=>{
+                  const done=!!procesados[f.id];
+                  const sel=odSelected.has(f.id);
+                  return(
+                    <div key={f.id} onClick={()=>!done&&odToggle(f.id)} style={{display:"flex",alignItems:"center",gap:10,background:sel?"#10B98118":"#243447",border:`1px solid ${sel?"#10B981":"#334155"}`,borderRadius:8,padding:"10px 12px",marginBottom:6,cursor:done?"default":"pointer"}}>
+                      <div style={{fontSize:16,flexShrink:0}}>{done?"✅":"🆕"}</div>
+                      {!done&&<div style={{width:18,height:18,borderRadius:4,border:`2px solid ${sel?"#10B981":"#475569"}`,background:sel?"#10B981":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontSize:11}}>{sel?"✓":""}</div>}
+                      <div style={{flex:1,overflow:"hidden"}}>
+                        <div style={{fontSize:12,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name}</div>
+                        {done?<div style={{fontSize:10,color:"#10B981",marginTop:1}}>OV: {procesados[f.id]?.ovId||"—"} · {procesados[f.id]?.fecha||""}</div>
+                             :<div style={{fontSize:10,color:"#475569",marginTop:1}}>{f.size?Math.round(f.size/1024)+"KB":"—"}</div>}
+                      </div>
+                    </div>
+                  );
+                })}
+                {odSelected.size>0&&(
+                  <button onClick={odProcess} style={{width:"100%",background:"#10B981",color:"white",border:"none",borderRadius:8,padding:"12px",fontWeight:700,cursor:"pointer",fontSize:14,marginTop:8}}>
+                    🤖 Procesar {odSelected.size} archivo{odSelected.size!==1?"s":""} con IA
+                  </button>
+                )}
+              </div>
+            )}
+
+            {odStep==="processing"&&(
+              <div style={{textAlign:"center",padding:"40px 20px"}}>
+                <div style={{fontSize:40,marginBottom:12}}>⏳</div>
+                <div style={{fontWeight:700,fontSize:16,color:"#10B981",marginBottom:6}}>Procesando con IA...</div>
+                <div style={{fontSize:14,color:"#94a3b8",marginBottom:20}}>Archivo {odProgress.cur} de {odProgress.tot}</div>
+                <div style={{background:"#243447",borderRadius:8,height:10,overflow:"hidden",margin:"0 20px"}}>
+                  <div style={{background:"#10B981",height:"100%",width:`${odProgress.tot?Math.round(odProgress.cur/odProgress.tot*100):0}%`,transition:"width 0.4s"}}/>
+                </div>
+                <div style={{fontSize:12,color:"#475569",marginTop:10}}>{odProgress.tot?Math.round(odProgress.cur/odProgress.tot*100):0}%</div>
+              </div>
+            )}
+
+            {odStep==="confirm"&&(
+              <div>
+                <div style={{fontSize:13,color:"#94a3b8",marginBottom:14}}>Revisa y confirma para crear las OVs:</div>
+                {odResults.map((res)=>(
+                  <div key={res.file.id} style={{background:"#243447",borderRadius:10,padding:"14px",marginBottom:10,border:`1px solid ${procesados[res.file.id]?"#10B98166":"#334155"}`}}>
+                    <div style={{fontWeight:600,fontSize:11,color:"#64748b",marginBottom:8,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>📄 {res.file.name}</div>
+                    {res.ok&&res.data?(
+                      <>
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
+                          <div><div style={{fontSize:10,color:"#64748b"}}>No. OV</div><div style={{fontWeight:700,color:"#7c3aed",fontSize:13}}>{res.data.numeroOV||"—"}</div></div>
+                          <div><div style={{fontSize:10,color:"#64748b"}}>Remisión</div><div style={{fontWeight:700,color:"#0891b2",fontSize:13}}>{res.data.numeroRemision||"—"}</div></div>
+                          <div><div style={{fontSize:10,color:"#64748b"}}>Fecha</div><div style={{fontWeight:600,fontSize:13}}>{res.data.fecha||"—"}</div></div>
+                          <div><div style={{fontSize:10,color:"#64748b"}}>Toneladas</div><div style={{fontWeight:700,color:"#16a34a",fontSize:13}}>{res.data.pesoNeto||"—"} ton</div></div>
+                          <div style={{gridColumn:"1/-1"}}><div style={{fontSize:10,color:"#64748b"}}>Cliente</div><div style={{fontWeight:600,fontSize:13,color:odSelectedFolder?.clienteNombre?"#10B981":"#d97706"}}>{odSelectedFolder?.clienteNombre||"⚠ Sin cliente — asigna en la OV después"}</div></div>
+                        </div>
+                        {procesados[res.file.id]
+                          ?<div style={{fontSize:12,color:"#10B981",textAlign:"center",padding:"6px 0",fontWeight:700}}>✅ OV creada: {procesados[res.file.id]?.ovId}</div>
+                          :<button onClick={()=>odConfirmar(res)} style={{width:"100%",background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"9px",fontWeight:700,cursor:"pointer",fontSize:13}}>✓ Confirmar y crear OV</button>
+                        }
+                      </>
+                    ):(
+                      <div style={{color:"#dc2626",fontSize:12}}>⚠ {res.error||"No se pudo extraer"}</div>
+                    )}
+                  </div>
+                ))}
+                <button onClick={()=>setOdStep("files")} style={{width:"100%",background:"#243447",color:"#64748b",border:"none",borderRadius:8,padding:"10px",fontWeight:600,cursor:"pointer",fontSize:13,marginTop:4}}>← Volver a archivos</button>
+              </div>
+            )}
+
           </div>
         </div>
       )}
