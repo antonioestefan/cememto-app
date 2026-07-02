@@ -564,6 +564,20 @@ function getWeekRange(offset=0) {
   return {start:mon.toISOString().slice(0,10),end:sun.toISOString().slice(0,10)};
 }
 
+/* Agrupa archivos de remisión con dos páginas: "AG-487013-1.jpg" + "AG-487013-2.jpg" → un solo grupo "AG-487013" */
+const gdGroupFiles = (files) => {
+  const groups = {}; const order = [];
+  (files||[]).forEach(f=>{
+    const base=(f.name||"").replace(/\.[^/.]+$/,"");
+    const m=base.match(/^(.+)-([12])$/i);
+    const key=(m?m[1]:base).toLowerCase();
+    if(!groups[key]){ groups[key]={folioBase:m?m[1]:base,page1:null,page2:null}; order.push(key); }
+    if(m){ if(m[2]==="1") groups[key].page1=f; else groups[key].page2=f; }
+    else if(!groups[key].page1) groups[key].page1=f;
+  });
+  return order.map(key=>({key,...groups[key]}));
+};
+
 const AUTH_KEY  = 'ca_auth_expires';
 const AUTH_PW   = 'CruzAzul2024';
 const AUTH_DAYS = 30;
@@ -682,6 +696,7 @@ function App() {
   const [gdError,setGdError]                     = useState("");
   const [gdProgress,setGdProgress]               = useState({cur:0,tot:0});
   const [procesados,setProcesados]               = useState({});
+  const gdGroups = useMemo(()=>gdGroupFiles(gdFiles),[gdFiles]);
 
   useEffect(()=>{
     if(!dbReady){window.addEventListener("dbReady",()=>setDbReady(true)); return;}
@@ -1064,14 +1079,14 @@ function App() {
     }catch(e){setGdError(e.message);}
     setGdLoading(false);
   };
-  const gdToggle=(id)=>setGdSelected(prev=>{const s=new Set(prev);s.has(id)?s.delete(id):s.add(id);return s;});
-  const gdProcesadoInfo=(file)=>{
-    const reg=procesados[file.id];
+  const gdToggle=(key)=>setGdSelected(prev=>{const s=new Set(prev);s.has(key)?s.delete(key):s.add(key);return s;});
+  const gdProcesadoInfo=(group)=>{
+    const reg=(group.page1&&procesados[group.page1.id])||(group.page2&&procesados[group.page2.id]);
     if(reg) return {ovId:reg.ovId,fecha:reg.fecha};
-    const nombreArchivo=(file.name||"").replace(/\.[^/.]+$/,"").toLowerCase().trim();
+    const nombreArchivo=(group.folioBase||"").toLowerCase().trim();
     const soloNumero=nombreArchivo.replace(/^(ag|pu|bq)-/,"");
     const candidatas=gdSelectedFolder?.clienteId?gdOvsCliente:ovs;
-    console.log(`[GDrive] buscando folio "${nombreArchivo}" (archivo: ${file.name}) · sin prefijo: "${soloNumero}"`);
+    console.log(`[GDrive] buscando folio "${nombreArchivo}" (grupo: ${group.folioBase}) · sin prefijo: "${soloNumero}"`);
     console.log("[GDrive] clienteId usado:",gdSelectedFolder?.clienteId||"(ninguno — usando todas las OVs)");
     console.log("[GDrive] OVs encontradas para este cliente:",candidatas.length);
     console.log("[GDrive] folios existentes en OVs consultadas:",JSON.stringify(candidatas.map(o=>o.folio||"(vacío)")));
@@ -1083,43 +1098,49 @@ function App() {
     if(match) return {ovId:match.id,fecha:match.fecha_carga||""};
     return null;
   };
-  const gdSelectAll=()=>setGdSelected(new Set(gdFiles.filter(f=>!gdProcesadoInfo(f)).map(f=>f.id)));
+  const gdSelectAll=()=>setGdSelected(new Set(gdGroups.filter(g=>!gdProcesadoInfo(g)).map(g=>g.key)));
+  const gdDownloadBlock=async(file,token)=>{
+    const sp=new URLSearchParams({alt:"media"});
+    if(window.__GOOGLE_API_KEY) sp.set("key",window.__GOOGLE_API_KEY);
+    const r=await fetch(`${GD_API}/files/${file.id}?${sp.toString()}`,{headers:{Authorization:`Bearer ${token}`}});
+    if(!r.ok) throw new Error(`Descarga fallida ${r.status}`);
+    const blob=await r.blob();
+    const b64=await new Promise((res,rej)=>{const rd=new FileReader();rd.onload=e=>res(e.target.result.split(",")[1]);rd.onerror=rej;rd.readAsDataURL(blob);});
+    const mediaType=file.mimeType||blob.type||"image/jpeg";
+    return mediaType==="application/pdf"?{type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}}:{type:"image",source:{type:"base64",media_type:mediaType,data:b64}};
+  };
   const gdProcess=async()=>{
-    const toProcess=gdFiles.filter(f=>gdSelected.has(f.id)&&!gdProcesadoInfo(f));
+    const toProcess=gdGroups.filter(g=>gdSelected.has(g.key)&&!gdProcesadoInfo(g));
     if(!toProcess.length) return;
     setGdStep("processing"); setGdProgress({cur:0,tot:toProcess.length});
     const results=[];
     for(let i=0;i<toProcess.length;i++){
       setGdProgress({cur:i+1,tot:toProcess.length});
-      const file=toProcess[i];
+      const group=toProcess[i];
       try{
         const token=gdToken||await gdGetToken(false);
-        const sp=new URLSearchParams({alt:"media"});
-        if(window.__GOOGLE_API_KEY) sp.set("key",window.__GOOGLE_API_KEY);
-        const r=await fetch(`${GD_API}/files/${file.id}?${sp.toString()}`,{headers:{Authorization:`Bearer ${token}`}});
-        if(!r.ok) throw new Error(`Descarga fallida ${r.status}`);
-        const blob=await r.blob();
-        const b64=await new Promise((res,rej)=>{const rd=new FileReader();rd.onload=e=>res(e.target.result.split(",")[1]);rd.onerror=rej;rd.readAsDataURL(blob);});
-        const mediaType=file.mimeType||blob.type||"image/jpeg";
-        const block=mediaType==="application/pdf"?{type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}}:{type:"image",source:{type:"base64",media_type:mediaType,data:b64}};
-        const resp=await fetch("/.netlify/functions/claude-proxy",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1024,messages:[{role:"user",content:[block,{type:"text",text:GD_PROMPT}]}]})});
+        const blocks=[await gdDownloadBlock(group.page1,token)];
+        if(group.page2) blocks.push(await gdDownloadBlock(group.page2,token));
+        const resp=await fetch("/.netlify/functions/claude-proxy",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1024,messages:[{role:"user",content:[...blocks,{type:"text",text:GD_PROMPT}]}]})});
         if(!resp.ok){const err=await resp.json();throw new Error(err.error?.message||err.error||`Error ${resp.status}`);}
         const apiData=await resp.json();
         const raw=apiData.content[0].text;
         const cleaned=raw.replace(/```json\n?/g,"").replace(/```\n?/g,"").trim();
-        results.push({file,data:JSON.parse(cleaned),ok:true});
-      }catch(e){results.push({file,data:null,ok:false,error:e.message});}
+        results.push({group,data:JSON.parse(cleaned),ok:true});
+      }catch(e){results.push({group,data:null,ok:false,error:e.message});}
     }
     setGdResults(results); setGdStep("confirm");
   };
   const gdConfirmar=async(res)=>{
     const id=`OV-${Date.now()}`;
-    const serie=(res.data.numeroRemision||"").split("-")[0].toUpperCase();
+    const folio=res.group.folioBase||res.data.numeroRemision||"";
+    const serie=(folio||"").split("-")[0].toUpperCase();
     const precio_ton=parseFloat(clientes.find(c=>c.id===gdSelectedFolder?.clienteId)?.precio_ton)||0;
-    const nueva={...emptyOV,id,num_ov:res.data.numeroOV||"",folio:res.data.numeroRemision||"",fecha_carga:res.data.fecha||todayISO(),toneladas:parseFloat(res.data.pesoNeto)||0,serie,clienteId:gdSelectedFolder?.clienteId||"",precio_ton};
+    const nueva={...emptyOV,id,num_ov:res.data.numeroOV||"",folio,fecha_carga:res.data.fecha||todayISO(),toneladas:parseFloat(res.data.pesoNeto)||0,serie,clienteId:gdSelectedFolder?.clienteId||"",precio_ton};
     setOVs(prev=>[nueva,...prev]);
     await saveToDb("ovs",id,nueva);
-    await window.__setDoc(window.__doc(window.__db,"remisiones_gdrive",res.file.id),{ovId:id,fileName:res.file.name,fecha:todayISO(),clienteId:gdSelectedFolder?.clienteId||""});
+    const regFile=res.group.page1||res.group.page2;
+    await window.__setDoc(window.__doc(window.__db,"remisiones_gdrive",regFile.id),{ovId:id,fileName:regFile.name,fecha:todayISO(),clienteId:gdSelectedFolder?.clienteId||""});
   };
   const gdCerrar=()=>{
     setShowGDrive(false); setGdStep("auth"); setGdToken(null); setGdFolders([]);
@@ -3925,30 +3946,32 @@ function App() {
                 <button onClick={()=>setGdStep("folders")} style={{background:"none",border:"none",color:"#64748b",fontSize:12,cursor:"pointer",marginBottom:12,padding:0}}>← Carpetas</button>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                   <div style={{fontSize:12,color:"#94a3b8"}}>
-                    {gdFiles.length} archivo{gdFiles.length!==1?"s":""} · <span style={{color:"#f59e0b"}}>{gdFiles.filter(f=>!gdProcesadoInfo(f)).length} pendiente{gdFiles.filter(f=>!gdProcesadoInfo(f)).length!==1?"s":""}</span>
+                    {gdGroups.length} remisión{gdGroups.length!==1?"es":""} · <span style={{color:"#f59e0b"}}>{gdGroups.filter(g=>!gdProcesadoInfo(g)).length} pendiente{gdGroups.filter(g=>!gdProcesadoInfo(g)).length!==1?"s":""}</span>
                   </div>
-                  {gdFiles.some(f=>!gdProcesadoInfo(f))&&<button onClick={gdSelectAll} style={{background:"none",border:"1px solid #334155",color:"#94a3b8",fontSize:11,padding:"3px 10px",borderRadius:6,cursor:"pointer"}}>Sel. todos pendientes</button>}
+                  {gdGroups.some(g=>!gdProcesadoInfo(g))&&<button onClick={gdSelectAll} style={{background:"none",border:"1px solid #334155",color:"#94a3b8",fontSize:11,padding:"3px 10px",borderRadius:6,cursor:"pointer"}}>Sel. todos pendientes</button>}
                 </div>
-                {gdFiles.length===0&&<div style={{color:"#64748b",fontSize:13,textAlign:"center",padding:"24px 0"}}>No hay archivos JPG/PNG/PDF en la carpeta Remisiones</div>}
-                {gdFiles.map(f=>{
-                  const info=gdProcesadoInfo(f);
+                {gdGroups.length===0&&<div style={{color:"#64748b",fontSize:13,textAlign:"center",padding:"24px 0"}}>No hay archivos JPG/PNG/PDF en la carpeta Remisiones</div>}
+                {gdGroups.map(g=>{
+                  const info=gdProcesadoInfo(g);
                   const done=!!info;
-                  const sel=gdSelected.has(f.id);
+                  const sel=gdSelected.has(g.key);
+                  const paginas=g.page2?2:1;
+                  const size=(parseInt(g.page1?.size)||0)+(parseInt(g.page2?.size)||0);
                   return(
-                    <div key={f.id} onClick={()=>!done&&gdToggle(f.id)} style={{display:"flex",alignItems:"center",gap:10,background:sel?"#10B98118":"#243447",border:`1px solid ${sel?"#10B981":"#334155"}`,borderRadius:8,padding:"10px 12px",marginBottom:6,cursor:done?"default":"pointer"}}>
+                    <div key={g.key} onClick={()=>!done&&gdToggle(g.key)} style={{display:"flex",alignItems:"center",gap:10,background:sel?"#10B98118":"#243447",border:`1px solid ${sel?"#10B981":"#334155"}`,borderRadius:8,padding:"10px 12px",marginBottom:6,cursor:done?"default":"pointer"}}>
                       <div style={{fontSize:16,flexShrink:0}}>{done?"✅":"🆕"}</div>
                       {!done&&<div style={{width:18,height:18,borderRadius:4,border:`2px solid ${sel?"#10B981":"#475569"}`,background:sel?"#10B981":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontSize:11}}>{sel?"✓":""}</div>}
                       <div style={{flex:1,overflow:"hidden"}}>
-                        <div style={{fontSize:12,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name}</div>
+                        <div style={{fontSize:12,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{g.folioBase} <span style={{color:"#64748b",fontWeight:400}}>({paginas} página{paginas!==1?"s":""})</span></div>
                         {done?<div style={{fontSize:10,color:"#10B981",marginTop:1}}>OV: {info.ovId||"—"} · {info.fecha||""}</div>
-                             :<div style={{fontSize:10,color:"#475569",marginTop:1}}>{f.size?Math.round(f.size/1024)+"KB":"—"}</div>}
+                             :<div style={{fontSize:10,color:"#475569",marginTop:1}}>{size?Math.round(size/1024)+"KB":"—"}</div>}
                       </div>
                     </div>
                   );
                 })}
                 {gdSelected.size>0&&(
                   <button onClick={gdProcess} style={{width:"100%",background:"#10B981",color:"white",border:"none",borderRadius:8,padding:"12px",fontWeight:700,cursor:"pointer",fontSize:14,marginTop:8}}>
-                    🤖 Procesar {gdSelected.size} archivo{gdSelected.size!==1?"s":""} con IA
+                    🤖 Procesar {gdSelected.size} remisión{gdSelected.size!==1?"es":""} con IA
                   </button>
                 )}
               </div>
@@ -3958,7 +3981,7 @@ function App() {
               <div style={{textAlign:"center",padding:"40px 20px"}}>
                 <div style={{fontSize:40,marginBottom:12}}>⏳</div>
                 <div style={{fontWeight:700,fontSize:16,color:"#10B981",marginBottom:6}}>Procesando con IA...</div>
-                <div style={{fontSize:14,color:"#94a3b8",marginBottom:20}}>Archivo {gdProgress.cur} de {gdProgress.tot}</div>
+                <div style={{fontSize:14,color:"#94a3b8",marginBottom:20}}>Remisión {gdProgress.cur} de {gdProgress.tot}</div>
                 <div style={{background:"#243447",borderRadius:8,height:10,overflow:"hidden",margin:"0 20px"}}>
                   <div style={{background:"#10B981",height:"100%",width:`${gdProgress.tot?Math.round(gdProgress.cur/gdProgress.tot*100):0}%`,transition:"width 0.4s"}}/>
                 </div>
@@ -3970,15 +3993,15 @@ function App() {
               <div>
                 <div style={{fontSize:13,color:"#94a3b8",marginBottom:14}}>Revisa y confirma para crear las OVs:</div>
                 {gdResults.map((res)=>{
-                  const info=gdProcesadoInfo(res.file);
+                  const info=gdProcesadoInfo(res.group);
                   return(
-                  <div key={res.file.id} style={{background:"#243447",borderRadius:10,padding:"14px",marginBottom:10,border:`1px solid ${info?"#10B98166":"#334155"}`}}>
-                    <div style={{fontWeight:600,fontSize:11,color:"#64748b",marginBottom:8,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>📄 {res.file.name}</div>
+                  <div key={res.group.key} style={{background:"#243447",borderRadius:10,padding:"14px",marginBottom:10,border:`1px solid ${info?"#10B98166":"#334155"}`}}>
+                    <div style={{fontWeight:600,fontSize:11,color:"#64748b",marginBottom:8,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>📄 {res.group.folioBase} {res.group.page2?"(2 páginas)":""}</div>
                     {res.ok&&res.data?(
                       <>
                         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
                           <div><div style={{fontSize:10,color:"#64748b"}}>No. OV</div><div style={{fontWeight:700,color:"#7c3aed",fontSize:13}}>{res.data.numeroOV||"—"}</div></div>
-                          <div><div style={{fontSize:10,color:"#64748b"}}>Remisión</div><div style={{fontWeight:700,color:"#0891b2",fontSize:13}}>{res.data.numeroRemision||"—"}</div></div>
+                          <div><div style={{fontSize:10,color:"#64748b"}}>Remisión</div><div style={{fontWeight:700,color:"#0891b2",fontSize:13}}>{res.group.folioBase||"—"}</div></div>
                           <div><div style={{fontSize:10,color:"#64748b"}}>Fecha</div><div style={{fontWeight:600,fontSize:13}}>{res.data.fecha||"—"}</div></div>
                           <div><div style={{fontSize:10,color:"#64748b"}}>Toneladas</div><div style={{fontWeight:700,color:"#16a34a",fontSize:13}}>{res.data.pesoNeto||"—"} ton</div></div>
                           <div style={{gridColumn:"1/-1"}}><div style={{fontSize:10,color:"#64748b"}}>Cliente</div><div style={{fontWeight:600,fontSize:13,color:gdSelectedFolder?.clienteNombre?"#10B981":"#d97706"}}>{gdSelectedFolder?.clienteNombre||"⚠ Sin cliente — asigna en la OV después"}</div></div>
