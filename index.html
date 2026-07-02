@@ -1069,12 +1069,17 @@ function App() {
     const reg=procesados[file.id];
     if(reg) return {ovId:reg.ovId,fecha:reg.fecha};
     const nombreArchivo=(file.name||"").replace(/\.[^/.]+$/,"").toLowerCase().trim();
+    const soloNumero=nombreArchivo.replace(/^(ag|pu|bq)-/,"");
     const candidatas=gdSelectedFolder?.clienteId?gdOvsCliente:ovs;
-    console.log(`[GDrive] buscando folio "${nombreArchivo}" (archivo: ${file.name})`);
+    console.log(`[GDrive] buscando folio "${nombreArchivo}" (archivo: ${file.name}) · sin prefijo: "${soloNumero}"`);
     console.log("[GDrive] clienteId usado:",gdSelectedFolder?.clienteId||"(ninguno — usando todas las OVs)");
     console.log("[GDrive] OVs encontradas para este cliente:",candidatas.length);
     console.log("[GDrive] folios existentes en OVs consultadas:",JSON.stringify(candidatas.map(o=>o.folio||"(vacío)")));
-    const match=nombreArchivo&&candidatas.find(ov=>ov.folio&&ov.folio.toLowerCase().trim()===nombreArchivo);
+    const match=nombreArchivo&&candidatas.find(ov=>{
+      if(!ov.folio) return false;
+      const folioNorm=ov.folio.toLowerCase().trim();
+      return folioNorm===nombreArchivo||folioNorm===soloNumero;
+    });
     if(match) return {ovId:match.id,fecha:match.fecha_carga||""};
     return null;
   };
