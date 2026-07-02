@@ -986,7 +986,8 @@ function App() {
   };
   const saveOV = async ()=>{
     const id=form.id||`OV-${Date.now()}`;
-    const folio=limpiarFolio(form.folio);
+    const folioRaw=(form.folio||"").trim();
+    const folio=limpiarFolio(FOLIO_PREFIJO_RE.test(folioRaw)?folioRaw:(form.serie?`${form.serie}-${folioRaw}`:folioRaw));
     const otros=ovs.filter(p=>p.id!==id);
     if(otros.some(p=>p.num_ov&&p.num_ov===form.num_ov)){alert(`Ya existe otra OV con el número "${form.num_ov}".`);return;}
     if(folio&&otros.some(p=>p.folio&&p.folio===folio)){alert(`Ya existe otra OV con el folio de remisión "${folio}".`);return;}
@@ -3287,13 +3288,23 @@ function App() {
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:10}}>
               <div>
                 <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Serie / Planta</label>
-                <select value={form.serie} onChange={e=>setForm(f=>({...f,serie:e.target.value}))} style={{...inS,background:"#1e293b"}}>
+                <select value={form.serie} onChange={e=>{
+                  const serie=e.target.value;
+                  setForm(f=>{
+                    const bare=(f.folio||"").replace(FOLIO_PREFIJO_RE,"");
+                    return {...f,serie,folio:bare?limpiarFolio(serie?`${serie}-${bare}`:bare):f.folio};
+                  });
+                }} style={{...inS,background:"#1e293b"}}>
                   <option value="">— Selecciona —</option>
                   {Object.entries(PLANTAS).map(([k,v])=><option key={k} value={k}>{k} — {v}</option>)}
                 </select>
                 {form.serie&&<div style={{fontSize:11,color:plantaColor[PLANTAS[form.serie]]||"#64748b",fontWeight:600,marginTop:5}}>🏭 {PLANTAS[form.serie]||form.serie}</div>}
               </div>
-              <div><label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Folio remisión</label><input value={form.folio} onChange={e=>setForm(f=>({...f,folio:e.target.value}))} style={inS}/></div>
+              <div><label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Folio remisión</label><input value={(form.folio||"").replace(FOLIO_PREFIJO_RE,"")} onChange={e=>{
+                const raw=e.target.value, rawTrim=raw.trim();
+                const folio=!rawTrim?"":FOLIO_PREFIJO_RE.test(rawTrim)?limpiarFolio(raw):limpiarFolio(form.serie?`${form.serie}-${raw}`:raw);
+                setForm(f=>({...f,folio}));
+              }} style={inS} placeholder="ej. 479646"/></div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:10}}>
               <div><label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:3}}>Ton pesadas</label><input type="number" step="0.01" value={form.toneladas} onChange={e=>setForm(f=>({...f,toneladas:e.target.value}))} style={inS}/></div>
