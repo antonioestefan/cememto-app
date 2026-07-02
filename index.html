@@ -20,7 +20,7 @@
   </script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
     const firebaseConfig = {
       apiKey: "AIzaSyBXxj2MnF5AGFs46FTe7FN3Gl3iiXjT8gk",
       authDomain: "cemento-antonio.firebaseapp.com",
@@ -33,7 +33,6 @@
     const db = getFirestore(app);
     window.__db=db; window.__col=collection; window.__onSnapshot=onSnapshot;
     window.__doc=doc; window.__setDoc=setDoc; window.__deleteDoc=deleteDoc;
-    window.__getDocs=getDocs; window.__query=query; window.__where=where;
     window.__dbReady=true; window.dispatchEvent(new Event("dbReady"));
   </script>
   <style>* { box-sizing:border-box; margin:0; padding:0; } body { font-family:'Inter','Segoe UI',system-ui,sans-serif; background:#0F172A; color:#f8fafc; } input,select,button { font-family:inherit; } input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }</style>
@@ -1048,14 +1047,11 @@ function App() {
       setGdSelectedFolder({...folder,clienteId:match?.id||null,clienteNombre:match?.nombre||null});
       if(match?.id){
         console.log("[GDrive] clienteId usado:",match.id);
-        let ovsCliente=[];
-        try{
-          const snap=await window.__getDocs(window.__query(window.__col(window.__db,"ovs"),window.__where("clienteId","==",match.id)));
-          ovsCliente=snap.docs.map(d=>({id:d.id,...d.data()})).filter(o=>o.clienteId===match.id);
-        }catch(e){
-          console.warn("[GDrive] error consultando OVs del cliente en Firestore, usando cache local:",e);
-          ovsCliente=ovs.filter(o=>o.clienteId===match.id);
-        }
+        const ovsCliente=ovs.filter(ov=>
+          ov.clienteId===match.id ||
+          ov.cliente===match.id ||
+          ov.cliente===match.nombre
+        );
         console.log("[GDrive] OVs encontradas para este cliente:",ovsCliente.length);
         setGdOvsCliente(ovsCliente);
       } else {
