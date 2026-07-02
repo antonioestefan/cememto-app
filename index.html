@@ -1084,7 +1084,7 @@ function App() {
   const gdToggle=(key)=>setGdSelected(prev=>{const s=new Set(prev);s.has(key)?s.delete(key):s.add(key);return s;});
   const gdProcesadoInfo=(group)=>{
     const reg=(group.page1&&procesados[group.page1.id])||(group.page2&&procesados[group.page2.id]);
-    if(reg) return {ovId:reg.ovId,fecha:reg.fecha};
+    if(reg) return {ovId:reg.ovId,fecha:reg.fecha,actualizada:!!reg.actualizada};
     const nombreArchivo=(group.folioBase||"").toLowerCase().trim();
     const soloNumero=nombreArchivo.replace(/^(ag|pu|bq)-/,"");
     const candidatas=gdSelectedFolder?.clienteId?gdOvsCliente:ovs;
@@ -1142,15 +1142,22 @@ function App() {
   const gdConfirmar=async(res)=>{
     const fechaEntrega=gdFechaEntrega[res.group.key];
     if(!fechaEntrega) return;
-    const id=`OV-${Date.now()}`;
     const folio=res.group.folioBase||res.data.numeroRemision||"";
+    const numeroOV=(res.data.numeroOV||"").trim();
+    const regFile=res.group.page1||res.group.page2;
+    const existente=numeroOV&&ovs.find(o=>(o.num_ov||"").trim()===numeroOV);
+    if(existente){
+      await upd(existente.id,{folio,toneladas:parseFloat(res.data.pesoNeto)||0,fecha_carga:res.data.fecha||todayISO(),fecha_entrega:fechaEntrega});
+      await window.__setDoc(window.__doc(window.__db,"remisiones_gdrive",regFile.id),{ovId:existente.id,fileName:regFile.name,fecha:todayISO(),clienteId:gdSelectedFolder?.clienteId||"",actualizada:true});
+      return;
+    }
+    const id=`OV-${Date.now()}`;
     const serie=(folio||"").split("-")[0].toUpperCase();
     const precio_ton=parseFloat(clientes.find(c=>c.id===gdSelectedFolder?.clienteId)?.precio_ton)||0;
-    const nueva={...emptyOV,id,num_ov:res.data.numeroOV||"",folio,fecha_carga:res.data.fecha||todayISO(),fecha_entrega:fechaEntrega,toneladas:parseFloat(res.data.pesoNeto)||0,serie,clienteId:gdSelectedFolder?.clienteId||"",precio_ton};
+    const nueva={...emptyOV,id,num_ov:numeroOV,folio,fecha_carga:res.data.fecha||todayISO(),fecha_entrega:fechaEntrega,toneladas:parseFloat(res.data.pesoNeto)||0,serie,clienteId:gdSelectedFolder?.clienteId||"",precio_ton};
     setOVs(prev=>[nueva,...prev]);
     await saveToDb("ovs",id,nueva);
-    const regFile=res.group.page1||res.group.page2;
-    await window.__setDoc(window.__doc(window.__db,"remisiones_gdrive",regFile.id),{ovId:id,fileName:regFile.name,fecha:todayISO(),clienteId:gdSelectedFolder?.clienteId||""});
+    await window.__setDoc(window.__doc(window.__db,"remisiones_gdrive",regFile.id),{ovId:id,fileName:regFile.name,fecha:todayISO(),clienteId:gdSelectedFolder?.clienteId||"",actualizada:false});
   };
   const gdCerrar=()=>{
     setShowGDrive(false); setGdStep("auth"); setGdToken(null); setGdFolders([]);
@@ -4023,7 +4030,7 @@ function App() {
                           </div>
                         )}
                         {info
-                          ?<div style={{fontSize:12,color:"#10B981",textAlign:"center",padding:"6px 0",fontWeight:700}}>✅ OV creada: {info.ovId}</div>
+                          ?<div style={{fontSize:12,color:"#10B981",textAlign:"center",padding:"6px 0",fontWeight:700}}>{info.actualizada?`✅ OV existente actualizada: ${info.ovId}`:`✅ OV creada: ${info.ovId}`}</div>
                           :<button onClick={()=>gdConfirmar(res)} disabled={!gdFechaEntrega[res.group.key]} style={{width:"100%",background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"9px",fontWeight:700,cursor:gdFechaEntrega[res.group.key]?"pointer":"not-allowed",fontSize:13,opacity:gdFechaEntrega[res.group.key]?1:0.5}}>✓ Confirmar y crear OV</button>
                         }
                       </>
