@@ -1008,11 +1008,18 @@ function App() {
     const muestra=ovs.slice(0,5).map(o=>o.folio||"(vacío)");
     const resumen=`Campo revisado: "${campo}"\nOVs totales revisadas: ${totalRevisadas}\n\nPrimeros ${muestra.length} valores de "${campo}" encontrados:\n${muestra.map((f,i)=>`${i+1}. ${f}`).join("\n")||"(sin OVs)"}`;
     console.log(`[LimpiarFolios] ${resumen}`);
-    const afectadas=ovs.filter(o=>o.folio&&limpiarFolio(o.folio)!==o.folio);
+    const afectadas=[];
+    for(const o of ovs){
+      const folioLimpio=limpiarFolio(o.folio);
+      if(o.folio&&folioLimpio!==o.folio){
+        console.log(`[LimpiarFolios] Se corregirá OV ${o.id} (num_ov: ${o.num_ov||"—"}): "${o.folio}" → "${folioLimpio}"`);
+        afectadas.push({id:o.id,folioLimpio});
+      }
+    }
     if(!afectadas.length){ alert(`${resumen}\n\n✅ No se encontraron folios con prefijo duplicado.`); return; }
     if(!confirm(`${resumen}\n\nSe corregirán ${afectadas.length} OV${afectadas.length!==1?"s":""} con folio duplicado (ej. AG-AG-XXXXXX → AG-XXXXXX).\n\n¿Continuar?`)) return;
     let corregidas=0;
-    for(const o of afectadas){ await upd(o.id,{folio:limpiarFolio(o.folio)}); corregidas++; }
+    for(const {id,folioLimpio} of afectadas){ await upd(id,{folio:folioLimpio}); corregidas++; }
     alert(`${resumen}\n\n✅ Se corrigieron ${corregidas} de ${totalRevisadas} folio${corregidas!==1?"s":""} duplicado${corregidas!==1?"s":""}.`);
   };
 
@@ -1439,6 +1446,7 @@ function App() {
       list=list.filter(p=>
         (p.num_ov||"").toLowerCase().includes(q)||
         (p.folio||"").toLowerCase().includes(q)||
+        limpiarFolio(p.folio).toLowerCase().includes(q)||
         (cliById(p.clienteId)?.nombre||"").toLowerCase().includes(q)
       );
     }
