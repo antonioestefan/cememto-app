@@ -56,6 +56,15 @@ const limpiarFolio = (f) => {
   if (!f) return "";
   return f.trim().toUpperCase().replace(/^(AG|PU|BQ)-(AG|PU|BQ)-/, "$1-");
 };
+const FOLIO_PREFIJO_RE = /^(AG|PU|BQ)-/i;
+// Evita duplicar el prefijo de planta cuando folio ya lo trae (ej. serie "AG" + folio "AG-479646" → "AG-479646", no "AG-AG-479646")
+const serieFolio = (serie, folio, folioVacio) => {
+  const s = (serie || "").trim();
+  const f = (folio || "").trim();
+  if (f && FOLIO_PREFIJO_RE.test(f)) return f.toUpperCase();
+  if (folioVacio !== undefined) return `${s || "—"}-${f || folioVacio}`;
+  return [s, f].filter(Boolean).join("-");
+};
 
 /* planta por serie */
 const PLANTAS = {PU:"Puebla",AG:"Aguascalientes",BQ:"Bodega Querétaro"};
@@ -993,12 +1002,17 @@ function App() {
     await deleteFromDb("ovs",id);
   };
   const limpiarFoliosDuplicados = async ()=>{
+    const campo="folio";
+    const totalRevisadas=ovs.length;
+    const muestra=ovs.slice(0,5).map(o=>o.folio||"(vacío)");
+    const resumen=`Campo revisado: "${campo}"\nOVs totales revisadas: ${totalRevisadas}\n\nPrimeros ${muestra.length} valores de "${campo}" encontrados:\n${muestra.map((f,i)=>`${i+1}. ${f}`).join("\n")||"(sin OVs)"}`;
+    console.log(`[LimpiarFolios] ${resumen}`);
     const afectadas=ovs.filter(o=>o.folio&&limpiarFolio(o.folio)!==o.folio);
-    if(!afectadas.length){ alert("No se encontraron folios con prefijo duplicado."); return; }
-    if(!confirm(`Se corregirán ${afectadas.length} OV${afectadas.length!==1?"s":""} con folio duplicado (ej. AG-AG-XXXXXX → AG-XXXXXX).\n\n¿Continuar?`)) return;
+    if(!afectadas.length){ alert(`${resumen}\n\n✅ No se encontraron folios con prefijo duplicado.`); return; }
+    if(!confirm(`${resumen}\n\nSe corregirán ${afectadas.length} OV${afectadas.length!==1?"s":""} con folio duplicado (ej. AG-AG-XXXXXX → AG-XXXXXX).\n\n¿Continuar?`)) return;
     let corregidas=0;
     for(const o of afectadas){ await upd(o.id,{folio:limpiarFolio(o.folio)}); corregidas++; }
-    alert(`✅ Se corrigieron ${corregidas} folio${corregidas!==1?"s":""} duplicado${corregidas!==1?"s":""}.`);
+    alert(`${resumen}\n\n✅ Se corrigieron ${corregidas} de ${totalRevisadas} folio${corregidas!==1?"s":""} duplicado${corregidas!==1?"s":""}.`);
   };
 
   /* ── Google Drive ── */
@@ -1512,7 +1526,7 @@ function App() {
     } else {
       remisiones.forEach((p,i)=>{
         const ton=parseFloat(p.toneladas)||0, precio=parseFloat(p.precio_ton)||(parseFloat(cuenta.precio_ton)||0), monto=ton*precio;
-        r=ws.addRow([`${p.serie||"—"}-${p.folio||"s/f"}`,p.fecha_carga||"—",p.fecha_entrega||"—",ton,precio,monto]);
+        r=ws.addRow([serieFolio(p.serie,p.folio,"s/f"),p.fecha_carga||"—",p.fecha_entrega||"—",ton,precio,monto]);
         const bg=i%2===1?ALTGRAY:"FFFFFF";
         for(let c=1;c<=N;c++){
           r.getCell(c).fill=fill(bg);
@@ -1634,7 +1648,7 @@ function App() {
       // Filas de datos
       remisiones.forEach((p,i)=>{
         const ton=parseFloat(p.toneladas)||0;
-        r=ws.addRow([p.num_ov||"—",`${p.serie||"—"}-${p.folio||"s/f"}`,p.fecha_carga||"—",ton]);
+        r=ws.addRow([p.num_ov||"—",serieFolio(p.serie,p.folio,"s/f"),p.fecha_carga||"—",ton]);
         r.height=16;
         const bg=i%2===1?ALTGRAY:"FFFFFF";
         for(let c=1;c<=4;c++){
@@ -1669,7 +1683,7 @@ function App() {
       t+=`*${c.nombre}*\nEntregado: ${fmtT(tonPer)} ton (${fmt(valPer)})\n`;
       if(clienteId){
         entsFilt.sort((a,b)=>(a.fecha_entrega||"").localeCompare(b.fecha_entrega||""))
-          .forEach(p=>{ t+=`  • ${p.serie||"—"}-${p.folio||"s/f"} | ${p.fecha_entrega||"—"} | ${fmtT(p.toneladas)} ton | ${fmt(valorOV(p))}\n`; });
+          .forEach(p=>{ t+=`  • ${serieFolio(p.serie,p.folio,"s/f")} | ${p.fecha_entrega||"—"} | ${fmtT(p.toneladas)} ton | ${fmt(valorOV(p))}\n`; });
       }
       t+=`Anticipo: ${fmt(c.anticipo)}\n`;
       t+=c.saldo>=0?`Saldo a favor: ${fmt(c.saldo)}\n\n`:`*Adeudo: ${fmt(-c.saldo)}*\n\n`;
@@ -1714,7 +1728,7 @@ function App() {
     reportePlanta.forEach(({planta,remisiones,total_ton})=>{
       t+=`*🏭 ${planta}*\n`;
       remisiones.forEach(p=>{
-        t+=`• ${p.fecha_carga} | ${p.serie||"—"}-${p.folio||"s/f"} | ${fmtT(p.toneladas)} ton\n`;
+        t+=`• ${p.fecha_carga} | ${serieFolio(p.serie,p.folio,"s/f")} | ${fmtT(p.toneladas)} ton\n`;
       });
       t+=`*Total: ${fmtT(total_ton)} ton*\n\n`;
     });
@@ -1882,7 +1896,7 @@ function App() {
                             <div style={{flex:1,minWidth:200}}>
                               <div style={{fontWeight:800,fontSize:14,color:"#7c3aed"}}>{p.num_ov}</div>
                               <div style={{fontWeight:700,fontSize:15,color:c?"#f1f5f9":"#64748b"}}>{c?c.nombre:"Sin cliente asignado"}</div>
-                              <div style={{fontSize:12,color:"#64748b"}}>{p.serie?`${p.serie}-${p.folio||"s/f"} · `:""}{p.toneladas>0?`${p.toneladas} ton`:"ton pendiente"}{c&&p.toneladas>0?` · ${fmt(valorOV(p))}`:""}</div>
+                              <div style={{fontSize:12,color:"#64748b"}}>{p.serie?`${serieFolio(p.serie,p.folio,"s/f")} · `:""}{p.toneladas>0?`${p.toneladas} ton`:"ton pendiente"}{c&&p.toneladas>0?` · ${fmt(valorOV(p))}`:""}</div>
                               <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>🏭 {p.fecha_carga}{p.fecha_entrega?` · 🚚 ${p.fecha_entrega}`:""}</div>
                               {!c&&["remisionada","listo_para_envio","en_camino"].includes(p.status)&&<ClienteSelect p={p}/>}
                             </div>
@@ -2346,7 +2360,7 @@ function App() {
                             </div>
                             {g.remisiones.map((p,i)=>(
                               <div key={p.id} style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 0.9fr 1fr 0.8fr 1fr",padding:"8px 14px",fontSize:11,borderTop:"1px solid #243447",background:i%2?"#182032":"#1e293b",gap:4}}>
-                                <div style={{color:"#10B981",fontWeight:500}}>{[p.serie,p.folio].filter(Boolean).join("-")||"—"}</div>
+                                <div style={{color:"#10B981",fontWeight:500}}>{serieFolio(p.serie,p.folio)||"—"}</div>
                                 <div style={{color:"#94a3b8"}}>{p.fecha_carga||"—"}</div>
                                 <div style={{color:"#94a3b8"}}>{p.num_ov||"—"}</div>
                                 <div style={{color:"#94a3b8"}}>{p.fecha_entrega||"—"}</div>
@@ -2553,7 +2567,7 @@ function App() {
                             const c=cliById(p.clienteId);
                             return(
                               <div key={p.id} style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr 1fr",padding:"9px 16px",fontSize:12,borderTop:"1px solid #243447",background:i%2?"#182032":"#1e293b"}}>
-                                <div style={{fontWeight:600,color:"#7c3aed"}}>{p.serie||"—"}-{p.folio||"s/f"}</div>
+                                <div style={{fontWeight:600,color:"#7c3aed"}}>{serieFolio(p.serie,p.folio,"s/f")}</div>
                                 <div style={{textAlign:"right",fontWeight:700}}>{fmtT(p.toneladas)}</div>
                                 <div style={{paddingLeft:8,color:"#64748b"}}>{c?c.nombre:"sin cliente"}</div>
                                 <div style={{textAlign:"right",color:"#94a3b8"}}>{p.fecha_carga}</div>
@@ -3222,7 +3236,7 @@ function App() {
                 <div>
                   <div style={{fontWeight:800,fontSize:14,color:"#7c3aed"}}>{selected.num_ov}</div>
                   <div style={{fontWeight:800,fontSize:16}}>{c?c.nombre:"Sin cliente asignado"}</div>
-                  <div style={{fontSize:12,color:"#64748b"}}>{selected.serie?`${selected.serie}-${selected.folio||"s/f"} · `:""}{selected.toneladas>0?`${selected.toneladas} ton`:"ton pendiente"}{c&&selected.toneladas>0?` · ${fmt(valorOV(selected))}`:""}</div>
+                  <div style={{fontSize:12,color:"#64748b"}}>{selected.serie?`${serieFolio(selected.serie,selected.folio,"s/f")} · `:""}{selected.toneladas>0?`${selected.toneladas} ton`:"ton pendiente"}{c&&selected.toneladas>0?` · ${fmt(valorOV(selected))}`:""}</div>
                   {(()=>{const p=parseFloat(selected.precio_ton)||(parseFloat(c?.precio_ton)||0);return p>0&&<div style={{fontSize:11,color:"#94a3b8",marginTop:1}}>{fmt(p)}/ton{!selected.precio_ton&&" (precio actual cliente)"}</div>;})()}
                   <div style={{fontSize:12,color:"#94a3b8",marginTop:3}}>🏭 {diaLabel(selected.fecha_carga)}{selected.fecha_entrega?` · 🚚 ${diaLabel(selected.fecha_entrega)}`:""}</div>
                   {selected.serie&&<div style={{marginTop:4}}><PlantaBadge serie={selected.serie}/></div>}
