@@ -43,7 +43,7 @@
       --accent:#10B981; --accent-soft:#10B98122;
     }
     body.light{
-      --bg-main:#F8FAFC; --bg-card:#FFFFFF; --bg-card-alt:#FFFFFF; --bg-zebra:#F1F5F9;
+      --bg-main:#F8FAFC; --bg-card:#FFFFFF; --bg-card-alt:#F1F5F9; --bg-zebra:#F1F5F9;
       --border:#E2E8F0; --border-soft:#E2E8F0;
       --text-main:#0F172A; --text-sec:#475569; --text-muted:#94A3B8; --text-tertiary:#64748b;
       --accent:#10B981; --accent-soft:#10B98115;
@@ -3061,17 +3061,17 @@ function App() {
               <div style={{fontWeight:800,fontSize:14,color:"var(--text-main)",marginBottom:2}}>🎯 Termómetro Plan 20,000 ton/mes</div>
               <div style={{fontSize:11,color:"var(--text-tertiary)",marginBottom:14}}>Progreso hacia la meta mensual de volumen</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
-                <div style={{background:"var(--bg-card-alt)",border:"1px solid var(--border)",borderRadius:12,padding:"12px",textAlign:"center"}}>
+                <div style={{background:"var(--bg-card-alt)",boxShadow:"0 1px 3px rgba(0,0,0,0.08)",borderRadius:12,padding:"12px",textAlign:"center"}}>
                   <div style={{fontSize:9,color:"var(--text-tertiary)",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Actual</div>
                   <div style={{fontSize:22,fontWeight:900,color:"var(--accent)"}}>{fmtT(tonMesActual)}</div>
                   <div style={{fontSize:9,color:"var(--text-sec)"}}>toneladas</div>
                 </div>
-                <div style={{background:"var(--bg-card-alt)",border:"1px solid var(--border)",borderRadius:12,padding:"12px",textAlign:"center"}}>
+                <div style={{background:"var(--bg-card-alt)",boxShadow:"0 1px 3px rgba(0,0,0,0.08)",borderRadius:12,padding:"12px",textAlign:"center"}}>
                   <div style={{fontSize:9,color:"var(--text-tertiary)",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Proyección</div>
                   <div style={{fontSize:22,fontWeight:900,color:proyeccion>=META?"var(--accent)":"#f59e0b"}}>{fmtT(proyeccion)}</div>
                   <div style={{fontSize:9,color:"var(--text-sec)"}}>ton estimadas</div>
                 </div>
-                <div style={{background:"var(--bg-card-alt)",border:"1px solid var(--border)",borderRadius:12,padding:"12px",textAlign:"center"}}>
+                <div style={{background:"var(--bg-card-alt)",boxShadow:"0 1px 3px rgba(0,0,0,0.08)",borderRadius:12,padding:"12px",textAlign:"center"}}>
                   <div style={{fontSize:9,color:"var(--text-tertiary)",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Ritmo</div>
                   <div style={{fontSize:22,fontWeight:900,color:"var(--text-main)"}}>{fmtT(ritmoActual)}</div>
                   <div style={{fontSize:9,color:"var(--text-sec)"}}>ton/día hábil</div>
@@ -3105,12 +3105,12 @@ function App() {
                 }
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                <div style={{background:"var(--bg-card-alt)",borderRadius:10,padding:"12px"}}>
+                <div style={{background:"var(--bg-card-alt)",boxShadow:"0 1px 3px rgba(0,0,0,0.08)",borderRadius:10,padding:"12px"}}>
                   <div style={{fontSize:9,color:"var(--text-tertiary)",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>{mesLabel(curYM).split(" ")[0]} (actual)</div>
                   <div style={{fontSize:18,fontWeight:800,color:"var(--accent)"}}>{fmtT(tonMesActual)} ton</div>
                   <div style={{fontSize:10,color:"var(--text-sec)"}}>{fmtT(ritmoActual)} ton/día hábil</div>
                 </div>
-                <div style={{background:"var(--bg-card-alt)",borderRadius:10,padding:"12px"}}>
+                <div style={{background:"var(--bg-card-alt)",boxShadow:"0 1px 3px rgba(0,0,0,0.08)",borderRadius:10,padding:"12px"}}>
                   <div style={{fontSize:9,color:"var(--text-tertiary)",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>{mesLabel(prevYM).split(" ")[0]} (mismo día)</div>
                   <div style={{fontSize:18,fontWeight:800,color:"var(--text-sec)"}}>{fmtT(tonMesPrev)} ton</div>
                   <div style={{fontSize:10,color:"var(--text-tertiary)"}}>{fmtT(ritmoPrev)} ton/día hábil</div>
@@ -3131,7 +3131,7 @@ function App() {
                 ?<div style={{fontSize:13,color:"var(--text-sec)",textAlign:"center",padding:"20px 0"}}>Sin entregas registradas este mes o el anterior</div>
                 :<div style={{display:"flex",flexDirection:"column",gap:8}}>
                   {clientesSemaforo.map(c=>(
-                    <div key={c.id} style={{background:"var(--bg-card-alt)",borderRadius:10,padding:"12px 14px",borderLeft:`4px solid ${semColor[c.semaforo]}`}}>
+                    <div key={c.id} style={{background:"var(--bg-card-alt)",boxShadow:"0 1px 3px rgba(0,0,0,0.08)",borderRadius:10,padding:"12px 14px",borderLeft:`4px solid ${semColor[c.semaforo]}`}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
                         <div style={{flex:1}}>
                           <div style={{fontWeight:700,fontSize:13,color:"var(--text-main)"}}>{c.nombre}</div>
