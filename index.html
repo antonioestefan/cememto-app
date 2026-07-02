@@ -1259,10 +1259,16 @@ function App() {
     });
     setGdStep("confirm");
   };
+  const limpiarFolio=(folio)=>{
+    if(!folio) return "";
+    const f=folio.trim().toUpperCase();
+    // Evitar duplicación: AG-AG-487013 → AG-487013
+    return f.replace(/^(AG|PU|BQ)-(AG|PU|BQ)-/,"$1-");
+  };
   const gdConfirmar=async(res)=>{
     const fechaEntrega=gdFechaEntrega[res.group.key];
     if(!fechaEntrega) return;
-    const folio=res.group.folioBase||res.data.numeroRemision||"";
+    const folio=limpiarFolio(res.group.folioBase||res.data.numeroRemision||"");
     const numeroOV=(res.data.numeroOV||"").trim();
     const regFile=res.group.page1||res.group.page2;
     const existente=numeroOV&&ovs.find(o=>(o.num_ov||"").trim()===numeroOV);
