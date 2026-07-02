@@ -48,6 +48,7 @@ const todayISO   = () => { const d=new Date(); return `${d.getFullYear()}-${Stri
 const addDays    = (iso,n) => { const d=new Date((iso||todayISO())+"T12:00"); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
 const tomorrowISO   = () => addDays(todayISO(),1);
 const nextWorkdayISO= () => new Date().getDay()===6 ? addDays(todayISO(),2) : addDays(todayISO(),1);
+const nextBusinessDayAfter = (iso) => { let d=addDays(iso||todayISO(),1); while([0,6].includes(new Date(d+"T12:00").getDay())) d=addDays(d,1); return d; };
 const diaLabel   = (iso) => iso ? new Date(iso+"T12:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"short"}) : "—";
 const mesLabel   = (ym)  => { const [y,m]=ym.split("-"); return new Date(+y,+m-1,1).toLocaleDateString("es-MX",{month:"long",year:"numeric"}); };
 const currentYM  = () => todayISO().slice(0,7);
@@ -692,6 +693,7 @@ function App() {
   const [gdFiles,setGdFiles]                     = useState([]);
   const [gdSelected,setGdSelected]               = useState(new Set());
   const [gdResults,setGdResults]                 = useState([]);
+  const [gdFechaEntrega,setGdFechaEntrega]       = useState({});
   const [gdLoading,setGdLoading]                 = useState(false);
   const [gdError,setGdError]                     = useState("");
   const [gdProgress,setGdProgress]               = useState({cur:0,tot:0});
@@ -1129,14 +1131,22 @@ function App() {
         results.push({group,data:JSON.parse(cleaned),ok:true});
       }catch(e){results.push({group,data:null,ok:false,error:e.message});}
     }
-    setGdResults(results); setGdStep("confirm");
+    setGdResults(results);
+    setGdFechaEntrega(prev=>{
+      const next={...prev};
+      results.forEach(r=>{ if(r.ok&&r.data&&!next[r.group.key]) next[r.group.key]=nextBusinessDayAfter(r.data.fecha||todayISO()); });
+      return next;
+    });
+    setGdStep("confirm");
   };
   const gdConfirmar=async(res)=>{
+    const fechaEntrega=gdFechaEntrega[res.group.key];
+    if(!fechaEntrega) return;
     const id=`OV-${Date.now()}`;
     const folio=res.group.folioBase||res.data.numeroRemision||"";
     const serie=(folio||"").split("-")[0].toUpperCase();
     const precio_ton=parseFloat(clientes.find(c=>c.id===gdSelectedFolder?.clienteId)?.precio_ton)||0;
-    const nueva={...emptyOV,id,num_ov:res.data.numeroOV||"",folio,fecha_carga:res.data.fecha||todayISO(),toneladas:parseFloat(res.data.pesoNeto)||0,serie,clienteId:gdSelectedFolder?.clienteId||"",precio_ton};
+    const nueva={...emptyOV,id,num_ov:res.data.numeroOV||"",folio,fecha_carga:res.data.fecha||todayISO(),fecha_entrega:fechaEntrega,toneladas:parseFloat(res.data.pesoNeto)||0,serie,clienteId:gdSelectedFolder?.clienteId||"",precio_ton};
     setOVs(prev=>[nueva,...prev]);
     await saveToDb("ovs",id,nueva);
     const regFile=res.group.page1||res.group.page2;
@@ -1145,7 +1155,7 @@ function App() {
   const gdCerrar=()=>{
     setShowGDrive(false); setGdStep("auth"); setGdToken(null); setGdFolders([]);
     setGdSelectedFolder(null); setGdOvsCliente([]); setGdFiles([]); setGdSelected(new Set());
-    setGdResults([]); setGdLoading(false); setGdError(""); setGdProgress({cur:0,tot:0});
+    setGdResults([]); setGdFechaEntrega({}); setGdLoading(false); setGdError(""); setGdProgress({cur:0,tot:0});
   };
 
   const toggleDiaHabil = async (iso)=>{
@@ -4006,9 +4016,15 @@ function App() {
                           <div><div style={{fontSize:10,color:"#64748b"}}>Toneladas</div><div style={{fontWeight:700,color:"#16a34a",fontSize:13}}>{res.data.pesoNeto||"—"} ton</div></div>
                           <div style={{gridColumn:"1/-1"}}><div style={{fontSize:10,color:"#64748b"}}>Cliente</div><div style={{fontWeight:600,fontSize:13,color:gdSelectedFolder?.clienteNombre?"#10B981":"#d97706"}}>{gdSelectedFolder?.clienteNombre||"⚠ Sin cliente — asigna en la OV después"}</div></div>
                         </div>
+                        {!info&&(
+                          <div style={{marginBottom:10}}>
+                            <label style={{fontSize:10,color:"#64748b",display:"block",marginBottom:3}}>Fecha de entrega *</label>
+                            <input type="date" value={gdFechaEntrega[res.group.key]||""} onChange={e=>setGdFechaEntrega(prev=>({...prev,[res.group.key]:e.target.value}))} style={inS}/>
+                          </div>
+                        )}
                         {info
                           ?<div style={{fontSize:12,color:"#10B981",textAlign:"center",padding:"6px 0",fontWeight:700}}>✅ OV creada: {info.ovId}</div>
-                          :<button onClick={()=>gdConfirmar(res)} style={{width:"100%",background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"9px",fontWeight:700,cursor:"pointer",fontSize:13}}>✓ Confirmar y crear OV</button>
+                          :<button onClick={()=>gdConfirmar(res)} disabled={!gdFechaEntrega[res.group.key]} style={{width:"100%",background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"9px",fontWeight:700,cursor:gdFechaEntrega[res.group.key]?"pointer":"not-allowed",fontSize:13,opacity:gdFechaEntrega[res.group.key]?1:0.5}}>✓ Confirmar y crear OV</button>
                         }
                       </>
                     ):(
