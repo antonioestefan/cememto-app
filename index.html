@@ -716,18 +716,24 @@ function App() {
   },[dbReady]);
 
   useEffect(()=>{
+    if(!dbReady||!autenticado) return;
+    let cancelled=false;
     const checkAndRenew=()=>{
-      const cached=gdReadToken();
-      if(!cached||cached.scope!==GD_SCOPE) return;
-      const msLeft=cached.expires_at-Date.now();
-      if(msLeft>0&&msLeft<GD_RENEW_THRESHOLD_MS&&gdReadGranted()===GD_SCOPE){
-        gdTrySilentRenew().then(t=>{ if(t) setGdToken(t); });
-      }
+      try{
+        const cached=gdReadToken();
+        if(!cached||cached.scope!==GD_SCOPE) return;
+        const msLeft=cached.expires_at-Date.now();
+        if(msLeft>0&&msLeft<GD_RENEW_THRESHOLD_MS&&gdReadGranted()===GD_SCOPE){
+          gdTrySilentRenew()
+            .then(t=>{ if(!cancelled&&t) setGdToken(t); })
+            .catch(e=>console.warn("[GDrive] error al renovar token en segundo plano:",e));
+        }
+      }catch(e){ console.warn("[GDrive] error en auto-renovación de token:",e); }
     };
     checkAndRenew();
     const iv=setInterval(checkAndRenew,60000);
-    return ()=>clearInterval(iv);
-  },[]);
+    return ()=>{ cancelled=true; clearInterval(iv); };
+  },[dbReady,autenticado]);
 
   const saveToDb    = async (col,id,data)=>{ const {id:_,...rest}=data; await window.__setDoc(window.__doc(window.__db,col,id),rest); };
   const deleteFromDb= async (col,id)    =>{ await window.__deleteDoc(window.__doc(window.__db,col,id)); };
