@@ -52,6 +52,10 @@ const nextBusinessDayAfter = (iso) => { let d=addDays(iso||todayISO(),1); while(
 const diaLabel   = (iso) => iso ? new Date(iso+"T12:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"short"}) : "—";
 const mesLabel   = (ym)  => { const [y,m]=ym.split("-"); return new Date(+y,+m-1,1).toLocaleDateString("es-MX",{month:"long",year:"numeric"}); };
 const currentYM  = () => todayISO().slice(0,7);
+const limpiarFolio = (f) => {
+  if (!f) return "";
+  return f.trim().toUpperCase().replace(/^(AG|PU|BQ)-(AG|PU|BQ)-/, "$1-");
+};
 
 /* planta por serie */
 const PLANTAS = {PU:"Puebla",AG:"Aguascalientes",BQ:"Bodega Querétaro"};
@@ -953,6 +957,7 @@ function App() {
 
   const upd = async (id,patch)=>{
     const p=ovs.find(x=>x.id===id); if(!p) return;
+    if(patch.folio!==undefined) patch={...patch,folio:limpiarFolio(patch.folio)};
     const updated={...p,...patch};
     setOVs(prev=>prev.map(x=>x.id===id?updated:x));
     setSelected(s=>s&&s.id===id?updated:s);
@@ -972,11 +977,12 @@ function App() {
   };
   const saveOV = async ()=>{
     const id=form.id||`OV-${Date.now()}`;
+    const folio=limpiarFolio(form.folio);
     const otros=ovs.filter(p=>p.id!==id);
     if(otros.some(p=>p.num_ov&&p.num_ov===form.num_ov)){alert(`Ya existe otra OV con el número "${form.num_ov}".`);return;}
-    if(form.folio&&otros.some(p=>p.folio&&p.folio===form.folio)){alert(`Ya existe otra OV con el folio de remisión "${form.folio}".`);return;}
+    if(folio&&otros.some(p=>p.folio&&p.folio===folio)){alert(`Ya existe otra OV con el folio de remisión "${folio}".`);return;}
     const precio_ton=parseFloat(form.precio_ton)||parseFloat(cliById(form.clienteId)?.precio_ton)||0;
-    const n={...form,id,toneladas:parseFloat(form.toneladas)||0,precio_ton};
+    const n={...form,id,folio,toneladas:parseFloat(form.toneladas)||0,precio_ton};
     setOVs(prev=>prev.find(p=>p.id===id)?prev.map(p=>p.id===id?n:p):[n,...prev]);
     await saveToDb("ovs",id,n);
     setShowForm(false); setForm(emptyOV); setSelected(null);
@@ -985,6 +991,14 @@ function App() {
     if(!confirm("¿Eliminar esta OV?")) return;
     setOVs(prev=>prev.filter(p=>p.id!==id)); setSelected(null);
     await deleteFromDb("ovs",id);
+  };
+  const limpiarFoliosDuplicados = async ()=>{
+    const afectadas=ovs.filter(o=>o.folio&&limpiarFolio(o.folio)!==o.folio);
+    if(!afectadas.length){ alert("No se encontraron folios con prefijo duplicado."); return; }
+    if(!confirm(`Se corregirán ${afectadas.length} OV${afectadas.length!==1?"s":""} con folio duplicado (ej. AG-AG-XXXXXX → AG-XXXXXX).\n\n¿Continuar?`)) return;
+    let corregidas=0;
+    for(const o of afectadas){ await upd(o.id,{folio:limpiarFolio(o.folio)}); corregidas++; }
+    alert(`✅ Se corrigieron ${corregidas} folio${corregidas!==1?"s":""} duplicado${corregidas!==1?"s":""}.`);
   };
 
   /* ── Google Drive ── */
@@ -1263,12 +1277,6 @@ function App() {
       return next;
     });
     setGdStep("confirm");
-  };
-  const limpiarFolio=(folio)=>{
-    if(!folio) return "";
-    const f=folio.trim().toUpperCase();
-    // Evitar duplicación: AG-AG-487013 → AG-487013
-    return f.replace(/^(AG|PU|BQ)-(AG|PU|BQ)-/,"$1-");
   };
   const gdConfirmar=async(res)=>{
     const fechaEntrega=gdFechaEntrega[res.group.key];
@@ -1779,6 +1787,7 @@ function App() {
                   <button onClick={()=>{setShowOVMenu(false);setForm({...emptyOV,fecha_carga:todayISO()});setShowForm(true);}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#f1f5f9",fontSize:13,cursor:"pointer",fontWeight:600}}>✏️ Captura manual</button>
                   <button onClick={()=>{setShowOVMenu(false);setShowLectorNuevo(true);setLectorStep("idle");setLectorData(null);setLectorFiles({a:null,b:null});setLectorError("");setLectorMode("single");}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#0891b2",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid #334155"}}>📄 Leer remisión con IA</button>
                   <button onClick={()=>{setShowOVMenu(false);gdOpen();}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#7c3aed",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid #334155"}}>📂 Importar desde Google Drive</button>
+                  <button onClick={()=>{setShowOVMenu(false);limpiarFoliosDuplicados();}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#f59e0b",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid #334155"}}>🔧 Limpiar folios duplicados</button>
                 </div>
               </>
             )}
