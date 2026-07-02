@@ -688,6 +688,7 @@ function App() {
   const [gdStep,setGdStep]                       = useState("auth");
   const [gdToken,setGdToken]                     = useState(null);
   const [gdFolders,setGdFolders]                 = useState([]);
+  const [gdPendingCounts,setGdPendingCounts]     = useState({});
   const [gdSelectedFolder,setGdSelectedFolder]   = useState(null);
   const [gdOvsCliente,setGdOvsCliente]           = useState([]);
   const [gdFiles,setGdFiles]                     = useState([]);
@@ -1029,6 +1030,38 @@ function App() {
     const data=await gdApi("/files",{q:`'${rootId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,fields:"files(id,name)",pageSize:"200"},token);
     return data.files||[];
   };
+  const gdListRemisionFiles=async(folder,token)=>{
+    const sub=await gdApi("/files",{q:`'${folder.id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'`,fields:"files(id,name)",pageSize:"50"},token);
+    const remSub=(sub.files||[]).find(f=>(f.name||"").toLowerCase()==="remisiones");
+    const targetId=remSub?remSub.id:folder.id;
+    const mimeQ="(mimeType='application/pdf' or mimeType='image/jpeg' or mimeType='image/png')";
+    const fd=await gdApi("/files",{q:`'${targetId}' in parents and trashed=false and ${mimeQ}`,fields:"files(id,name,size,mimeType,modifiedTime)",pageSize:"200",orderBy:"modifiedTime desc"},token);
+    return fd.files||[];
+  };
+  const gdClienteCandidatas=(folder)=>{
+    const match=clientes.find(c=>(c.nombre||"").trim().toLowerCase()===folder.name.trim().toLowerCase());
+    if(!match?.id) return ovs;
+    return ovs.filter(ov=>ov.clienteId===match.id||ov.cliente===match.id||ov.cliente===match.nombre);
+  };
+  const gdScanPendientes=async(folders,token)=>{
+    setGdPendingCounts(prev=>{
+      const next={...prev};
+      folders.forEach(f=>{ next[f.id]={loading:true,count:null}; });
+      return next;
+    });
+    for(const folder of folders){
+      try{
+        const files=await gdListRemisionFiles(folder,token);
+        const groups=gdGroupFiles(files);
+        const candidatas=gdClienteCandidatas(folder);
+        const pendientes=groups.filter(g=>!gdProcesadoInfo(g,{candidatas,silent:true})).length;
+        setGdPendingCounts(prev=>({...prev,[folder.id]:{loading:false,count:pendientes}}));
+      }catch(e){
+        console.warn("[GDrive] error contando pendientes de",folder.name,e);
+        setGdPendingCounts(prev=>({...prev,[folder.id]:{loading:false,count:null}}));
+      }
+    }
+  };
   const gdOpen=async()=>{
     setShowGDrive(true); setGdError(""); setGdResults([]); setGdStep("auth");
     try{
@@ -1040,6 +1073,7 @@ function App() {
       const folders=await gdListClientFolders(root.id,token);
       setGdFolders(folders);
       setGdStep("folders");
+      gdScanPendientes(folders,token);
     }catch{ setGdStep("auth"); }
     setGdLoading(false);
   };
@@ -1051,6 +1085,7 @@ function App() {
       const folders=await gdListClientFolders(root.id,token);
       setGdFolders(folders);
       setGdStep("folders");
+      gdScanPendientes(folders,token);
     }catch(e){setGdError(e.message||"Error al conectar");}
     setGdLoading(false);
   };
@@ -1058,40 +1093,31 @@ function App() {
     setGdLoading(true); setGdError("");
     try{
       const token=gdToken||await gdGetToken(false);
-      const sub=await gdApi("/files",{q:`'${folder.id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'`,fields:"files(id,name)",pageSize:"50"},token);
-      const remSub=(sub.files||[]).find(f=>(f.name||"").toLowerCase()==="remisiones");
       const match=clientes.find(c=>(c.nombre||"").trim().toLowerCase()===folder.name.trim().toLowerCase());
       setGdSelectedFolder({...folder,clienteId:match?.id||null,clienteNombre:match?.nombre||null});
-      if(match?.id){
-        console.log("[GDrive] clienteId usado:",match.id);
-        const ovsCliente=ovs.filter(ov=>
-          ov.clienteId===match.id ||
-          ov.cliente===match.id ||
-          ov.cliente===match.nombre
-        );
-        console.log("[GDrive] OVs encontradas para este cliente:",ovsCliente.length);
-        setGdOvsCliente(ovsCliente);
-      } else {
-        setGdOvsCliente([]);
-      }
-      const targetId=remSub?remSub.id:folder.id;
-      const mimeQ="(mimeType='application/pdf' or mimeType='image/jpeg' or mimeType='image/png')";
-      const fd=await gdApi("/files",{q:`'${targetId}' in parents and trashed=false and ${mimeQ}`,fields:"files(id,name,size,mimeType,modifiedTime)",pageSize:"200",orderBy:"modifiedTime desc"},token);
-      setGdFiles(fd.files||[]); setGdSelected(new Set()); setGdStep("files");
+      const ovsCliente=gdClienteCandidatas(folder);
+      console.log("[GDrive] clienteId usado:",match?.id||"(ninguno)");
+      console.log("[GDrive] OVs encontradas para este cliente:",ovsCliente.length);
+      setGdOvsCliente(ovsCliente);
+      const files=await gdListRemisionFiles(folder,token);
+      setGdFiles(files); setGdSelected(new Set()); setGdStep("files");
     }catch(e){setGdError(e.message);}
     setGdLoading(false);
   };
   const gdToggle=(key)=>setGdSelected(prev=>{const s=new Set(prev);s.has(key)?s.delete(key):s.add(key);return s;});
-  const gdProcesadoInfo=(group)=>{
+  const gdProcesadoInfo=(group,opts)=>{
+    const {candidatas:candidatasOverride,silent}=opts||{};
     const reg=(group.page1&&procesados[group.page1.id])||(group.page2&&procesados[group.page2.id]);
     if(reg) return {ovId:reg.ovId,fecha:reg.fecha,actualizada:!!reg.actualizada};
     const nombreArchivo=(group.folioBase||"").toLowerCase().trim();
     const soloNumero=nombreArchivo.replace(/^(ag|pu|bq)-/,"");
-    const candidatas=gdSelectedFolder?.clienteId?gdOvsCliente:ovs;
-    console.log(`[GDrive] buscando folio "${nombreArchivo}" (grupo: ${group.folioBase}) · sin prefijo: "${soloNumero}"`);
-    console.log("[GDrive] clienteId usado:",gdSelectedFolder?.clienteId||"(ninguno — usando todas las OVs)");
-    console.log("[GDrive] OVs encontradas para este cliente:",candidatas.length);
-    console.log("[GDrive] folios existentes en OVs consultadas:",JSON.stringify(candidatas.map(o=>o.folio||"(vacío)")));
+    const candidatas=candidatasOverride||(gdSelectedFolder?.clienteId?gdOvsCliente:ovs);
+    if(!silent){
+      console.log(`[GDrive] buscando folio "${nombreArchivo}" (grupo: ${group.folioBase}) · sin prefijo: "${soloNumero}"`);
+      console.log("[GDrive] clienteId usado:",gdSelectedFolder?.clienteId||"(ninguno — usando todas las OVs)");
+      console.log("[GDrive] OVs encontradas para este cliente:",candidatas.length);
+      console.log("[GDrive] folios existentes en OVs consultadas:",JSON.stringify(candidatas.map(o=>o.folio||"(vacío)")));
+    }
     const match=nombreArchivo&&candidatas.find(ov=>{
       if(!ov.folio) return false;
       const folioNorm=ov.folio.toLowerCase().trim();
@@ -1160,7 +1186,7 @@ function App() {
     await window.__setDoc(window.__doc(window.__db,"remisiones_gdrive",regFile.id),{ovId:id,fileName:regFile.name,fecha:todayISO(),clienteId:gdSelectedFolder?.clienteId||"",actualizada:false});
   };
   const gdCerrar=()=>{
-    setShowGDrive(false); setGdStep("auth"); setGdToken(null); setGdFolders([]);
+    setShowGDrive(false); setGdStep("auth"); setGdToken(null); setGdFolders([]); setGdPendingCounts({});
     setGdSelectedFolder(null); setGdOvsCliente([]); setGdFiles([]); setGdSelected(new Set());
     setGdResults([]); setGdFechaEntrega({}); setGdLoading(false); setGdError(""); setGdProgress({cur:0,tot:0});
   };
@@ -3943,6 +3969,7 @@ function App() {
                 {gdFolders.length===0&&<div style={{color:"#64748b",fontSize:13,textAlign:"center",padding:"24px 0"}}>No se encontraron subcarpetas en "{GD_ROOT_FOLDER_NAME}"</div>}
                 {gdFolders.map(f=>{
                   const match=clientes.find(c=>(c.nombre||"").trim().toLowerCase()===f.name.trim().toLowerCase());
+                  const pend=gdPendingCounts[f.id];
                   return(
                     <button key={f.id} onClick={()=>gdSelectFolder(f)} disabled={gdLoading} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:"#243447",border:"1px solid #334155",borderRadius:8,padding:"12px 14px",cursor:"pointer",marginBottom:8,color:"#f1f5f9",textAlign:"left",opacity:gdLoading?0.6:1}}>
                       <span style={{fontSize:20}}>📁</span>
@@ -3950,6 +3977,9 @@ function App() {
                         <div style={{fontWeight:600,fontSize:14}}>{f.name}</div>
                         <div style={{fontSize:11,marginTop:2,color:match?"#10B981":"#d97706"}}>{match?`✓ Cliente: ${match.nombre}`:"⚠ Sin coincidencia en catálogo"}</div>
                       </div>
+                      {pend?.loading&&<span style={{fontSize:11,color:"#64748b",flexShrink:0}}>⏳</span>}
+                      {!pend?.loading&&pend?.count>0&&<span style={{fontSize:11,fontWeight:700,color:"white",background:"#10B981",borderRadius:12,padding:"3px 9px",flexShrink:0}}>{pend.count} nueva{pend.count!==1?"s":""}</span>}
+                      {!pend?.loading&&pend?.count===0&&<span style={{fontSize:14,flexShrink:0}}>✅</span>}
                       <span style={{color:"#64748b",fontSize:18}}>›</span>
                     </button>
                   );
