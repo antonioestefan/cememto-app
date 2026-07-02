@@ -715,26 +715,6 @@ function App() {
     return ()=>{u1();u2();u3();u4();u5();u6();u7();};
   },[dbReady]);
 
-  useEffect(()=>{
-    if(!dbReady||!autenticado) return;
-    let cancelled=false;
-    const checkAndRenew=()=>{
-      try{
-        const cached=gdReadToken();
-        if(!cached||cached.scope!==GD_SCOPE) return;
-        const msLeft=cached.expires_at-Date.now();
-        if(msLeft>0&&msLeft<GD_RENEW_THRESHOLD_MS&&gdReadGranted()===GD_SCOPE){
-          gdTrySilentRenew()
-            .then(t=>{ if(!cancelled&&t) setGdToken(t); })
-            .catch(e=>console.warn("[GDrive] error al renovar token en segundo plano:",e));
-        }
-      }catch(e){ console.warn("[GDrive] error en auto-renovación de token:",e); }
-    };
-    checkAndRenew();
-    const iv=setInterval(checkAndRenew,60000);
-    return ()=>{ cancelled=true; clearInterval(iv); };
-  },[dbReady,autenticado]);
-
   const saveToDb    = async (col,id,data)=>{ const {id:_,...rest}=data; await window.__setDoc(window.__doc(window.__db,col,id),rest); };
   const deleteFromDb= async (col,id)    =>{ await window.__deleteDoc(window.__doc(window.__db,col,id)); };
 
@@ -1010,7 +990,6 @@ function App() {
   const GD_API="https://www.googleapis.com/drive/v3";
   const GD_SCOPE="https://www.googleapis.com/auth/drive";
   const GD_PROMPT="Extrae los siguientes datos de esta remisión de cemento Cruz Azul: Número de remisión (formato: AG-XXXXXX, PU-XXXXXX o BQ-XXXXXX), Número de OV (Orden de Venta) — el número de OV en la remisión puede aparecer en formato como 'SG-2292690-1.000'; extrae ÚNICAMENTE el número central (los dígitos entre el primer y segundo guión, ej. '2292690'), Fecha de remisión, Peso neto en toneladas (usar el del ticket de báscula/reverso si hay dos valores). Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto";
-  const GD_RENEW_THRESHOLD_MS=5*60*1000;
   // Safari/iOS purga localStorage de forma agresiva; se guarda también en sessionStorage como respaldo.
   const gdSaveToken=(tokenObj)=>{
     const json=JSON.stringify(tokenObj);
