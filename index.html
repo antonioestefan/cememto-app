@@ -12,20 +12,11 @@
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
-    /* OneDrive — pega aquí el Application (client) ID de Azure Portal */
-    window.__OD_CLIENT_ID = "";
-    (async()=>{
-      if(!window.__OD_CLIENT_ID) return;
-      try{
-        window.__msalInstance = new msal.PublicClientApplication({
-          auth:{clientId:window.__OD_CLIENT_ID,authority:"https://login.microsoftonline.com/common",redirectUri:window.location.origin},
-          cache:{cacheLocation:"localStorage",storeAuthStateInCookie:false}
-        });
-        await window.__msalInstance.initialize();
-      }catch(e){console.warn("MSAL:",e);}
-    })();
+    /* Google Drive — pega aquí el Client ID (y opcionalmente la API Key) de Google Cloud Console */
+    window.__GOOGLE_CLIENT_ID = "451900065378-qt34csbet4k4lao4ea9cp62uc0l87uki.apps.googleusercontent.com";
+    window.__GOOGLE_API_KEY = "";
   </script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -678,17 +669,17 @@ function App() {
   const [diasHabiles,setDiasHabiles]             = useState({});
   const [showCalHabiles,setShowCalHabiles]       = useState(false);
   const [clienteDashboard,setClienteDashboard]   = useState(null);
-  const [showOneDrive,setShowOneDrive]           = useState(false);
-  const [odStep,setOdStep]                       = useState("auth");
-  const [odToken,setOdToken]                     = useState(null);
-  const [odFolders,setOdFolders]                 = useState([]);
-  const [odSelectedFolder,setOdSelectedFolder]   = useState(null);
-  const [odFiles,setOdFiles]                     = useState([]);
-  const [odSelected,setOdSelected]               = useState(new Set());
-  const [odResults,setOdResults]                 = useState([]);
-  const [odLoading,setOdLoading]                 = useState(false);
-  const [odError,setOdError]                     = useState("");
-  const [odProgress,setOdProgress]               = useState({cur:0,tot:0});
+  const [showGDrive,setShowGDrive]               = useState(false);
+  const [gdStep,setGdStep]                       = useState("auth");
+  const [gdToken,setGdToken]                     = useState(null);
+  const [gdFolders,setGdFolders]                 = useState([]);
+  const [gdSelectedFolder,setGdSelectedFolder]   = useState(null);
+  const [gdFiles,setGdFiles]                     = useState([]);
+  const [gdSelected,setGdSelected]               = useState(new Set());
+  const [gdResults,setGdResults]                 = useState([]);
+  const [gdLoading,setGdLoading]                 = useState(false);
+  const [gdError,setGdError]                     = useState("");
+  const [gdProgress,setGdProgress]               = useState({cur:0,tot:0});
   const [procesados,setProcesados]               = useState({});
 
   useEffect(()=>{
@@ -700,7 +691,7 @@ function App() {
     const u4=window.__onSnapshot(window.__col(db,"prospectos"),snap=>{setProspectos(snap.docs.map(d=>({id:d.id,...d.data()})));});
     const u5=window.__onSnapshot(window.__col(db,"facturas"),snap=>{setFacturas(snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||"")));});
     const u6=window.__onSnapshot(window.__col(db,"diasHabiles"),snap=>{const ov={};snap.docs.forEach(d=>{ov[d.id]=d.data().trabajado;});setDiasHabiles(ov);});
-    const u7=window.__onSnapshot(window.__col(db,"remisiones_onedrive"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data();});setProcesados(m);});
+    const u7=window.__onSnapshot(window.__col(db,"remisiones_gdrive"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data();});setProcesados(m);});
     return ()=>{u1();u2();u3();u4();u5();u6();u7();};
   },[dbReady]);
 
@@ -975,68 +966,99 @@ function App() {
     await deleteFromDb("ovs",id);
   };
 
-  /* ── OneDrive ── */
-  const OD_GRAPH="https://graph.microsoft.com/v1.0";
-  const OD_SCOPES=["Files.Read","User.Read"];
-  const OD_PROMPT="Extrae los siguientes datos de esta remisión de cemento Cruz Azul: Número de remisión (formato: AG-XXXXXX, PU-XXXXXX o BQ-XXXXXX), Número de OV (Orden de Venta) — el número de OV en la remisión puede aparecer en formato como 'SG-2292690-1.000'; extrae ÚNICAMENTE el número central (los dígitos entre el primer y segundo guión, ej. '2292690'), Fecha de remisión, Peso neto en toneladas (usar el del ticket de báscula/reverso si hay dos valores). Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto";
-  const odGetToken=async()=>{
-    const inst=window.__msalInstance;
-    if(!inst) throw new Error("MSAL no inicializado");
-    const accounts=inst.getAllAccounts();
-    const req={scopes:OD_SCOPES};
-    if(accounts.length>0) req.account=accounts[0];
-    try{const r=await inst.acquireTokenSilent(req);return r.accessToken;}
-    catch{const r=await inst.acquireTokenPopup({scopes:OD_SCOPES});return r.accessToken;}
+  /* ── Google Drive ── */
+  const GD_API="https://www.googleapis.com/drive/v3";
+  const GD_SCOPE="https://www.googleapis.com/auth/drive.readonly";
+  const GD_PROMPT="Extrae los siguientes datos de esta remisión de cemento Cruz Azul: Número de remisión (formato: AG-XXXXXX, PU-XXXXXX o BQ-XXXXXX), Número de OV (Orden de Venta) — el número de OV en la remisión puede aparecer en formato como 'SG-2292690-1.000'; extrae ÚNICAMENTE el número central (los dígitos entre el primer y segundo guión, ej. '2292690'), Fecha de remisión, Peso neto en toneladas (usar el del ticket de báscula/reverso si hay dos valores). Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto";
+  const gdGetToken=async(forceConsent)=>{
+    if(!window.__GOOGLE_CLIENT_ID) throw new Error("Falta configurar GOOGLE_CLIENT_ID");
+    if(!window.google?.accounts?.oauth2) throw new Error("Google Identity Services no cargado, intenta de nuevo");
+    if(!forceConsent){
+      const cached=JSON.parse(localStorage.getItem("gd_token")||"null");
+      if(cached&&cached.expires_at>Date.now()+60000) return cached.access_token;
+    }
+    const granted=localStorage.getItem("gd_granted")==="1";
+    return new Promise((resolve,reject)=>{
+      const client=google.accounts.oauth2.initTokenClient({
+        client_id:window.__GOOGLE_CLIENT_ID,
+        scope:GD_SCOPE,
+        callback:(resp)=>{
+          if(resp.error){reject(new Error(resp.error));return;}
+          localStorage.setItem("gd_granted","1");
+          localStorage.setItem("gd_token",JSON.stringify({access_token:resp.access_token,expires_at:Date.now()+((resp.expires_in||3600)*1000)}));
+          resolve(resp.access_token);
+        },
+        error_callback:(err)=>reject(new Error(err?.message||"Error de autenticación")),
+      });
+      client.requestAccessToken({prompt:forceConsent?"consent":(granted?"":"consent")});
+    });
   };
-  const odGraph=async(path,token)=>{
-    const r=await fetch(`${OD_GRAPH}${path}`,{headers:{Authorization:`Bearer ${token}`,Accept:"application/json"}});
-    if(!r.ok) throw new Error(`Graph error ${r.status}`);
+  const gdApi=async(path,params,token)=>{
+    const sp=new URLSearchParams(params||{});
+    if(window.__GOOGLE_API_KEY) sp.set("key",window.__GOOGLE_API_KEY);
+    const r=await fetch(`${GD_API}${path}?${sp.toString()}`,{headers:{Authorization:`Bearer ${token}`}});
+    if(!r.ok) throw new Error(`Drive error ${r.status}`);
     return r.json();
   };
-  const odLogin=async()=>{
-    setOdLoading(true); setOdError("");
+  const gdOpen=async()=>{
+    setShowGDrive(true); setGdError(""); setGdResults([]); setGdStep("auth");
     try{
-      const token=await odGetToken(); setOdToken(token);
-      const data=await odGraph("/me/drive/root/children?$select=id,name,folder&$top=100",token);
-      setOdFolders((data.value||[]).filter(i=>i.folder));
-      setOdStep("folders");
-    }catch(e){setOdError(e.message||"Error al conectar");}
-    setOdLoading(false);
+      const cached=JSON.parse(localStorage.getItem("gd_token")||"null");
+      if(!cached||cached.expires_at<=Date.now()+60000) return;
+      setGdLoading(true);
+      const token=await gdGetToken(false); setGdToken(token);
+      const data=await gdApi("/files",{q:"mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false",fields:"files(id,name)",pageSize:"100"},token);
+      setGdFolders(data.files||[]);
+      setGdStep("folders");
+    }catch{ setGdStep("auth"); }
+    setGdLoading(false);
   };
-  const odSelectFolder=async(folder)=>{
-    setOdLoading(true); setOdError("");
+  const gdLogin=async()=>{
+    setGdLoading(true); setGdError("");
     try{
-      const token=odToken||await odGetToken();
-      const sub=await odGraph(`/me/drive/items/${folder.id}/children?$select=id,name,folder&$top=50`,token);
-      const remSub=(sub.value||[]).find(i=>i.folder&&i.name.toLowerCase()==="remisiones");
+      const token=await gdGetToken(true); setGdToken(token);
+      const data=await gdApi("/files",{q:"mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false",fields:"files(id,name)",pageSize:"100"},token);
+      setGdFolders(data.files||[]);
+      setGdStep("folders");
+    }catch(e){setGdError(e.message||"Error al conectar");}
+    setGdLoading(false);
+  };
+  const gdSelectFolder=async(folder)=>{
+    setGdLoading(true); setGdError("");
+    try{
+      const token=gdToken||await gdGetToken(false);
+      const sub=await gdApi("/files",{q:`'${folder.id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'`,fields:"files(id,name)",pageSize:"50"},token);
+      const remSub=(sub.files||[]).find(f=>(f.name||"").toLowerCase()==="remisiones");
       const match=clientes.find(c=>(c.nombre||"").trim().toLowerCase()===folder.name.trim().toLowerCase());
-      setOdSelectedFolder({...folder,clienteId:match?.id||null,clienteNombre:match?.nombre||null});
+      setGdSelectedFolder({...folder,clienteId:match?.id||null,clienteNombre:match?.nombre||null});
       const targetId=remSub?remSub.id:folder.id;
-      const fd=await odGraph(`/me/drive/items/${targetId}/children?$select=id,name,size,file,lastModifiedDateTime&$top=200`,token);
-      const files=(fd.value||[]).filter(i=>i.file&&/\.(jpg|jpeg|png|pdf)$/i.test(i.name)).sort((a,b)=>(b.lastModifiedDateTime||"").localeCompare(a.lastModifiedDateTime||""));
-      setOdFiles(files); setOdSelected(new Set()); setOdStep("files");
-    }catch(e){setOdError(e.message);}
-    setOdLoading(false);
+      const mimeQ="(mimeType='application/pdf' or mimeType='image/jpeg' or mimeType='image/png')";
+      const fd=await gdApi("/files",{q:`'${targetId}' in parents and trashed=false and ${mimeQ}`,fields:"files(id,name,size,mimeType,modifiedTime)",pageSize:"200",orderBy:"modifiedTime desc"},token);
+      setGdFiles(fd.files||[]); setGdSelected(new Set()); setGdStep("files");
+    }catch(e){setGdError(e.message);}
+    setGdLoading(false);
   };
-  const odToggle=(id)=>setOdSelected(prev=>{const s=new Set(prev);s.has(id)?s.delete(id):s.add(id);return s;});
-  const odSelectAll=()=>setOdSelected(new Set(odFiles.filter(f=>!procesados[f.id]).map(f=>f.id)));
-  const odProcess=async()=>{
-    const toProcess=odFiles.filter(f=>odSelected.has(f.id)&&!procesados[f.id]);
+  const gdToggle=(id)=>setGdSelected(prev=>{const s=new Set(prev);s.has(id)?s.delete(id):s.add(id);return s;});
+  const gdSelectAll=()=>setGdSelected(new Set(gdFiles.filter(f=>!procesados[f.id]).map(f=>f.id)));
+  const gdProcess=async()=>{
+    const toProcess=gdFiles.filter(f=>gdSelected.has(f.id)&&!procesados[f.id]);
     if(!toProcess.length) return;
-    setOdStep("processing"); setOdProgress({cur:0,tot:toProcess.length});
+    setGdStep("processing"); setGdProgress({cur:0,tot:toProcess.length});
     const results=[];
     for(let i=0;i<toProcess.length;i++){
-      setOdProgress({cur:i+1,tot:toProcess.length});
+      setGdProgress({cur:i+1,tot:toProcess.length});
       const file=toProcess[i];
       try{
-        const token=odToken||await odGetToken();
-        const r=await fetch(`${OD_GRAPH}/me/drive/items/${file.id}/content`,{headers:{Authorization:`Bearer ${token}`}});
+        const token=gdToken||await gdGetToken(false);
+        const sp=new URLSearchParams({alt:"media"});
+        if(window.__GOOGLE_API_KEY) sp.set("key",window.__GOOGLE_API_KEY);
+        const r=await fetch(`${GD_API}/files/${file.id}?${sp.toString()}`,{headers:{Authorization:`Bearer ${token}`}});
         if(!r.ok) throw new Error(`Descarga fallida ${r.status}`);
         const blob=await r.blob();
         const b64=await new Promise((res,rej)=>{const rd=new FileReader();rd.onload=e=>res(e.target.result.split(",")[1]);rd.onerror=rej;rd.readAsDataURL(blob);});
-        const mediaType=blob.type||"image/jpeg";
+        const mediaType=file.mimeType||blob.type||"image/jpeg";
         const block=mediaType==="application/pdf"?{type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}}:{type:"image",source:{type:"base64",media_type:mediaType,data:b64}};
-        const resp=await fetch("/.netlify/functions/claude-proxy",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1024,messages:[{role:"user",content:[block,{type:"text",text:OD_PROMPT}]}]})});
+        const resp=await fetch("/.netlify/functions/claude-proxy",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1024,messages:[{role:"user",content:[block,{type:"text",text:GD_PROMPT}]}]})});
         if(!resp.ok){const err=await resp.json();throw new Error(err.error?.message||err.error||`Error ${resp.status}`);}
         const apiData=await resp.json();
         const raw=apiData.content[0].text;
@@ -1044,21 +1066,21 @@ function App() {
         results.push({file,data:JSON.parse(cleaned),ok:true});
       }catch(e){results.push({file,data:null,ok:false,error:e.message});}
     }
-    setOdResults(results); setOdStep("confirm");
+    setGdResults(results); setGdStep("confirm");
   };
-  const odConfirmar=async(res)=>{
+  const gdConfirmar=async(res)=>{
     const id=`OV-${Date.now()}`;
     const serie=(res.data.numeroRemision||"").split("-")[0].toUpperCase();
-    const precio_ton=parseFloat(clientes.find(c=>c.id===odSelectedFolder?.clienteId)?.precio_ton)||0;
-    const nueva={...emptyOV,id,num_ov:res.data.numeroOV||"",folio:res.data.numeroRemision||"",fecha_carga:res.data.fecha||todayISO(),toneladas:parseFloat(res.data.pesoNeto)||0,serie,clienteId:odSelectedFolder?.clienteId||"",precio_ton};
+    const precio_ton=parseFloat(clientes.find(c=>c.id===gdSelectedFolder?.clienteId)?.precio_ton)||0;
+    const nueva={...emptyOV,id,num_ov:res.data.numeroOV||"",folio:res.data.numeroRemision||"",fecha_carga:res.data.fecha||todayISO(),toneladas:parseFloat(res.data.pesoNeto)||0,serie,clienteId:gdSelectedFolder?.clienteId||"",precio_ton};
     setOVs(prev=>[nueva,...prev]);
     await saveToDb("ovs",id,nueva);
-    await window.__setDoc(window.__doc(window.__db,"remisiones_onedrive",res.file.id),{ovId:id,fileName:res.file.name,fecha:todayISO(),clienteId:odSelectedFolder?.clienteId||""});
+    await window.__setDoc(window.__doc(window.__db,"remisiones_gdrive",res.file.id),{ovId:id,fileName:res.file.name,fecha:todayISO(),clienteId:gdSelectedFolder?.clienteId||""});
   };
-  const odCerrar=()=>{
-    setShowOneDrive(false); setOdStep("auth"); setOdToken(null); setOdFolders([]);
-    setOdSelectedFolder(null); setOdFiles([]); setOdSelected(new Set());
-    setOdResults([]); setOdLoading(false); setOdError(""); setOdProgress({cur:0,tot:0});
+  const gdCerrar=()=>{
+    setShowGDrive(false); setGdStep("auth"); setGdToken(null); setGdFolders([]);
+    setGdSelectedFolder(null); setGdFiles([]); setGdSelected(new Set());
+    setGdResults([]); setGdLoading(false); setGdError(""); setGdProgress({cur:0,tot:0});
   };
 
   const toggleDiaHabil = async (iso)=>{
@@ -1536,7 +1558,7 @@ function App() {
                 <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",background:"#1e293b",borderRadius:10,border:"1px solid #334155",boxShadow:"0 8px 24px #00000090",zIndex:200,overflow:"hidden",minWidth:220}}>
                   <button onClick={()=>{setShowOVMenu(false);setForm({...emptyOV,fecha_carga:todayISO()});setShowForm(true);}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#f1f5f9",fontSize:13,cursor:"pointer",fontWeight:600}}>✏️ Captura manual</button>
                   <button onClick={()=>{setShowOVMenu(false);setShowLectorNuevo(true);setLectorStep("idle");setLectorData(null);setLectorFiles({a:null,b:null});setLectorError("");setLectorMode("single");}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#0891b2",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid #334155"}}>📄 Leer remisión con IA</button>
-                  <button onClick={()=>{setShowOVMenu(false);setShowOneDrive(true);setOdStep("auth");setOdError("");setOdResults([]);}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#7c3aed",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid #334155"}}>📂 Importar desde OneDrive</button>
+                  <button onClick={()=>{setShowOVMenu(false);gdOpen();}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#7c3aed",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid #334155"}}>📂 Importar desde Google Drive</button>
                 </div>
               </>
             )}
@@ -3796,51 +3818,51 @@ function App() {
       )}
 
       {/* ONEDRIVE IMPORT */}
-      {showOneDrive&&(
+      {showGDrive&&(
         <div style={{position:"fixed",inset:0,background:"#00000090",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
           <div style={{background:"#1e293b",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"92vh",overflowY:"auto"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
               <div>
-                <div style={{fontWeight:800,fontSize:17}}>📂 Importar desde OneDrive</div>
-                {odSelectedFolder&&<div style={{fontSize:12,color:"#64748b",marginTop:2}}>📁 {odSelectedFolder.name}{odSelectedFolder.clienteNombre&&<span style={{color:"#10B981"}}> → {odSelectedFolder.clienteNombre}</span>}</div>}
+                <div style={{fontWeight:800,fontSize:17}}>📂 Importar desde Google Drive</div>
+                {gdSelectedFolder&&<div style={{fontSize:12,color:"#64748b",marginTop:2}}>📁 {gdSelectedFolder.name}{gdSelectedFolder.clienteNombre&&<span style={{color:"#10B981"}}> → {gdSelectedFolder.clienteNombre}</span>}</div>}
               </div>
-              <button onClick={odCerrar} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#94a3b8"}}>✕</button>
+              <button onClick={gdCerrar} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#94a3b8"}}>✕</button>
             </div>
 
-            {odError&&<div style={{background:"#ef444422",color:"#dc2626",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:12,border:"1px solid #fecaca"}}>{odError}</div>}
+            {gdError&&<div style={{background:"#ef444422",color:"#dc2626",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:12,border:"1px solid #fecaca"}}>{gdError}</div>}
 
-            {odStep==="auth"&&(!window.__OD_CLIENT_ID?(
+            {gdStep==="auth"&&(!window.__GOOGLE_CLIENT_ID?(
               <div style={{textAlign:"center",padding:"20px 0"}}>
                 <div style={{fontSize:36,marginBottom:10}}>⚙️</div>
                 <div style={{fontWeight:700,fontSize:15,marginBottom:12}}>Configuración requerida</div>
                 <div style={{fontSize:12,color:"#94a3b8",lineHeight:1.8,textAlign:"left",background:"#243447",borderRadius:10,padding:"14px 16px"}}>
-                  <b>Pasos para conectar OneDrive:</b><br/>
-                  1. Ve a <b>portal.azure.com</b> → App registrations → New registration<br/>
-                  2. Nombre: "Cemento App" · Tipo: <i>Accounts in any organizational directory and personal Microsoft accounts</i><br/>
-                  3. Redirect URI: <b>Single-page application (SPA)</b> → <code style={{background:"#0F172A",padding:"1px 6px",borderRadius:4}}>{window.location.origin}</code><br/>
-                  4. Copia el <b>Application (client) ID</b><br/>
-                  5. En <code style={{background:"#0F172A",padding:"1px 6px",borderRadius:4}}>index.html</code> busca <code style={{background:"#0F172A",padding:"1px 6px",borderRadius:4}}>window.__OD_CLIENT_ID = ""</code> y pega el ID entre las comillas
+                  <b>Pasos para conectar Google Drive:</b><br/>
+                  1. Ve a <b>console.cloud.google.com</b> → crea/selecciona un proyecto → habilita la <b>Google Drive API</b><br/>
+                  2. Ve a Credenciales → Crear credenciales → <b>ID de cliente de OAuth</b> → Tipo: <i>Aplicación web</i><br/>
+                  3. En "Orígenes autorizados de JavaScript" agrega <code style={{background:"#0F172A",padding:"1px 6px",borderRadius:4}}>{window.location.origin}</code><br/>
+                  4. Copia el <b>Client ID</b> (y opcionalmente crea una API Key restringida a la Drive API)<br/>
+                  5. En <code style={{background:"#0F172A",padding:"1px 6px",borderRadius:4}}>index.html</code> busca <code style={{background:"#0F172A",padding:"1px 6px",borderRadius:4}}>window.__GOOGLE_CLIENT_ID = ""</code> y pega el Client ID (y la API Key en <code style={{background:"#0F172A",padding:"1px 6px",borderRadius:4}}>window.__GOOGLE_API_KEY</code>)
                 </div>
               </div>
             ):(
               <div style={{textAlign:"center",padding:"28px 0"}}>
-                <div style={{fontSize:40,marginBottom:12}}>☁️</div>
-                <div style={{fontWeight:700,fontSize:15,marginBottom:6}}>Conectar con OneDrive</div>
-                <div style={{fontSize:12,color:"#94a3b8",marginBottom:20}}>Inicia sesión con tu cuenta Microsoft</div>
-                <button onClick={odLogin} disabled={odLoading} style={{background:"#0078d4",color:"white",border:"none",borderRadius:8,padding:"12px 28px",fontWeight:700,cursor:odLoading?"default":"pointer",fontSize:14}}>
-                  {odLoading?"⏳ Conectando...":"🔑 Iniciar sesión con Microsoft"}
+                <div style={{fontSize:40,marginBottom:12}}>🗂️</div>
+                <div style={{fontWeight:700,fontSize:15,marginBottom:6}}>Conectar con Google Drive</div>
+                <div style={{fontSize:12,color:"#94a3b8",marginBottom:20}}>Inicia sesión con tu cuenta Google</div>
+                <button onClick={gdLogin} disabled={gdLoading} style={{background:"#4285F4",color:"white",border:"none",borderRadius:8,padding:"12px 28px",fontWeight:700,cursor:gdLoading?"default":"pointer",fontSize:14}}>
+                  {gdLoading?"⏳ Conectando...":"🔑 Iniciar sesión con Google"}
                 </button>
               </div>
             ))}
 
-            {odStep==="folders"&&(
+            {gdStep==="folders"&&(
               <div>
                 <div style={{fontSize:12,color:"#94a3b8",marginBottom:12}}>Selecciona la carpeta del cliente:</div>
-                {odFolders.length===0&&<div style={{color:"#64748b",fontSize:13,textAlign:"center",padding:"24px 0"}}>No se encontraron carpetas en tu OneDrive</div>}
-                {odFolders.map(f=>{
+                {gdFolders.length===0&&<div style={{color:"#64748b",fontSize:13,textAlign:"center",padding:"24px 0"}}>No se encontraron carpetas en tu Google Drive</div>}
+                {gdFolders.map(f=>{
                   const match=clientes.find(c=>(c.nombre||"").trim().toLowerCase()===f.name.trim().toLowerCase());
                   return(
-                    <button key={f.id} onClick={()=>odSelectFolder(f)} disabled={odLoading} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:"#243447",border:"1px solid #334155",borderRadius:8,padding:"12px 14px",cursor:"pointer",marginBottom:8,color:"#f1f5f9",textAlign:"left",opacity:odLoading?0.6:1}}>
+                    <button key={f.id} onClick={()=>gdSelectFolder(f)} disabled={gdLoading} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:"#243447",border:"1px solid #334155",borderRadius:8,padding:"12px 14px",cursor:"pointer",marginBottom:8,color:"#f1f5f9",textAlign:"left",opacity:gdLoading?0.6:1}}>
                       <span style={{fontSize:20}}>📁</span>
                       <div style={{flex:1}}>
                         <div style={{fontWeight:600,fontSize:14}}>{f.name}</div>
@@ -3850,25 +3872,25 @@ function App() {
                     </button>
                   );
                 })}
-                {odLoading&&<div style={{textAlign:"center",color:"#64748b",padding:"12px 0",fontSize:13}}>Cargando...</div>}
+                {gdLoading&&<div style={{textAlign:"center",color:"#64748b",padding:"12px 0",fontSize:13}}>Cargando...</div>}
               </div>
             )}
 
-            {odStep==="files"&&(
+            {gdStep==="files"&&(
               <div>
-                <button onClick={()=>setOdStep("folders")} style={{background:"none",border:"none",color:"#64748b",fontSize:12,cursor:"pointer",marginBottom:12,padding:0}}>← Carpetas</button>
+                <button onClick={()=>setGdStep("folders")} style={{background:"none",border:"none",color:"#64748b",fontSize:12,cursor:"pointer",marginBottom:12,padding:0}}>← Carpetas</button>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                   <div style={{fontSize:12,color:"#94a3b8"}}>
-                    {odFiles.length} archivo{odFiles.length!==1?"s":""} · <span style={{color:"#f59e0b"}}>{odFiles.filter(f=>!procesados[f.id]).length} pendiente{odFiles.filter(f=>!procesados[f.id]).length!==1?"s":""}</span>
+                    {gdFiles.length} archivo{gdFiles.length!==1?"s":""} · <span style={{color:"#f59e0b"}}>{gdFiles.filter(f=>!procesados[f.id]).length} pendiente{gdFiles.filter(f=>!procesados[f.id]).length!==1?"s":""}</span>
                   </div>
-                  {odFiles.some(f=>!procesados[f.id])&&<button onClick={odSelectAll} style={{background:"none",border:"1px solid #334155",color:"#94a3b8",fontSize:11,padding:"3px 10px",borderRadius:6,cursor:"pointer"}}>Sel. todos</button>}
+                  {gdFiles.some(f=>!procesados[f.id])&&<button onClick={gdSelectAll} style={{background:"none",border:"1px solid #334155",color:"#94a3b8",fontSize:11,padding:"3px 10px",borderRadius:6,cursor:"pointer"}}>Sel. todos pendientes</button>}
                 </div>
-                {odFiles.length===0&&<div style={{color:"#64748b",fontSize:13,textAlign:"center",padding:"24px 0"}}>No hay archivos JPG/PNG/PDF en la carpeta Remisiones</div>}
-                {odFiles.map(f=>{
+                {gdFiles.length===0&&<div style={{color:"#64748b",fontSize:13,textAlign:"center",padding:"24px 0"}}>No hay archivos JPG/PNG/PDF en la carpeta Remisiones</div>}
+                {gdFiles.map(f=>{
                   const done=!!procesados[f.id];
-                  const sel=odSelected.has(f.id);
+                  const sel=gdSelected.has(f.id);
                   return(
-                    <div key={f.id} onClick={()=>!done&&odToggle(f.id)} style={{display:"flex",alignItems:"center",gap:10,background:sel?"#10B98118":"#243447",border:`1px solid ${sel?"#10B981":"#334155"}`,borderRadius:8,padding:"10px 12px",marginBottom:6,cursor:done?"default":"pointer"}}>
+                    <div key={f.id} onClick={()=>!done&&gdToggle(f.id)} style={{display:"flex",alignItems:"center",gap:10,background:sel?"#10B98118":"#243447",border:`1px solid ${sel?"#10B981":"#334155"}`,borderRadius:8,padding:"10px 12px",marginBottom:6,cursor:done?"default":"pointer"}}>
                       <div style={{fontSize:16,flexShrink:0}}>{done?"✅":"🆕"}</div>
                       {!done&&<div style={{width:18,height:18,borderRadius:4,border:`2px solid ${sel?"#10B981":"#475569"}`,background:sel?"#10B981":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontSize:11}}>{sel?"✓":""}</div>}
                       <div style={{flex:1,overflow:"hidden"}}>
@@ -3879,30 +3901,30 @@ function App() {
                     </div>
                   );
                 })}
-                {odSelected.size>0&&(
-                  <button onClick={odProcess} style={{width:"100%",background:"#10B981",color:"white",border:"none",borderRadius:8,padding:"12px",fontWeight:700,cursor:"pointer",fontSize:14,marginTop:8}}>
-                    🤖 Procesar {odSelected.size} archivo{odSelected.size!==1?"s":""} con IA
+                {gdSelected.size>0&&(
+                  <button onClick={gdProcess} style={{width:"100%",background:"#10B981",color:"white",border:"none",borderRadius:8,padding:"12px",fontWeight:700,cursor:"pointer",fontSize:14,marginTop:8}}>
+                    🤖 Procesar {gdSelected.size} archivo{gdSelected.size!==1?"s":""} con IA
                   </button>
                 )}
               </div>
             )}
 
-            {odStep==="processing"&&(
+            {gdStep==="processing"&&(
               <div style={{textAlign:"center",padding:"40px 20px"}}>
                 <div style={{fontSize:40,marginBottom:12}}>⏳</div>
                 <div style={{fontWeight:700,fontSize:16,color:"#10B981",marginBottom:6}}>Procesando con IA...</div>
-                <div style={{fontSize:14,color:"#94a3b8",marginBottom:20}}>Archivo {odProgress.cur} de {odProgress.tot}</div>
+                <div style={{fontSize:14,color:"#94a3b8",marginBottom:20}}>Archivo {gdProgress.cur} de {gdProgress.tot}</div>
                 <div style={{background:"#243447",borderRadius:8,height:10,overflow:"hidden",margin:"0 20px"}}>
-                  <div style={{background:"#10B981",height:"100%",width:`${odProgress.tot?Math.round(odProgress.cur/odProgress.tot*100):0}%`,transition:"width 0.4s"}}/>
+                  <div style={{background:"#10B981",height:"100%",width:`${gdProgress.tot?Math.round(gdProgress.cur/gdProgress.tot*100):0}%`,transition:"width 0.4s"}}/>
                 </div>
-                <div style={{fontSize:12,color:"#475569",marginTop:10}}>{odProgress.tot?Math.round(odProgress.cur/odProgress.tot*100):0}%</div>
+                <div style={{fontSize:12,color:"#475569",marginTop:10}}>{gdProgress.tot?Math.round(gdProgress.cur/gdProgress.tot*100):0}%</div>
               </div>
             )}
 
-            {odStep==="confirm"&&(
+            {gdStep==="confirm"&&(
               <div>
                 <div style={{fontSize:13,color:"#94a3b8",marginBottom:14}}>Revisa y confirma para crear las OVs:</div>
-                {odResults.map((res)=>(
+                {gdResults.map((res)=>(
                   <div key={res.file.id} style={{background:"#243447",borderRadius:10,padding:"14px",marginBottom:10,border:`1px solid ${procesados[res.file.id]?"#10B98166":"#334155"}`}}>
                     <div style={{fontWeight:600,fontSize:11,color:"#64748b",marginBottom:8,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>📄 {res.file.name}</div>
                     {res.ok&&res.data?(
@@ -3912,11 +3934,11 @@ function App() {
                           <div><div style={{fontSize:10,color:"#64748b"}}>Remisión</div><div style={{fontWeight:700,color:"#0891b2",fontSize:13}}>{res.data.numeroRemision||"—"}</div></div>
                           <div><div style={{fontSize:10,color:"#64748b"}}>Fecha</div><div style={{fontWeight:600,fontSize:13}}>{res.data.fecha||"—"}</div></div>
                           <div><div style={{fontSize:10,color:"#64748b"}}>Toneladas</div><div style={{fontWeight:700,color:"#16a34a",fontSize:13}}>{res.data.pesoNeto||"—"} ton</div></div>
-                          <div style={{gridColumn:"1/-1"}}><div style={{fontSize:10,color:"#64748b"}}>Cliente</div><div style={{fontWeight:600,fontSize:13,color:odSelectedFolder?.clienteNombre?"#10B981":"#d97706"}}>{odSelectedFolder?.clienteNombre||"⚠ Sin cliente — asigna en la OV después"}</div></div>
+                          <div style={{gridColumn:"1/-1"}}><div style={{fontSize:10,color:"#64748b"}}>Cliente</div><div style={{fontWeight:600,fontSize:13,color:gdSelectedFolder?.clienteNombre?"#10B981":"#d97706"}}>{gdSelectedFolder?.clienteNombre||"⚠ Sin cliente — asigna en la OV después"}</div></div>
                         </div>
                         {procesados[res.file.id]
                           ?<div style={{fontSize:12,color:"#10B981",textAlign:"center",padding:"6px 0",fontWeight:700}}>✅ OV creada: {procesados[res.file.id]?.ovId}</div>
-                          :<button onClick={()=>odConfirmar(res)} style={{width:"100%",background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"9px",fontWeight:700,cursor:"pointer",fontSize:13}}>✓ Confirmar y crear OV</button>
+                          :<button onClick={()=>gdConfirmar(res)} style={{width:"100%",background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"9px",fontWeight:700,cursor:"pointer",fontSize:13}}>✓ Confirmar y crear OV</button>
                         }
                       </>
                     ):(
@@ -3924,7 +3946,7 @@ function App() {
                     )}
                   </div>
                 ))}
-                <button onClick={()=>setOdStep("files")} style={{width:"100%",background:"#243447",color:"#64748b",border:"none",borderRadius:8,padding:"10px",fontWeight:600,cursor:"pointer",fontSize:13,marginTop:4}}>← Volver a archivos</button>
+                <button onClick={()=>setGdStep("files")} style={{width:"100%",background:"#243447",color:"#64748b",border:"none",borderRadius:8,padding:"10px",fontWeight:600,cursor:"pointer",fontSize:13,marginTop:4}}>← Volver a archivos</button>
               </div>
             )}
 
