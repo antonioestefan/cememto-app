@@ -20,7 +20,7 @@
   </script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
     const firebaseConfig = {
       apiKey: "AIzaSyBXxj2MnF5AGFs46FTe7FN3Gl3iiXjT8gk",
       authDomain: "cemento-antonio.firebaseapp.com",
@@ -33,6 +33,7 @@
     const db = getFirestore(app);
     window.__db=db; window.__col=collection; window.__onSnapshot=onSnapshot;
     window.__doc=doc; window.__setDoc=setDoc; window.__deleteDoc=deleteDoc;
+    window.__getDocs=getDocs; window.__query=query; window.__where=where;
     window.__dbReady=true; window.dispatchEvent(new Event("dbReady"));
   </script>
   <style>* { box-sizing:border-box; margin:0; padding:0; } body { font-family:'Inter','Segoe UI',system-ui,sans-serif; background:#0F172A; color:#f8fafc; } input,select,button { font-family:inherit; } input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }</style>
@@ -674,6 +675,7 @@ function App() {
   const [gdToken,setGdToken]                     = useState(null);
   const [gdFolders,setGdFolders]                 = useState([]);
   const [gdSelectedFolder,setGdSelectedFolder]   = useState(null);
+  const [gdOvsCliente,setGdOvsCliente]           = useState([]);
   const [gdFiles,setGdFiles]                     = useState([]);
   const [gdSelected,setGdSelected]               = useState(new Set());
   const [gdResults,setGdResults]                 = useState([]);
@@ -1044,6 +1046,17 @@ function App() {
       const remSub=(sub.files||[]).find(f=>(f.name||"").toLowerCase()==="remisiones");
       const match=clientes.find(c=>(c.nombre||"").trim().toLowerCase()===folder.name.trim().toLowerCase());
       setGdSelectedFolder({...folder,clienteId:match?.id||null,clienteNombre:match?.nombre||null});
+      if(match?.id){
+        try{
+          const snap=await window.__getDocs(window.__query(window.__col(window.__db,"ovs"),window.__where("clienteId","==",match.id)));
+          setGdOvsCliente(snap.docs.map(d=>({id:d.id,...d.data()})));
+        }catch(e){
+          console.warn("[GDrive] error consultando OVs del cliente en Firestore, usando cache local:",e);
+          setGdOvsCliente(ovs.filter(o=>o.clienteId===match.id));
+        }
+      } else {
+        setGdOvsCliente([]);
+      }
       const targetId=remSub?remSub.id:folder.id;
       const mimeQ="(mimeType='application/pdf' or mimeType='image/jpeg' or mimeType='image/png')";
       const fd=await gdApi("/files",{q:`'${targetId}' in parents and trashed=false and ${mimeQ}`,fields:"files(id,name,size,mimeType,modifiedTime)",pageSize:"200",orderBy:"modifiedTime desc"},token);
@@ -1056,7 +1069,10 @@ function App() {
     const reg=procesados[file.id];
     if(reg) return {ovId:reg.ovId,fecha:reg.fecha};
     const base=(file.name||"").replace(/\.[^./\\]+$/,"").trim().toLowerCase();
-    const match=base&&ovs.find(o=>(o.folio||"").trim().toLowerCase()===base);
+    const candidatas=gdSelectedFolder?.clienteId?gdOvsCliente:ovs;
+    console.log(`[GDrive] buscando folio "${base}" (archivo: ${file.name})`);
+    console.log("[GDrive] folios existentes en OVs consultadas:",candidatas.map(o=>o.folio||"(vacío)"));
+    const match=base&&candidatas.find(o=>(o.folio||"").trim().toLowerCase()===base);
     if(match) return {ovId:match.id,fecha:match.fecha_carga||""};
     return null;
   };
@@ -1100,7 +1116,7 @@ function App() {
   };
   const gdCerrar=()=>{
     setShowGDrive(false); setGdStep("auth"); setGdToken(null); setGdFolders([]);
-    setGdSelectedFolder(null); setGdFiles([]); setGdSelected(new Set());
+    setGdSelectedFolder(null); setGdOvsCliente([]); setGdFiles([]); setGdSelected(new Set());
     setGdResults([]); setGdLoading(false); setGdError(""); setGdProgress({cur:0,tot:0});
   };
 
