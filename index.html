@@ -3061,17 +3061,17 @@ function App() {
               <div style={{fontWeight:800,fontSize:14,color:"var(--text-main)",marginBottom:2}}>🎯 Termómetro Plan 20,000 ton/mes</div>
               <div style={{fontSize:11,color:"var(--text-tertiary)",marginBottom:14}}>Progreso hacia la meta mensual de volumen</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
-                <div style={{background:"var(--bg-card-alt)",borderRadius:10,padding:"12px",textAlign:"center"}}>
+                <div style={{background:"var(--bg-card-alt)",border:"1px solid var(--border)",borderRadius:12,padding:"12px",textAlign:"center"}}>
                   <div style={{fontSize:9,color:"var(--text-tertiary)",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Actual</div>
                   <div style={{fontSize:22,fontWeight:900,color:"var(--accent)"}}>{fmtT(tonMesActual)}</div>
                   <div style={{fontSize:9,color:"var(--text-sec)"}}>toneladas</div>
                 </div>
-                <div style={{background:"var(--bg-card-alt)",borderRadius:10,padding:"12px",textAlign:"center"}}>
+                <div style={{background:"var(--bg-card-alt)",border:"1px solid var(--border)",borderRadius:12,padding:"12px",textAlign:"center"}}>
                   <div style={{fontSize:9,color:"var(--text-tertiary)",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Proyección</div>
                   <div style={{fontSize:22,fontWeight:900,color:proyeccion>=META?"var(--accent)":"#f59e0b"}}>{fmtT(proyeccion)}</div>
                   <div style={{fontSize:9,color:"var(--text-sec)"}}>ton estimadas</div>
                 </div>
-                <div style={{background:"var(--bg-card-alt)",borderRadius:10,padding:"12px",textAlign:"center"}}>
+                <div style={{background:"var(--bg-card-alt)",border:"1px solid var(--border)",borderRadius:12,padding:"12px",textAlign:"center"}}>
                   <div style={{fontSize:9,color:"var(--text-tertiary)",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Ritmo</div>
                   <div style={{fontSize:22,fontWeight:900,color:"var(--text-main)"}}>{fmtT(ritmoActual)}</div>
                   <div style={{fontSize:9,color:"var(--text-sec)"}}>ton/día hábil</div>
