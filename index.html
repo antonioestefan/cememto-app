@@ -695,6 +695,7 @@ function App() {
   const [gdSelected,setGdSelected]               = useState(new Set());
   const [gdResults,setGdResults]                 = useState([]);
   const [gdFechaEntrega,setGdFechaEntrega]       = useState({});
+  const [gdConfirmandoTodos,setGdConfirmandoTodos] = useState(false);
   const [gdLoading,setGdLoading]                 = useState(false);
   const [gdError,setGdError]                     = useState("");
   const [gdProgress,setGdProgress]               = useState({cur:0,tot:0});
@@ -1220,10 +1221,17 @@ function App() {
     await saveToDb("ovs",id,nueva);
     await window.__setDoc(window.__doc(window.__db,"remisiones_gdrive",regFile.id),{ovId:id,fileName:regFile.name,fecha:todayISO(),clienteId:gdSelectedFolder?.clienteId||"",actualizada:false});
   };
+  const gdConfirmarTodos=async()=>{
+    const pendientes=gdResults.filter(res=>res.ok&&res.data&&!gdProcesadoInfo(res.group));
+    if(!pendientes.length) return;
+    setGdConfirmandoTodos(true);
+    for(const res of pendientes){ await gdConfirmar(res); }
+    setGdConfirmandoTodos(false);
+  };
   const gdCerrar=()=>{
     setShowGDrive(false); setGdStep("auth"); setGdToken(null); setGdFolders([]); setGdPendingCounts({});
     setGdSelectedFolder(null); setGdOvsCliente([]); setGdFiles([]); setGdSelected(new Set());
-    setGdResults([]); setGdFechaEntrega({}); setGdLoading(false); setGdError(""); setGdProgress({cur:0,tot:0});
+    setGdResults([]); setGdFechaEntrega({}); setGdConfirmandoTodos(false); setGdLoading(false); setGdError(""); setGdProgress({cur:0,tot:0});
   };
 
   const toggleDiaHabil = async (iso)=>{
@@ -4071,7 +4079,9 @@ function App() {
               </div>
             )}
 
-            {gdStep==="confirm"&&(
+            {gdStep==="confirm"&&(()=>{
+              const pendientesConfirmar=gdResults.filter(res=>res.ok&&res.data&&!gdProcesadoInfo(res.group));
+              return (
               <div>
                 <div style={{fontSize:13,color:"#94a3b8",marginBottom:14}}>Revisa y confirma para crear las OVs:</div>
                 {gdResults.map((res)=>{
@@ -4108,8 +4118,16 @@ function App() {
                   );
                 })}
                 <button onClick={()=>setGdStep("files")} style={{width:"100%",background:"#243447",color:"#64748b",border:"none",borderRadius:8,padding:"10px",fontWeight:600,cursor:"pointer",fontSize:13,marginTop:4}}>← Volver a archivos</button>
+                {pendientesConfirmar.length>0&&(
+                  <div style={{position:"sticky",bottom:0,margin:"14px -20px -22px -20px",padding:"12px 20px 22px",background:"#1e293b",borderTop:"1px solid #334155"}}>
+                    <button onClick={gdConfirmarTodos} disabled={gdConfirmandoTodos} style={{width:"100%",background:"#16a34a",color:"white",border:"none",borderRadius:8,padding:"13px",fontWeight:800,cursor:gdConfirmandoTodos?"default":"pointer",fontSize:14,opacity:gdConfirmandoTodos?0.7:1}}>
+                      {gdConfirmandoTodos?"⏳ Confirmando...":pendientesConfirmar.length===1?"✅ Confirmar y crear OV":`✅ Confirmar todos (${pendientesConfirmar.length})`}
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
+              );
+            })()}
 
           </div>
         </div>
