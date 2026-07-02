@@ -715,6 +715,20 @@ function App() {
     return ()=>{u1();u2();u3();u4();u5();u6();u7();};
   },[dbReady]);
 
+  useEffect(()=>{
+    const checkAndRenew=()=>{
+      const cached=gdReadToken();
+      if(!cached||cached.scope!==GD_SCOPE) return;
+      const msLeft=cached.expires_at-Date.now();
+      if(msLeft>0&&msLeft<GD_RENEW_THRESHOLD_MS&&gdReadGranted()===GD_SCOPE){
+        gdTrySilentRenew().then(t=>{ if(t) setGdToken(t); });
+      }
+    };
+    checkAndRenew();
+    const iv=setInterval(checkAndRenew,60000);
+    return ()=>clearInterval(iv);
+  },[]);
+
   const saveToDb    = async (col,id,data)=>{ const {id:_,...rest}=data; await window.__setDoc(window.__doc(window.__db,col,id),rest); };
   const deleteFromDb= async (col,id)    =>{ await window.__deleteDoc(window.__doc(window.__db,col,id)); };
 
@@ -990,22 +1004,74 @@ function App() {
   const GD_API="https://www.googleapis.com/drive/v3";
   const GD_SCOPE="https://www.googleapis.com/auth/drive";
   const GD_PROMPT="Extrae los siguientes datos de esta remisión de cemento Cruz Azul: Número de remisión (formato: AG-XXXXXX, PU-XXXXXX o BQ-XXXXXX), Número de OV (Orden de Venta) — el número de OV en la remisión puede aparecer en formato como 'SG-2292690-1.000'; extrae ÚNICAMENTE el número central (los dígitos entre el primer y segundo guión, ej. '2292690'), Fecha de remisión, Peso neto en toneladas (usar el del ticket de báscula/reverso si hay dos valores). Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto";
+  const GD_RENEW_THRESHOLD_MS=5*60*1000;
+  // Safari/iOS purga localStorage de forma agresiva; se guarda también en sessionStorage como respaldo.
+  const gdSaveToken=(tokenObj)=>{
+    const json=JSON.stringify(tokenObj);
+    try{localStorage.setItem("gd_token",json);}catch{}
+    try{sessionStorage.setItem("gd_token",json);}catch{}
+  };
+  const gdSaveGranted=()=>{
+    try{localStorage.setItem("gd_granted",GD_SCOPE);}catch{}
+    try{sessionStorage.setItem("gd_granted",GD_SCOPE);}catch{}
+  };
+  const gdReadToken=()=>{
+    try{
+      const fromLocal=JSON.parse(localStorage.getItem("gd_token")||"null");
+      if(fromLocal) return fromLocal;
+    }catch{}
+    try{
+      const fromSession=JSON.parse(sessionStorage.getItem("gd_token")||"null");
+      if(fromSession){ try{localStorage.setItem("gd_token",JSON.stringify(fromSession));}catch{} return fromSession; }
+    }catch{}
+    return null;
+  };
+  const gdReadGranted=()=>{
+    let g=null;
+    try{g=localStorage.getItem("gd_granted");}catch{}
+    if(g) return g;
+    try{g=sessionStorage.getItem("gd_granted");}catch{}
+    if(g){ try{localStorage.setItem("gd_granted",g);}catch{} }
+    return g;
+  };
+  const gdTrySilentRenew=()=>{
+    if(!window.__GOOGLE_CLIENT_ID||!window.google?.accounts?.oauth2) return Promise.resolve(null);
+    return new Promise((resolve)=>{
+      try{
+        const client=google.accounts.oauth2.initTokenClient({
+          client_id:window.__GOOGLE_CLIENT_ID,
+          scope:GD_SCOPE,
+          callback:(resp)=>{
+            if(resp.error){resolve(null);return;}
+            gdSaveGranted();
+            const tokenObj={access_token:resp.access_token,expires_at:Date.now()+((resp.expires_in||3600)*1000),scope:GD_SCOPE};
+            gdSaveToken(tokenObj);
+            resolve(resp.access_token);
+          },
+          error_callback:()=>resolve(null),
+        });
+        client.requestAccessToken({prompt:"none"});
+      }catch{ resolve(null); }
+    });
+  };
   const gdGetToken=async(forceConsent)=>{
     if(!window.__GOOGLE_CLIENT_ID) throw new Error("Falta configurar GOOGLE_CLIENT_ID");
     if(!window.google?.accounts?.oauth2) throw new Error("Google Identity Services no cargado, intenta de nuevo");
     if(!forceConsent){
-      const cached=JSON.parse(localStorage.getItem("gd_token")||"null");
+      const cached=gdReadToken();
       if(cached&&cached.scope===GD_SCOPE&&cached.expires_at>Date.now()+60000) return cached.access_token;
+      const renewed=await gdTrySilentRenew();
+      if(renewed) return renewed;
     }
-    const granted=localStorage.getItem("gd_granted")===GD_SCOPE;
+    const granted=gdReadGranted()===GD_SCOPE;
     return new Promise((resolve,reject)=>{
       const client=google.accounts.oauth2.initTokenClient({
         client_id:window.__GOOGLE_CLIENT_ID,
         scope:GD_SCOPE,
         callback:(resp)=>{
           if(resp.error){reject(new Error(resp.error));return;}
-          localStorage.setItem("gd_granted",GD_SCOPE);
-          localStorage.setItem("gd_token",JSON.stringify({access_token:resp.access_token,expires_at:Date.now()+((resp.expires_in||3600)*1000),scope:GD_SCOPE}));
+          gdSaveGranted();
+          gdSaveToken({access_token:resp.access_token,expires_at:Date.now()+((resp.expires_in||3600)*1000),scope:GD_SCOPE});
           resolve(resp.access_token);
         },
         error_callback:(err)=>reject(new Error(err?.message||"Error de autenticación")),
@@ -1066,10 +1132,17 @@ function App() {
   const gdOpen=async()=>{
     setShowGDrive(true); setGdError(""); setGdResults([]); setGdStep("auth");
     try{
-      const cached=JSON.parse(localStorage.getItem("gd_token")||"null");
-      if(!cached||cached.scope!==GD_SCOPE||cached.expires_at<=Date.now()+60000) return;
+      let token=null;
+      const cached=gdReadToken();
+      if(cached&&cached.scope===GD_SCOPE&&cached.expires_at>Date.now()+60000){
+        token=cached.access_token;
+      }else if(gdReadGranted()===GD_SCOPE){
+        setGdLoading(true);
+        token=await gdTrySilentRenew();
+      }
+      if(!token) return;
       setGdLoading(true);
-      const token=await gdGetToken(false); setGdToken(token);
+      setGdToken(token);
       const root=await gdFindRootFolder(token);
       const folders=await gdListClientFolders(root.id,token);
       setGdFolders(folders);
