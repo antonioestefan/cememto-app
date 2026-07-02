@@ -993,12 +993,23 @@ function App() {
       client.requestAccessToken({prompt:forceConsent?"consent":(granted?"":"consent")});
     });
   };
+  const GD_ROOT_FOLDER_NAME="Cruz Azul - Interno";
   const gdApi=async(path,params,token)=>{
     const sp=new URLSearchParams(params||{});
     if(window.__GOOGLE_API_KEY) sp.set("key",window.__GOOGLE_API_KEY);
     const r=await fetch(`${GD_API}${path}?${sp.toString()}`,{headers:{Authorization:`Bearer ${token}`}});
     if(!r.ok) throw new Error(`Drive error ${r.status}`);
     return r.json();
+  };
+  const gdFindRootFolder=async(token)=>{
+    const data=await gdApi("/files",{q:`name='${GD_ROOT_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,fields:"files(id,name)",pageSize:"10"},token);
+    const found=(data.files||[])[0];
+    if(!found) throw new Error(`No se encontró la carpeta "${GD_ROOT_FOLDER_NAME}" en tu Google Drive`);
+    return found;
+  };
+  const gdListClientFolders=async(rootId,token)=>{
+    const data=await gdApi("/files",{q:`'${rootId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,fields:"files(id,name)",pageSize:"200"},token);
+    return data.files||[];
   };
   const gdOpen=async()=>{
     setShowGDrive(true); setGdError(""); setGdResults([]); setGdStep("auth");
@@ -1007,8 +1018,9 @@ function App() {
       if(!cached||cached.expires_at<=Date.now()+60000) return;
       setGdLoading(true);
       const token=await gdGetToken(false); setGdToken(token);
-      const data=await gdApi("/files",{q:"mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false",fields:"files(id,name)",pageSize:"100"},token);
-      setGdFolders(data.files||[]);
+      const root=await gdFindRootFolder(token);
+      const folders=await gdListClientFolders(root.id,token);
+      setGdFolders(folders);
       setGdStep("folders");
     }catch{ setGdStep("auth"); }
     setGdLoading(false);
@@ -1017,8 +1029,9 @@ function App() {
     setGdLoading(true); setGdError("");
     try{
       const token=await gdGetToken(true); setGdToken(token);
-      const data=await gdApi("/files",{q:"mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false",fields:"files(id,name)",pageSize:"100"},token);
-      setGdFolders(data.files||[]);
+      const root=await gdFindRootFolder(token);
+      const folders=await gdListClientFolders(root.id,token);
+      setGdFolders(folders);
       setGdStep("folders");
     }catch(e){setGdError(e.message||"Error al conectar");}
     setGdLoading(false);
@@ -3858,7 +3871,7 @@ function App() {
             {gdStep==="folders"&&(
               <div>
                 <div style={{fontSize:12,color:"#94a3b8",marginBottom:12}}>Selecciona la carpeta del cliente:</div>
-                {gdFolders.length===0&&<div style={{color:"#64748b",fontSize:13,textAlign:"center",padding:"24px 0"}}>No se encontraron carpetas en tu Google Drive</div>}
+                {gdFolders.length===0&&<div style={{color:"#64748b",fontSize:13,textAlign:"center",padding:"24px 0"}}>No se encontraron subcarpetas en "{GD_ROOT_FOLDER_NAME}"</div>}
                 {gdFolders.map(f=>{
                   const match=clientes.find(c=>(c.nombre||"").trim().toLowerCase()===f.name.trim().toLowerCase());
                   return(
