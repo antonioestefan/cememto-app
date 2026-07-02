@@ -1047,13 +1047,17 @@ function App() {
       const match=clientes.find(c=>(c.nombre||"").trim().toLowerCase()===folder.name.trim().toLowerCase());
       setGdSelectedFolder({...folder,clienteId:match?.id||null,clienteNombre:match?.nombre||null});
       if(match?.id){
+        console.log("[GDrive] clienteId usado:",match.id);
+        let ovsCliente=[];
         try{
           const snap=await window.__getDocs(window.__query(window.__col(window.__db,"ovs"),window.__where("clienteId","==",match.id)));
-          setGdOvsCliente(snap.docs.map(d=>({id:d.id,...d.data()})));
+          ovsCliente=snap.docs.map(d=>({id:d.id,...d.data()})).filter(o=>o.clienteId===match.id);
         }catch(e){
           console.warn("[GDrive] error consultando OVs del cliente en Firestore, usando cache local:",e);
-          setGdOvsCliente(ovs.filter(o=>o.clienteId===match.id));
+          ovsCliente=ovs.filter(o=>o.clienteId===match.id);
         }
+        console.log("[GDrive] OVs encontradas para este cliente:",ovsCliente.length);
+        setGdOvsCliente(ovsCliente);
       } else {
         setGdOvsCliente([]);
       }
@@ -1068,11 +1072,13 @@ function App() {
   const gdProcesadoInfo=(file)=>{
     const reg=procesados[file.id];
     if(reg) return {ovId:reg.ovId,fecha:reg.fecha};
-    const base=(file.name||"").replace(/\.[^./\\]+$/,"").trim().toLowerCase();
+    const nombreArchivo=(file.name||"").replace(/\.[^/.]+$/,"").toLowerCase().trim();
     const candidatas=gdSelectedFolder?.clienteId?gdOvsCliente:ovs;
-    console.log(`[GDrive] buscando folio "${base}" (archivo: ${file.name})`);
-    console.log("[GDrive] folios existentes en OVs consultadas:",candidatas.map(o=>o.folio||"(vacío)"));
-    const match=base&&candidatas.find(o=>(o.folio||"").trim().toLowerCase()===base);
+    console.log(`[GDrive] buscando folio "${nombreArchivo}" (archivo: ${file.name})`);
+    console.log("[GDrive] clienteId usado:",gdSelectedFolder?.clienteId||"(ninguno — usando todas las OVs)");
+    console.log("[GDrive] OVs encontradas para este cliente:",candidatas.length);
+    console.log("[GDrive] folios existentes en OVs consultadas:",JSON.stringify(candidatas.map(o=>o.folio||"(vacío)")));
+    const match=nombreArchivo&&candidatas.find(ov=>ov.folio&&ov.folio.toLowerCase().trim()===nombreArchivo);
     if(match) return {ovId:match.id,fecha:match.fecha_carga||""};
     return null;
   };
