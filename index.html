@@ -1443,12 +1443,16 @@ function App() {
     if(filtroSinFirma)    list=list.filter(p=>p.status==="entregado"&&!p.remision_firmada);
     if(busqueda.trim()){
       const q=busqueda.trim().toLowerCase();
-      list=list.filter(p=>
-        (p.num_ov||"").toLowerCase().includes(q)||
-        (p.folio||"").toLowerCase().includes(q)||
-        limpiarFolio(p.folio).toLowerCase().includes(q)||
-        (cliById(p.clienteId)?.nombre||"").toLowerCase().includes(q)
-      );
+      const qLimpio=q.replace(/^(ag|pu|bq)-/i,"");
+      list=list.filter(p=>{
+        const folio=(p.folio||"").toLowerCase();
+        const folioSinPrefijo=folio.replace(/^(ag|pu|bq)-/i,"");
+        return (p.num_ov||"").toLowerCase().includes(q)||
+          folio.includes(q)||
+          limpiarFolio(p.folio).toLowerCase().includes(q)||
+          folioSinPrefijo.includes(qLimpio)||
+          (cliById(p.clienteId)?.nombre||"").toLowerCase().includes(q);
+      });
     }
     if(sortOVs==="fecha_desc") list=list.slice().sort((a,b)=>(b.fecha_carga||"").localeCompare(a.fecha_carga||""));
     else if(sortOVs==="fecha_asc")  list=list.slice().sort((a,b)=>(a.fecha_carga||"").localeCompare(b.fecha_carga||""));
