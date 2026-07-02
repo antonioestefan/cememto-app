@@ -1167,7 +1167,11 @@ function App() {
   const gdProcesadoInfo=(group,opts)=>{
     const {candidatas:candidatasOverride,silent}=opts||{};
     const reg=(group.page1&&procesados[group.page1.id])||(group.page2&&procesados[group.page2.id]);
-    if(reg) return {ovId:reg.ovId,fecha:reg.fecha,actualizada:!!reg.actualizada};
+    if(reg){
+      const ovExiste=reg.ovId&&ovs.some(o=>o.id===reg.ovId);
+      if(ovExiste) return {ovId:reg.ovId,fecha:reg.fecha,actualizada:!!reg.actualizada};
+      if(!silent) console.warn(`[GDrive] registro en remisiones_gdrive apunta a una OV que ya no existe (${reg.ovId}), tratando como pendiente`);
+    }
     const nombreArchivo=(group.folioBase||"").toLowerCase().trim();
     const soloNumero=nombreArchivo.replace(/^(ag|pu|bq)-/,"");
     const candidatas=candidatasOverride||(gdSelectedFolder?.clienteId?gdOvsCliente:ovs);
