@@ -728,6 +728,7 @@ function App() {
   const [showChartLector,setShowChartLector]     = useState(false);
   const [chartStep,setChartStep]                 = useState("idle"); // idle|loading|confirm|creating|success|error
   const [chartFile,setChartFile]                 = useState(null);
+  const [chartPreviewUrl,setChartPreviewUrl]     = useState(null);
   const [chartRows,setChartRows]                 = useState([]);
   const [chartError,setChartError]               = useState("");
   const [chartResumen,setChartResumen]           = useState(null);
@@ -770,6 +771,32 @@ function App() {
     document.body.className=tema;
     localStorage.setItem("tema",tema);
   },[tema]);
+
+  const procesarArchivoChart = (file) => {
+    if(!file) return;
+    setChartFile(file);
+    setChartError("");
+    const reader=new FileReader();
+    reader.onload=e=>setChartPreviewUrl(e.target.result);
+    reader.readAsDataURL(file);
+  };
+
+  useEffect(()=>{
+    if(!showChartLector) return;
+    const handlePasteChart=(e)=>{
+      const items=e.clipboardData&&e.clipboardData.items;
+      if(!items) return;
+      for(const item of items){
+        if(item.type&&item.type.startsWith('image/')){
+          const file=item.getAsFile();
+          if(file){ e.preventDefault(); procesarArchivoChart(file); }
+          break;
+        }
+      }
+    };
+    document.addEventListener('paste',handlePasteChart);
+    return ()=>document.removeEventListener('paste',handlePasteChart);
+  },[showChartLector]);
 
   const saveToDb    = async (col,id,data)=>{ const {id:_,...rest}=data; await window.__setDoc(window.__doc(window.__db,col,id),rest); };
   const deleteFromDb= async (col,id)    =>{ await window.__deleteDoc(window.__doc(window.__db,col,id)); };
@@ -4126,7 +4153,7 @@ function App() {
         });
 
         const cerrarChartLector = () => {
-          setShowChartLector(false); setChartStep("idle"); setChartFile(null); setChartRows([]); setChartError(""); setChartResumen(null);
+          setShowChartLector(false); setChartStep("idle"); setChartFile(null); setChartPreviewUrl(null); setChartRows([]); setChartError(""); setChartResumen(null);
         };
 
         const leerChart = async () => {
@@ -4222,10 +4249,30 @@ function App() {
                       <div style={{background:"var(--bg-card-alt)",borderRadius:8,padding:"8px 12px",fontSize:12,color:"var(--text-sec)",marginBottom:14}}>
                         Sube una foto o captura del chart de corporativo. La IA extraerá num_ov, fecha de retiro, fecha de entrega y hora de entrega de todas las filas.
                       </div>
-                      <div style={{marginBottom:14}}>
-                        <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:4}}>Imagen JPG o PNG del chart</label>
-                        <input type="file" accept="image/*" onChange={e=>setChartFile(e.target.files[0]||null)} style={{...inS,padding:"6px 8px"}}/>
-                        {chartFile&&<div style={{fontSize:11,color:"#0891b2",marginTop:4}}>✓ {chartFile.name}</div>}
+                      <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+                        <div style={{flex:"1 1 200px"}}>
+                          <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:4}}>Imagen JPG o PNG del chart</label>
+                          <input type="file" accept="image/*" onChange={e=>procesarArchivoChart(e.target.files[0]||null)} style={{...inS,padding:"6px 8px"}}/>
+                          {chartFile&&!chartPreviewUrl&&<div style={{fontSize:11,color:"#0891b2",marginTop:4}}>✓ {chartFile.name}</div>}
+                        </div>
+                        <div
+                          key={chartPreviewUrl?"has-preview":"no-preview"}
+                          contentEditable
+                          suppressContentEditableWarning
+                          onKeyDown={e=>e.preventDefault()}
+                          tabIndex={0}
+                          title="Toca y mantén presionado para pegar en móvil, o usa Ctrl+V / Cmd+V en escritorio"
+                          style={{flex:"1 1 200px",border:`2px dashed ${chartPreviewUrl?"#16a34a":"var(--border)"}`,borderRadius:8,padding:10,textAlign:"center",cursor:"text",background:chartPreviewUrl?"#16a34a11":"var(--bg-card-alt)",outline:"none",minHeight:56,display:"flex",alignItems:"center",justifyContent:"center"}}
+                        >
+                          {chartPreviewUrl?(
+                            <div>
+                              <img src={chartPreviewUrl} alt="Vista previa del chart pegado" style={{maxWidth:"100%",maxHeight:90,borderRadius:6,display:"block",margin:"0 auto 4px",pointerEvents:"none"}}/>
+                              <div style={{fontSize:10,color:"#16a34a",fontWeight:700}}>✓ Imagen pegada{chartFile&&chartFile.name?`: ${chartFile.name}`:""}</div>
+                            </div>
+                          ):(
+                            <div style={{fontSize:12,color:"var(--text-sec)",pointerEvents:"none"}}>📋 Pega la imagen aquí (Ctrl+V / Cmd+V)</div>
+                          )}
+                        </div>
                       </div>
                       {chartError&&<div style={{background:"#ef444422",color:"#dc2626",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:12,border:"1px solid #fecaca"}}>{chartError}</div>}
                       <button onClick={leerChart} style={{width:"100%",background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:"pointer",fontSize:14}}>🔍 Analizar con IA</button>
