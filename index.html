@@ -4206,10 +4206,28 @@ function App() {
         const crearTodasOVs = async () => {
           setChartStep("creating");
           let creadas=0;
+          let actualizadas=0;
           let sinCliente=0;
           const nuevas=[];
           for(let i=0;i<chartRows.length;i++){
             const r=chartRows[i];
+            const numOv=(r.num_ov||"").trim();
+            const existente=numOv&&ovs.find(o=>(o.num_ov||"").trim()===numOv);
+
+            if(existente){
+              const patch={fecha_carga:r.fecha_retiro,fecha_entrega:r.fecha_entrega,serie:chartPlanta};
+              if(!existente.clienteId&&r.clienteId) patch.clienteId=r.clienteId;
+              if(!(parseFloat(existente.precio_ton)>0)){
+                const cliExistente=cliById(existente.clienteId||r.clienteId);
+                if(cliExistente?.precio_ton) patch.precio_ton=cliExistente.precio_ton;
+              }
+              try{
+                await upd(existente.id,patch);
+                actualizadas++;
+              }catch(e){ /* continúa con las demás */ }
+              continue;
+            }
+
             const cli=cliById(r.clienteId);
             const id=`OV-${Date.now()}-${i}`;
             const nuevaOV={
@@ -4234,7 +4252,7 @@ function App() {
             }catch(e){ /* continúa con las demás */ }
           }
           if(nuevas.length) setOVs(prev=>[...nuevas,...prev]);
-          setChartResumen({creadas,total:chartRows.length,sinCliente});
+          setChartResumen({creadas,actualizadas,total:chartRows.length,sinCliente});
           setChartStep("success");
         };
 
@@ -4249,8 +4267,9 @@ function App() {
               {chartStep==="success"&&chartResumen?(
                 <div style={{textAlign:"center",padding:"30px 20px"}}>
                   <div style={{fontSize:42,marginBottom:10}}>✅</div>
-                  <div style={{fontWeight:700,fontSize:15,color:"#16a34a",marginBottom:6}}>{chartResumen.creadas} OV{chartResumen.creadas!==1?"s":""} creada{chartResumen.creadas!==1?"s":""}{chartResumen.sinCliente>0?` (${chartResumen.sinCliente} sin cliente asignado)`:""}</div>
-                  {chartResumen.creadas<chartResumen.total&&<div style={{fontSize:12,color:"#d97706",marginBottom:6}}>{chartResumen.total-chartResumen.creadas} fila{chartResumen.total-chartResumen.creadas!==1?"s":""} no se pudieron crear</div>}
+                  <div style={{fontWeight:700,fontSize:15,color:"#16a34a",marginBottom:6}}>{chartResumen.creadas} OV{chartResumen.creadas!==1?"s":""} creada{chartResumen.creadas!==1?"s":""}, {chartResumen.actualizadas} actualizada{chartResumen.actualizadas!==1?"s":""}</div>
+                  {chartResumen.sinCliente>0&&<div style={{fontSize:12,color:"var(--text-tertiary)",marginBottom:6}}>{chartResumen.sinCliente} de las creadas sin cliente asignado</div>}
+                  {(chartResumen.creadas+chartResumen.actualizadas)<chartResumen.total&&<div style={{fontSize:12,color:"#d97706",marginBottom:6}}>{chartResumen.total-chartResumen.creadas-chartResumen.actualizadas} fila{(chartResumen.total-chartResumen.creadas-chartResumen.actualizadas)!==1?"s":""} no se pudieron procesar</div>}
                   <div style={{fontSize:13,color:"var(--text-tertiary)",marginBottom:20}}>Serie {chartPlanta} ({PLANTAS[chartPlanta]}) · Estatus: OV asignada</div>
                   <button onClick={cerrarChartLector} style={{background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"10px 28px",fontWeight:700,cursor:"pointer",fontSize:14}}>Cerrar</button>
                 </div>
