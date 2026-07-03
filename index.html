@@ -67,7 +67,12 @@ const todayISO   = () => { const d=new Date(); return `${d.getFullYear()}-${Stri
 const addDays    = (iso,n) => { const d=new Date((iso||todayISO())+"T12:00"); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
 const tomorrowISO   = () => addDays(todayISO(),1);
 const nextWorkdayISO= () => new Date().getDay()===6 ? addDays(todayISO(),2) : addDays(todayISO(),1);
-const nextBusinessDayAfter = (iso) => { let d=addDays(iso||todayISO(),1); while([0,6].includes(new Date(d+"T12:00").getDay())) d=addDays(d,1); return d; };
+const driveDateToISO = (modifiedTime) => {
+  if(!modifiedTime) return todayISO();
+  const d=new Date(modifiedTime);
+  if(isNaN(d.getTime())) return todayISO();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+};
 const diaLabel   = (iso) => iso ? new Date(iso+"T12:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"short"}) : "—";
 const mesLabel   = (ym)  => { const [y,m]=ym.split("-"); return new Date(+y,+m-1,1).toLocaleDateString("es-MX",{month:"long",year:"numeric"}); };
 const currentYM  = () => todayISO().slice(0,7);
@@ -1326,30 +1331,52 @@ function App() {
     setGdResults(results);
     setGdFechaEntrega(prev=>{
       const next={...prev};
-      results.forEach(r=>{ if(r.ok&&r.data&&!next[r.group.key]) next[r.group.key]=nextBusinessDayAfter(r.data.fecha||todayISO()); });
+      results.forEach(r=>{
+        if(r.ok&&r.data&&!next[r.group.key]){
+          const modifiedTime=r.group.page1?.modifiedTime||r.group.page2?.modifiedTime;
+          next[r.group.key]=driveDateToISO(modifiedTime);
+        }
+      });
       return next;
     });
     setGdStep("confirm");
   };
+  const gdDatosOV=(res)=>{
+    const folio=limpiarFolio(res.group.folioBase||res.data.numeroRemision||"");
+    const numeroOV=(res.data.numeroOV||"").trim();
+    const serie=(folio||"").split("-")[0].toUpperCase();
+    const fechaEntrega=gdFechaEntrega[res.group.key]||todayISO();
+    return {folio,numeroOV,serie,fechaEntrega};
+  };
   const gdConfirmar=async(res)=>{
     const fechaEntrega=gdFechaEntrega[res.group.key];
     if(!fechaEntrega) return;
-    const folio=limpiarFolio(res.group.folioBase||res.data.numeroRemision||"");
-    const numeroOV=(res.data.numeroOV||"").trim();
+    const {folio,numeroOV,serie}=gdDatosOV(res);
     const regFile=res.group.page1||res.group.page2;
     const existente=numeroOV&&ovs.find(o=>(o.num_ov||"").trim()===numeroOV);
     if(existente){
-      await upd(existente.id,{folio,toneladas:parseFloat(res.data.pesoNeto)||0,fecha_carga:res.data.fecha||todayISO(),fecha_entrega:fechaEntrega});
+      await upd(existente.id,{folio,toneladas:parseFloat(res.data.pesoNeto)||0,fecha_carga:res.data.fecha||todayISO(),fecha_entrega:fechaEntrega,status:"entregado"});
       await window.__setDoc(window.__doc(window.__db,"remisiones_gdrive",regFile.id),{ovId:existente.id,fileName:regFile.name,fecha:todayISO(),clienteId:gdSelectedFolder?.clienteId||"",actualizada:true});
       return;
     }
     const id=`OV-${Date.now()}`;
-    const serie=(folio||"").split("-")[0].toUpperCase();
     const precio_ton=parseFloat(clientes.find(c=>c.id===gdSelectedFolder?.clienteId)?.precio_ton)||0;
-    const nueva={...emptyOV,id,num_ov:numeroOV,folio,fecha_carga:res.data.fecha||todayISO(),fecha_entrega:fechaEntrega,toneladas:parseFloat(res.data.pesoNeto)||0,serie,clienteId:gdSelectedFolder?.clienteId||"",precio_ton};
+    const nueva={...emptyOV,id,num_ov:numeroOV,folio,fecha_carga:res.data.fecha||todayISO(),fecha_entrega:fechaEntrega,toneladas:parseFloat(res.data.pesoNeto)||0,serie,clienteId:gdSelectedFolder?.clienteId||"",precio_ton,status:"entregado"};
     setOVs(prev=>[nueva,...prev]);
     await saveToDb("ovs",id,nueva);
     await window.__setDoc(window.__doc(window.__db,"remisiones_gdrive",regFile.id),{ovId:id,fileName:regFile.name,fecha:todayISO(),clienteId:gdSelectedFolder?.clienteId||"",actualizada:false});
+  };
+  const gdAbrirEdicion=(res)=>{
+    const {folio,numeroOV,serie,fechaEntrega}=gdDatosOV(res);
+    const existente=numeroOV&&ovs.find(o=>(o.num_ov||"").trim()===numeroOV);
+    if(existente){
+      const precioActual=parseFloat(existente.precio_ton)||parseFloat(cliById(existente.clienteId)?.precio_ton)||0;
+      setForm({...existente,precio_ton:precioActual});
+    } else {
+      const precio_ton=parseFloat(clientes.find(c=>c.id===gdSelectedFolder?.clienteId)?.precio_ton)||0;
+      setForm({...emptyOV,num_ov:numeroOV,folio,fecha_carga:res.data.fecha||todayISO(),fecha_entrega:fechaEntrega,toneladas:parseFloat(res.data.pesoNeto)||0,serie,clienteId:gdSelectedFolder?.clienteId||"",precio_ton,status:"entregado"});
+    }
+    setShowForm(true);
   };
   const gdConfirmarTodos=async()=>{
     const pendientes=gdResults.filter(res=>res.ok&&res.data&&!gdProcesadoInfo(res.group));
@@ -3309,7 +3336,7 @@ function App() {
 
       {/* OV FORM */}
       {showForm&&(
-        <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+        <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:350,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
           <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"92vh",overflowY:"auto"}}>
             <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>{form.id?"Editar OV":"Nueva Orden de Venta"}</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -4268,7 +4295,10 @@ function App() {
                         )}
                         {info
                           ?<div style={{fontSize:12,color:"var(--accent)",textAlign:"center",padding:"6px 0",fontWeight:700}}>{info.actualizada?`✅ OV existente actualizada: ${info.ovId}`:`✅ OV creada: ${info.ovId}`}</div>
-                          :<button onClick={()=>gdConfirmar(res)} disabled={!gdFechaEntrega[res.group.key]} style={{width:"100%",background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"9px",fontWeight:700,cursor:gdFechaEntrega[res.group.key]?"pointer":"not-allowed",fontSize:13,opacity:gdFechaEntrega[res.group.key]?1:0.5}}>✓ Confirmar y crear OV</button>
+                          :<div style={{display:"flex",gap:8}}>
+                            <button onClick={()=>gdAbrirEdicion(res)} style={{flex:1,background:"var(--bg-card)",color:"var(--text-main)",border:"1px solid var(--border)",borderRadius:6,padding:"9px",fontWeight:700,cursor:"pointer",fontSize:13}}>✏️ Editar OV</button>
+                            <button onClick={()=>gdConfirmar(res)} disabled={!gdFechaEntrega[res.group.key]} style={{flex:2,background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"9px",fontWeight:700,cursor:gdFechaEntrega[res.group.key]?"pointer":"not-allowed",fontSize:13,opacity:gdFechaEntrega[res.group.key]?1:0.5}}>✓ Confirmar y crear OV</button>
+                          </div>
                         }
                       </>
                     ):(
