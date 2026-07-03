@@ -727,6 +727,7 @@ function App() {
   const [showLectorNuevo,setShowLectorNuevo]     = useState(false);
   const [showChartLector,setShowChartLector]     = useState(false);
   const [chartStep,setChartStep]                 = useState("idle"); // idle|loading|confirm|creating|success|error
+  const [chartPlanta,setChartPlanta]             = useState(""); // "" | "PU" | "AG"
   const [chartFile,setChartFile]                 = useState(null);
   const [chartPreviewUrl,setChartPreviewUrl]     = useState(null);
   const [chartRows,setChartRows]                 = useState([]);
@@ -1910,7 +1911,7 @@ function App() {
                 <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",background:"var(--bg-card)",borderRadius:10,border:"1px solid var(--border)",boxShadow:"0 8px 24px #00000090",zIndex:200,overflow:"hidden",minWidth:220}}>
                   <button onClick={()=>{setShowOVMenu(false);setForm({...emptyOV,fecha_carga:todayISO()});setShowForm(true);}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"var(--text-main)",fontSize:13,cursor:"pointer",fontWeight:600}}>✏️ Captura manual</button>
                   <button onClick={()=>{setShowOVMenu(false);setShowLectorNuevo(true);setLectorStep("idle");setLectorData(null);setLectorFiles({a:null,b:null});setLectorError("");setLectorMode("single");}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#0891b2",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid var(--border)"}}>📄 Leer remisión con IA</button>
-                  <button onClick={()=>{setShowOVMenu(false);setShowChartLector(true);setChartStep("idle");setChartFile(null);setChartRows([]);setChartError("");setChartResumen(null);}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#0891b2",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid var(--border)"}}>📊 Leer chart corporativo</button>
+                  <button onClick={()=>{setShowOVMenu(false);setShowChartLector(true);setChartStep("idle");setChartPlanta("");setChartFile(null);setChartPreviewUrl(null);setChartRows([]);setChartError("");setChartResumen(null);}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#0891b2",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid var(--border)"}}>📊 Leer chart corporativo</button>
                   <button onClick={()=>{setShowOVMenu(false);gdOpen();}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#7c3aed",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid var(--border)"}}>📂 Importar desde Google Drive</button>
                   <button onClick={()=>{setShowOVMenu(false);limpiarFoliosDuplicados();}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#f59e0b",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid var(--border)"}}>🔧 Limpiar folios duplicados</button>
                 </div>
@@ -4159,10 +4160,11 @@ function App() {
         });
 
         const cerrarChartLector = () => {
-          setShowChartLector(false); setChartStep("idle"); setChartFile(null); setChartPreviewUrl(null); setChartRows([]); setChartError(""); setChartResumen(null);
+          setShowChartLector(false); setChartStep("idle"); setChartPlanta(""); setChartFile(null); setChartPreviewUrl(null); setChartRows([]); setChartError(""); setChartResumen(null);
         };
 
         const leerChart = async () => {
+          if(!chartPlanta){setChartError("Selecciona la planta de retiro");return;}
           if(!chartFile){setChartError("Selecciona una imagen del chart");return;}
           setChartStep("loading"); setChartError("");
           try{
@@ -4218,7 +4220,7 @@ function App() {
               fecha_entrega:r.fecha_entrega,
               hora_entrega:r.hora_entrega,
               clienteId:r.clienteId||"",
-              serie:"PU",
+              serie:chartPlanta,
               status:"ov_asignada",
               confirm:"por_confirmar",
               tipo:"granel",
@@ -4249,7 +4251,7 @@ function App() {
                   <div style={{fontSize:42,marginBottom:10}}>✅</div>
                   <div style={{fontWeight:700,fontSize:15,color:"#16a34a",marginBottom:6}}>{chartResumen.creadas} OV{chartResumen.creadas!==1?"s":""} creada{chartResumen.creadas!==1?"s":""}{chartResumen.sinCliente>0?` (${chartResumen.sinCliente} sin cliente asignado)`:""}</div>
                   {chartResumen.creadas<chartResumen.total&&<div style={{fontSize:12,color:"#d97706",marginBottom:6}}>{chartResumen.total-chartResumen.creadas} fila{chartResumen.total-chartResumen.creadas!==1?"s":""} no se pudieron crear</div>}
-                  <div style={{fontSize:13,color:"var(--text-tertiary)",marginBottom:20}}>Serie PU (Puebla) · Estatus: OV asignada</div>
+                  <div style={{fontSize:13,color:"var(--text-tertiary)",marginBottom:20}}>Serie {chartPlanta} ({PLANTAS[chartPlanta]}) · Estatus: OV asignada</div>
                   <button onClick={cerrarChartLector} style={{background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"10px 28px",fontWeight:700,cursor:"pointer",fontSize:14}}>Cerrar</button>
                 </div>
               ):(
@@ -4258,6 +4260,14 @@ function App() {
                     <>
                       <div style={{background:"var(--bg-card-alt)",borderRadius:8,padding:"8px 12px",fontSize:12,color:"var(--text-sec)",marginBottom:14}}>
                         Sube una foto o captura del chart de corporativo. La IA extraerá num_ov, fecha de retiro, fecha de entrega y hora de entrega de todas las filas.
+                      </div>
+                      <div style={{marginBottom:14}}>
+                        <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:4}}>Planta de retiro</label>
+                        <select value={chartPlanta} onChange={e=>setChartPlanta(e.target.value)} style={inS}>
+                          <option value="">— Selecciona una planta —</option>
+                          <option value="PU">PU — Puebla</option>
+                          <option value="AG">AG — Aguascalientes</option>
+                        </select>
                       </div>
                       <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap"}}>
                         <div style={{flex:"1 1 200px"}}>
@@ -4285,7 +4295,7 @@ function App() {
                         </div>
                       </div>
                       {chartError&&<div style={{background:"#ef444422",color:"#dc2626",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:12,border:"1px solid #fecaca"}}>{chartError}</div>}
-                      <button onClick={leerChart} style={{width:"100%",background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:"pointer",fontSize:14}}>🔍 Analizar con IA</button>
+                      <button onClick={leerChart} disabled={!chartFile||!chartPlanta} style={{width:"100%",background:(chartFile&&chartPlanta)?"var(--accent)":"var(--border)",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:(chartFile&&chartPlanta)?"pointer":"default",fontSize:14}}>🔍 Analizar con IA</button>
                     </>
                   )}
 
@@ -4300,7 +4310,7 @@ function App() {
                   {(chartStep==="confirm"||chartStep==="creating")&&chartRows.length>0&&(
                     <div>
                       <div style={{fontWeight:700,fontSize:13,color:"var(--accent)",marginBottom:6}}>{chartRows.length} OV{chartRows.length>1?"s":""} detectada{chartRows.length>1?"s":""} — asigna cliente a cada una (opcional):</div>
-                      <div style={{fontSize:11,color:"var(--text-sec)",marginBottom:10}}>Planta: <strong>PU (Puebla)</strong> · Tipo: <strong>Granel</strong> · Estatus: <strong>OV asignada</strong> (automático para todas)</div>
+                      <div style={{fontSize:11,color:"var(--text-sec)",marginBottom:10}}>Planta: <strong>{chartPlanta} ({PLANTAS[chartPlanta]})</strong> · Tipo: <strong>Granel</strong> · Estatus: <strong>OV asignada</strong> (automático para todas)</div>
                       <div style={{border:"1px solid var(--border)",borderRadius:8,overflow:"hidden",marginBottom:14}}>
                         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 0.8fr 1.6fr",background:"var(--bg-card-alt)",padding:"7px 10px",fontSize:10,fontWeight:700,color:"var(--text-sec)",textTransform:"uppercase",gap:6}}>
                           <div>No. OV</div><div>Retiro</div><div>Entrega</div><div>Hora</div><div>Cliente</div>
