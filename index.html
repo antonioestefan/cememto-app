@@ -1692,9 +1692,9 @@ function App() {
   },[ovs,filtroCliente,filtroSinRemision,filtroSinCliente,filtroSinFirma,busqueda,sortOVs,cliMap]);
   const semana       = getWeekRange(weekOffset);
   const ovsSemana    = useMemo(()=>{const s=getWeekRange(weekOffset);return ovs.filter(p=>p.fecha_carga>=s.start&&p.fecha_carga<=s.end).sort((a,b)=>(a.fecha_carga||"").localeCompare(b.fecha_carga||""));},[ovs,weekOffset]);
-  const porConfirmar = useMemo(()=>ovs.filter(p=>p.fecha_carga===nextWorkdayISO()).sort((a,b)=>a.confirm==="por_confirmar"?-1:1),[ovs]);
-  const entregasHoy  = useMemo(()=>ovs.filter(p=>p.fecha_entrega===todayISO()&&["listo_para_envio","en_camino","entregado"].includes(p.status)&&!p.remision_firmada),[ovs]);
-  const enEspera     = useMemo(()=>ovs.filter(p=>p.status==="listo_para_envio"&&p.fecha_entrega!==todayISO()),[ovs]);
+  const porConfirmar = useMemo(()=>ovs.filter(p=>p.fecha_carga===nextWorkdayISO()).sort((a,b)=>a.confirm==="por_confirmar"?-1:1),[ovs,nextWorkdayISO()]);
+  const entregasHoy  = useMemo(()=>ovs.filter(p=>p.fecha_entrega===todayISO()&&["listo_para_envio","en_camino","entregado"].includes(p.status)&&!p.remision_firmada),[ovs,todayISO()]);
+  const enEspera     = useMemo(()=>ovs.filter(p=>p.status==="listo_para_envio"&&p.fecha_entrega!==todayISO()),[ovs,todayISO()]);
   const sinCliente   = useMemo(()=>ovs.filter(p=>!p.clienteId&&p.status!=="entregado"),[ovs]);
   const ovsSinFirma   = ovs.filter(p=>p.status==="entregado"&&!p.remision_firmada);
   const notasBadge    = notas.filter(n=>!n.completada&&n.fecha_vencimiento&&n.fecha_vencimiento<=todayISO()).length;
