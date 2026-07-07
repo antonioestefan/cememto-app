@@ -23,7 +23,7 @@
     import { getFirestore, collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, deleteField } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
     import { getAuth, signInAnonymously, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
     const firebaseConfig = {
-      apiKey: "AIzaSyBXxj2MnF5AGFs46FTe7FN3Gl3iiXjT8gk",
+      apiKey: "AIzaSyBXxj2MnF5AGfs46FTe7FN3Gl3iiXjT8gk",
       authDomain: "cemento-antonio.firebaseapp.com",
       projectId: "cemento-antonio",
       storageBucket: "cemento-antonio.firebasestorage.app",
@@ -2072,11 +2072,9 @@ function App() {
       setCodigoOk(true);
       return {ok:true};
     }catch(e){
-      console.error("[Auth] signInAnonymously falló:",e);
-      const msg=(e&&e.code==="auth/operation-not-allowed")
-        ? "Falta habilitar 'Anonymous' en Firebase Console → Authentication → Sign-in method."
-        : "No se pudo conectar con el servidor. Verifica tu internet e intenta de nuevo.";
-      return {ok:false,error:msg};
+      // Mostrar el error real de Firebase para diagnosticar (código + mensaje).
+      console.error("Firebase Auth error:",e&&e.code,e&&e.message);
+      return {ok:false,error:`${(e&&e.code)||"error"}: ${(e&&e.message)||e}`};
     }
   };
   const cerrarSesion = async ()=>{
