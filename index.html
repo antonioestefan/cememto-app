@@ -776,6 +776,9 @@ function App() {
   const [saveStatus,setSaveStatus]               = useState(null); // null | 'saving' | 'saved' | 'error'
   const saveStatusTimer                          = useRef(null);
   const [verOVsSinPrecio,setVerOVsSinPrecio]     = useState(false);
+  const [dialog,setDialog]                       = useState(null); // {kind:'confirm'|'prompt'|'alert', ...}
+  const [busquedaCliente,setBusquedaCliente]     = useState("");
+  const [busquedaFactura,setBusquedaFactura]     = useState("");
   const gdGroups = useMemo(()=>gdGroupFiles(gdFiles),[gdFiles]);
 
   useEffect(()=>{
@@ -838,6 +841,13 @@ function App() {
     setSaveStatus(s);
     if(s==="saved"||s==="error") saveStatusTimer.current=setTimeout(()=>setSaveStatus(null), s==="error"?4000:2000);
   };
+  // Diálogos bottom-sheet basados en promesas (reemplazan window.confirm/prompt/alert nativos).
+  // askConfirm → Promise<bool>; askPrompt → Promise<string|null>; notify → Promise<void>.
+  const askConfirm = (message,opts={}) => new Promise(resolve=>setDialog({kind:"confirm",message,confirmLabel:opts.confirmLabel||"Confirmar",cancelLabel:opts.cancelLabel||"Cancelar",danger:opts.danger||false,resolve}));
+  const askPrompt  = (message,defaultValue="",opts={}) => new Promise(resolve=>setDialog({kind:"prompt",message,value:String(defaultValue??""),placeholder:opts.placeholder||"",inputType:opts.inputType||"text",resolve}));
+  const notify     = (message) => new Promise(resolve=>setDialog({kind:"alert",message,resolve}));
+  const resolveDialog = (result)=>{ const r=dialog&&dialog.resolve; setDialog(null); if(r) r(result); };
+
   // Ejecuta una escritura a Firestore mostrando el estado y revirtiendo el estado local optimista si falla.
   // Devuelve true si guardó, false si hubo error.
   const runSave = async (writeAsync, revert)=>{
@@ -906,6 +916,21 @@ function App() {
     const val=ent.reduce((s,p)=>s+valorOV(p),0);
     return {...c,ton_entregadas:ton,valor_entregado:val,saldo:(parseFloat(c.anticipo)||0)-val,num_entregas:ent.length};
   }),[clientes,ovs]);
+
+  // P4-2: búsqueda de clientes por nombre, ciudad, nombre fiscal, RFC o tipo (granel/saco).
+  const clientesFiltrados = useMemo(()=>{
+    const q=busquedaCliente.trim().toLowerCase();
+    if(!q) return estadoCuenta;
+    return estadoCuenta.filter(c=>{
+      const cliOVs=ovs.filter(p=>p.clienteId===c.id);
+      const tipoStr=`${cliOVs.some(p=>(p.tipo||"granel")==="granel")?"granel":""} ${cliOVs.some(p=>p.tipo==="saco")?"saco":""}`;
+      return (c.nombre||"").toLowerCase().includes(q)
+        ||(c.ciudad||"").toLowerCase().includes(q)
+        ||(c.nombre_fiscal||"").toLowerCase().includes(q)
+        ||(c.rfc||"").toLowerCase().includes(q)
+        ||tipoStr.includes(q);
+    });
+  },[estadoCuenta,busquedaCliente,ovs]);
 
   const facturacionPorCliente = useMemo(()=>{
     const r={};
@@ -1110,12 +1135,12 @@ function App() {
 
   const advance     = (id)=>{ const p=ovs.find(x=>x.id===id); if(p&&NEXT[p.status]) upd(id,{status:NEXT[p.status]}); };
   const confirmar   = (id)=>upd(id,{confirm:"confirmado",motivo:""});
-  const reprogramar = (id)=>{
-    const m0=prompt(`Motivo:\n${MOTIVOS.map((m,i)=>`${i+1}. ${m}`).join("\n")}\n\nEscribe número o texto:`);
+  const reprogramar = async (id)=>{
+    const m0=await askPrompt(`Motivo de la reprogramación:\n${MOTIVOS.map((m,i)=>`${i+1}. ${m}`).join("\n")}\n\nEscribe el número o el texto:`);
     if(m0===null) return;
     let m=m0.trim(); if(["1","2","3","4"].includes(m)) m=MOTIVOS[+m-1];
-    if(m==="Otro"||m===""){const l=prompt("Describe el motivo:"); m=l||"Otro";}
-    const f=prompt("Nueva fecha de carga (AAAA-MM-DD):",addDays(todayISO(),2));
+    if(m==="Otro"||m===""){const l=await askPrompt("Describe el motivo:"); m=l||"Otro";}
+    const f=await askPrompt("Nueva fecha de carga:",addDays(todayISO(),2),{inputType:"date"});
     if(!f) return;
     upd(id,{confirm:"reprogramado",motivo:m,fecha_carga:f});
   };
@@ -1124,8 +1149,8 @@ function App() {
     const folioRaw=(form.folio||"").trim();
     const folio=limpiarFolio(FOLIO_PREFIJO_RE.test(folioRaw)?folioRaw:(form.serie?`${form.serie}-${folioRaw}`:folioRaw));
     const otros=ovs.filter(p=>p.id!==id);
-    if(otros.some(p=>p.num_ov&&p.num_ov===form.num_ov)){alert(`Ya existe otra OV con el número "${form.num_ov}".`);return;}
-    if(folio&&otros.some(p=>p.folio&&p.folio===folio)){alert(`Ya existe otra OV con el folio de remisión "${folio}".`);return;}
+    if(otros.some(p=>p.num_ov&&p.num_ov===form.num_ov)){await notify(`Ya existe otra OV con el número "${form.num_ov}".`);return;}
+    if(folio&&otros.some(p=>p.folio&&p.folio===folio)){await notify(`Ya existe otra OV con el folio de remisión "${folio}".`);return;}
     const precio_ton=parseFloat(form.precio_ton)||parseFloat(cliById(form.clienteId)?.precio_ton)||0;
     const n={...form,id,folio,toneladas:parseFloat(form.toneladas)||0,precio_ton};
     const prevOVs=ovs;
@@ -1135,7 +1160,7 @@ function App() {
     setShowForm(false); setForm(emptyOV); setSelected(null);
   };
   const deleteOV = async (id)=>{
-    if(!confirm("¿Eliminar esta OV?")) return;
+    if(!(await askConfirm("¿Eliminar esta OV?",{danger:true}))) return;
     const prevOVs=ovs, prevSelected=selected;
     setOVs(prev=>prev.filter(p=>p.id!==id)); setSelected(null);
     await runSave(()=>deleteFromDb("ovs",id), ()=>{ setOVs(prevOVs); setSelected(prevSelected); });
@@ -1154,11 +1179,11 @@ function App() {
         afectadas.push({id:o.id,folioLimpio});
       }
     }
-    if(!afectadas.length){ alert(`${resumen}\n\n✅ No se encontraron folios con prefijo duplicado.`); return; }
-    if(!confirm(`${resumen}\n\nSe corregirán ${afectadas.length} OV${afectadas.length!==1?"s":""} con folio duplicado (ej. AG-AG-XXXXXX → AG-XXXXXX).\n\n¿Continuar?`)) return;
+    if(!afectadas.length){ await notify(`${resumen}\n\n✅ No se encontraron folios con prefijo duplicado.`); return; }
+    if(!(await askConfirm(`${resumen}\n\nSe corregirán ${afectadas.length} OV${afectadas.length!==1?"s":""} con folio duplicado (ej. AG-AG-XXXXXX → AG-XXXXXX).\n\n¿Continuar?`))) return;
     let corregidas=0;
     for(const {id,folioLimpio} of afectadas){ await upd(id,{folio:folioLimpio}); corregidas++; }
-    alert(`${resumen}\n\n✅ Se corrigieron ${corregidas} de ${totalRevisadas} folio${corregidas!==1?"s":""} duplicado${corregidas!==1?"s":""}.`);
+    await notify(`${resumen}\n\n✅ Se corrigieron ${corregidas} de ${totalRevisadas} folio${corregidas!==1?"s":""} duplicado${corregidas!==1?"s":""}.`);
   };
 
   /* ── Google Drive ── */
@@ -1573,8 +1598,8 @@ function App() {
   const migrarIdsAnticipos = async ()=>{
     const antSinId=clientes.reduce((n,c)=>n+(c.historial_anticipos||[]).filter(a=>a.id==null).length,0);
     const facConIndices=facturas.filter(f=>(f.pagos_ligados||[]).some(l=>typeof l==="number")).length;
-    if(antSinId===0&&facConIndices===0){ alert("✅ Nada que migrar: todos los anticipos ya tienen id y las facturas usan ids."); return; }
-    if(!confirm(`Se asignará un id único a ${antSinId} anticipo${antSinId!==1?"s":""} sin id y se convertirán ${facConIndices} factura${facConIndices!==1?"s":""} de índices a ids.\n\n¿Continuar?`)) return;
+    if(antSinId===0&&facConIndices===0){ await notify("✅ Nada que migrar: todos los anticipos ya tienen id y las facturas usan ids."); return; }
+    if(!(await askConfirm(`Se asignará un id único a ${antSinId} anticipo${antSinId!==1?"s":""} sin id y se convertirán ${facConIndices} factura${facConIndices!==1?"s":""} de índices a ids.\n\n¿Continuar?`))) return;
 
     const base=Date.now();
     let counter=0;
@@ -1609,7 +1634,7 @@ function App() {
       ok?facOk++:facFail++;
     }
     const fail=clientesFail+facFail;
-    alert(`✅ Migración completa.\nClientes actualizados: ${clientesOk}\nFacturas convertidas: ${facOk}${fail>0?`\n⚠ ${fail} escritura(s) fallaron — revisa tu conexión y vuelve a ejecutar.`:""}`);
+    await notify(`✅ Migración completa.\nClientes actualizados: ${clientesOk}\nFacturas convertidas: ${facOk}${fail>0?`\n⚠ ${fail} escritura(s) fallaron — revisa tu conexión y vuelve a ejecutar.`:""}`);
   };
 
   const saveNota = async ()=>{
@@ -1629,7 +1654,7 @@ function App() {
     await runSave(()=>saveToDb("notas",id,updated), ()=>setNotas(prevNotas));
   };
   const deleteNota = async (id)=>{
-    if(!confirm("¿Eliminar esta nota?")) return;
+    if(!(await askConfirm("¿Eliminar esta nota?",{danger:true}))) return;
     const prevNotas=notas;
     setNotas(prev=>prev.filter(x=>x.id!==id));
     await runSave(()=>deleteFromDb("notas",id), ()=>setNotas(prevNotas));
@@ -1645,7 +1670,7 @@ function App() {
     setShowProspForm(false); setProspForm(emptyProsp);
   };
   const deleteProsp = async (id)=>{
-    if(!confirm("¿Eliminar este prospecto?")) return;
+    if(!(await askConfirm("¿Eliminar este prospecto?",{danger:true}))) return;
     const prevProsp=prospectos, prevSel=selectedProsp;
     setProspectos(prev=>prev.filter(x=>x.id!==id));
     setSelectedProsp(null);
@@ -1856,7 +1881,7 @@ function App() {
     const nombreSafe=cuenta.nombre.replace(/[/\\*?:<>|"]/g,"-").replace(/ /g,"_");
     const a=document.createElement("a"); a.href=url; a.download=`Reporte_${nombreSafe}_${todayISO()}.xlsx`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-  } catch(e){ alert(`Error al generar Excel: ${e.message}`); } };
+  } catch(e){ await notify(`Error al generar Excel: ${e.message}`); } };
 
   const exportExcelPlanta = async ()=>{
     const wb=new ExcelJS.Workbook(); wb.creator="Cruz Azul — Antonio";
@@ -2341,6 +2366,12 @@ function App() {
               <button onClick={()=>{setCliForm(emptyCliente);setShowCliForm(true);}} style={{background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"8px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>+ Nuevo cliente</button>
               <button onClick={migrarIdsAnticipos} title="Migración única: asigna ids estables a los anticipos y actualiza las facturas" style={{background:"#f59e0b22",color:"#b45309",border:"1px solid #f59e0b55",borderRadius:8,padding:"8px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>🔧 Migrar IDs anticipos</button>
             </div>
+            {clientes.length>0&&(
+              <div style={{position:"relative",marginBottom:12}}>
+                <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",fontSize:15,pointerEvents:"none",color:"var(--text-sec)"}}>🔍</span>
+                <input value={busquedaCliente} onChange={e=>setBusquedaCliente(e.target.value)} placeholder="Buscar cliente por nombre, ciudad o tipo..." style={{...inS,paddingLeft:34,background:"var(--bg-card)"}}/>
+              </div>
+            )}
             {clientes.length===0
               ?<EmptyState icon="👥" msg="Aún no tienes clientes. Agrega tu primer cliente."/>
               :<div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -2357,7 +2388,9 @@ function App() {
                     {totales.anticipoBajo.map(c=><div key={c.id} style={{color:"#fbbf24",marginBottom:2}}>{c.nombre} — saldo restante: <b>{fmt(c.saldo)}</b></div>)}
                   </div>
                 )}
-                {estadoCuenta.map(c=>(
+                {clientesFiltrados.length===0
+                  ?<EmptyState icon="🔍" msg="Ningún cliente coincide con la búsqueda."/>
+                  :clientesFiltrados.map(c=>(
                   <div key={c.id} style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",borderLeft:`4px solid ${c.saldo>=0?"#16a34a":"#ef4444"}`}}>
                     <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                       <div>
@@ -2377,10 +2410,12 @@ function App() {
                       <div style={{background:"#16a34a22",borderRadius:8,padding:"8px 10px"}}><div style={{fontSize:10,color:"var(--text-sec)"}}>Anticipo</div><div style={{fontWeight:700,color:"#16a34a"}}>{fmt(c.anticipo)}</div></div>
                       <div style={{background:c.saldo>=0?"var(--accent-soft)":"#ef444422",borderRadius:8,padding:"8px 10px"}}><div style={{fontSize:10,color:"var(--text-sec)"}}>{c.saldo>=0?"Saldo a favor":"Adeudo"}</div><div style={{fontWeight:800,color:c.saldo>=0?"#2563eb":"#ef4444"}}>{fmt(Math.abs(c.saldo))}</div></div>
                     </div>
-                    <button onClick={()=>{
-                      const m=parseFloat(prompt(`Monto del depósito para ${c.nombre} ($):`));
+                    <button onClick={async ()=>{
+                      const montoStr=await askPrompt(`Monto del depósito para ${c.nombre} ($):`,"",{inputType:"number",placeholder:"0.00"});
+                      if(montoStr===null) return;
+                      const m=parseFloat(montoStr);
                       if(!m||m<=0) return;
-                      const f=prompt("Fecha del depósito (AAAA-MM-DD):",todayISO());
+                      const f=await askPrompt("Fecha del depósito:",todayISO(),{inputType:"date"});
                       if(!f) return;
                       addAnticipo(c.id,m,f);
                     }} style={{marginTop:10,background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"6px 14px",fontSize:12,cursor:"pointer",fontWeight:600}}>+ Registrar anticipo</button>
@@ -2438,7 +2473,7 @@ function App() {
                               <span style={{fontWeight:700,color:"#16a34a",flex:1,textAlign:"right"}}>{fmt(a.monto)}</span>
                               <span style={{background:estatusBg,borderRadius:4,padding:"2px 6px",fontSize:10,fontWeight:700,color:estatusColor,flexShrink:0,whiteSpace:"nowrap"}}>{estatusLabel}</span>
                               <button onClick={()=>setEditingAnticipo({cliId:c.id,realIdx,fecha:a.fecha,monto:a.monto})} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,padding:"0 2px",color:"var(--text-sec)"}} title="Editar">✏️</button>
-                              <button onClick={()=>{if(confirm(`¿Eliminar anticipo de ${fmt(a.monto)} del ${a.fecha}?`))deleteAnticipo(c.id,realIdx);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,padding:"0 2px",color:"var(--text-sec)"}} title="Eliminar">🗑️</button>
+                              <button onClick={async ()=>{if(await askConfirm(`¿Eliminar anticipo de ${fmt(a.monto)} del ${a.fecha}?`,{danger:true}))deleteAnticipo(c.id,realIdx);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,padding:"0 2px",color:"var(--text-sec)"}} title="Eliminar">🗑️</button>
                             </div>
                           );
                         })}
@@ -2950,7 +2985,8 @@ function App() {
                     const hoyMismo=n.fecha_vencimiento===hoy;
                     const pr=PRIORIDAD[n.prioridad]||PRIORIDAD.media;
                     const c=n.clienteId?cliById(n.clienteId):null;
-                    const cardBg=vencida?"#fef2f2":hoyMismo?"#fffbeb":"white";
+                    // Tintes semitransparentes que funcionan en claro y oscuro (igual que "Avisos del día").
+                    const cardBg=vencida?"#ef444422":hoyMismo?"#d9770622":"var(--bg-card)";
                     const borderColor=vencida?"#ef4444":hoyMismo?"#d97706":pr.color;
                     return(
                       <div key={n.id} style={{background:cardBg,borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",borderLeft:`4px solid ${borderColor}`}}>
@@ -3422,7 +3458,15 @@ function App() {
           const mesActual=currentYM();
           const factMes=facturas.filter(f=>(f.fecha||"").startsWith(mesActual)&&f.estatus!=="Cancelada");
           const totalMes=factMes.reduce((s,f)=>s+(parseFloat(f.total_con_iva)||0),0);
-          const factFiltradas=(filtroFacturaCliente?facturas.filter(f=>f.clienteId===filtroFacturaCliente):facturas);
+          const qFac=busquedaFactura.trim().toLowerCase();
+          const factFiltradas=(filtroFacturaCliente?facturas.filter(f=>f.clienteId===filtroFacturaCliente):facturas)
+            .filter(f=>{
+              if(!qFac) return true;
+              const nombre=(cliById(f.clienteId)?.nombre||"").toLowerCase();
+              const folio=(f.folio_fiscal||"").toLowerCase();
+              const monto=String(f.total_con_iva||f.monto_total||"");
+              return nombre.includes(qFac)||folio.includes(qFac)||monto.includes(qFac);
+            });
           return(
             <>
               <div style={{background:"linear-gradient(135deg,var(--accent),#059669)",borderRadius:14,padding:"18px 20px",color:"white",marginBottom:14}}>
@@ -3433,7 +3477,11 @@ function App() {
               <div style={{display:"flex",gap:10,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
                 <button onClick={()=>{setFacturaForm(emptyFactura);setMontoEditadoManualmente(false);setShowFacturaForm(true);}} style={{background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"8px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>+ Nueva factura</button>
               </div>
-              <div style={{marginBottom:14}}>
+              <div style={{marginBottom:14,display:"flex",flexDirection:"column",gap:8}}>
+                <div style={{position:"relative"}}>
+                  <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",fontSize:15,pointerEvents:"none",color:"var(--text-sec)"}}>🔍</span>
+                  <input value={busquedaFactura} onChange={e=>setBusquedaFactura(e.target.value)} placeholder="Buscar por cliente, folio fiscal o monto..." style={{...inS,paddingLeft:34,background:"var(--bg-card)"}}/>
+                </div>
                 <select value={filtroFacturaCliente} onChange={e=>setFiltroFacturaCliente(e.target.value)} style={{...inS,background:"var(--bg-card)"}}>
                   <option value="">— Todos los clientes —</option>
                   {clientes.map(c=><option key={c.id} value={c.id}>{c.nombre}</option>)}
@@ -3783,7 +3831,7 @@ function App() {
                       const key=anticipoKey(a,idx);
                       const ligado=facturaForm.pagos_ligados.includes(key);
                       return (
-                      <label key={key} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:ligado?"#eff6ff":"white",borderTop:idx>0?"1px solid var(--border-soft)":"none",cursor:"pointer"}}>
+                      <label key={key} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:ligado?"var(--accent-soft)":"var(--bg-card)",borderTop:idx>0?"1px solid var(--border-soft)":"none",cursor:"pointer"}}>
                         <input type="checkbox" checked={ligado} onChange={e=>{const newLigados=e.target.checked?[...facturaForm.pagos_ligados,key]:facturaForm.pagos_ligados.filter(l=>l!==key);const suma=sumaLigados(hist,newLigados);setFacturaForm(f=>({...f,pagos_ligados:newLigados,...(!montoEditadoManualmente&&{monto_total:String(suma)})}));}}/>
                         <span style={{flex:"0 0 86px",fontSize:12,color:"var(--text-tertiary)"}}>{a.fecha}</span>
                         <span style={{flex:1,fontSize:12,fontWeight:600}}>{fmt(a.monto)}</span>
@@ -4770,6 +4818,35 @@ function App() {
               );
             })()}
 
+          </div>
+        </div>
+      )}
+
+      {/* DIÁLOGO (confirm / prompt / alert) — bottom-sheet, reemplaza los nativos del navegador */}
+      {dialog&&(
+        <div onClick={e=>{if(e.target===e.currentTarget)resolveDialog(dialog.kind==="prompt"?null:dialog.kind==="alert"?undefined:false);}} style={{position:"fixed",inset:0,background:"#00000070",zIndex:9000,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:480,padding:"22px 20px calc(22px + env(safe-area-inset-bottom, 0px))",maxHeight:"80vh",overflowY:"auto",boxShadow:"0 -4px 24px #00000060"}}>
+            <div style={{fontSize:14,color:"var(--text-main)",lineHeight:1.5,whiteSpace:"pre-wrap",marginBottom:16}}>{dialog.message}</div>
+            {dialog.kind==="prompt"&&(
+              <input
+                type={dialog.inputType}
+                value={dialog.value}
+                placeholder={dialog.placeholder}
+                autoFocus
+                onChange={e=>{const v=e.target.value;setDialog(d=>d?{...d,value:v}:d);}}
+                onKeyDown={e=>{if(e.key==="Enter")resolveDialog(dialog.value);if(e.key==="Escape")resolveDialog(null);}}
+                style={{...inS,marginBottom:16,fontSize:15}}
+              />
+            )}
+            <div style={{display:"flex",gap:10}}>
+              {dialog.kind!=="alert"&&(
+                <button onClick={()=>resolveDialog(dialog.kind==="prompt"?null:false)} style={{flex:1,background:"var(--bg-card-alt)",color:"var(--text-tertiary)",border:"none",borderRadius:8,padding:"12px",fontWeight:600,cursor:"pointer",fontSize:14}}>{dialog.cancelLabel||"Cancelar"}</button>
+              )}
+              <button
+                onClick={()=>resolveDialog(dialog.kind==="prompt"?dialog.value:dialog.kind==="alert"?undefined:true)}
+                style={{flex:dialog.kind==="alert"?1:2,background:dialog.danger?"#dc2626":"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"12px",fontWeight:700,cursor:"pointer",fontSize:14}}
+              >{dialog.kind==="alert"?"Entendido":dialog.kind==="prompt"?"Aceptar":(dialog.confirmLabel||"Confirmar")}</button>
+            </div>
           </div>
         </div>
       )}
