@@ -615,7 +615,9 @@ const sumaLigados = (hist, ligados) =>
 const anticipoKey = (anticipo, idx) => (anticipo && anticipo.id!=null) ? anticipo.id : idx;
 
 function getWeekRange(offset=0) {
-  const d=new Date(); d.setDate(d.getDate()+offset*7);
+  // Anclar a mediodía local (igual que addDays) para que toISOString (UTC) no salte de día
+  // por el offset UTC-6 de México después de las 18:00.
+  const d=new Date(todayISO()+"T12:00"); d.setDate(d.getDate()+offset*7);
   const day=d.getDay(); const mon=new Date(d); mon.setDate(d.getDate()-((day+6)%7));
   const sun=new Date(mon); sun.setDate(mon.getDate()+6);
   return {start:mon.toISOString().slice(0,10),end:sun.toISOString().slice(0,10)};
@@ -843,7 +845,14 @@ function App() {
   };
 
   const cliById = (id) => clientes.find(c=>c.id===id)||null;
-  const valorOV = (p)  => { const precio=parseFloat(p.precio_ton)||(parseFloat(cliById(p.clienteId)?.precio_ton)||0); return (parseFloat(p.toneladas)||0)*precio; };
+  const valorOV = (p)  => {
+    const precioOV=parseFloat(p.precio_ton)||0;
+    // OV entregada/firmada: usar SIEMPRE el precio guardado en la OV (congelado al momento de la entrega),
+    // para que cambiar el precio del cliente no recalcule el histórico. Solo si aún NO está entregada
+    // y no tiene precio propio se usa el precio actual del cliente como fallback (proyecciones).
+    const precio=(p.status==="entregado")?precioOV:(precioOV>0?precioOV:(parseFloat(cliById(p.clienteId)?.precio_ton)||0));
+    return (parseFloat(p.toneladas)||0)*precio;
+  };
 
   const filtrarPeriodo = (lista) => {
     if(reportePeriodo==="historico") return lista;
@@ -890,7 +899,7 @@ function App() {
     const r={};
     clientes.forEach(c=>{
       const totalPagado=parseFloat(c.anticipo)||0;
-      const totalFacturado=facturas.filter(f=>f.clienteId===c.id&&f.estatus==="Emitida").reduce((s,f)=>s+(parseFloat(f.total_con_iva)||0),0);
+      const totalFacturado=facturas.filter(f=>f.clienteId===c.id&&f.estatus!=="Cancelada").reduce((s,f)=>s+(parseFloat(f.total_con_iva)||0),0);
       r[c.id]={totalPagado,totalFacturado,pendiente:totalPagado-totalFacturado};
     });
     return r;
@@ -3366,7 +3375,7 @@ function App() {
         {/* ---- FACTURAS ---- */}
         {tab==="facturas"&&(()=>{
           const mesActual=currentYM();
-          const factMes=facturas.filter(f=>(f.fecha||"").startsWith(mesActual)&&f.estatus==="Emitida");
+          const factMes=facturas.filter(f=>(f.fecha||"").startsWith(mesActual)&&f.estatus!=="Cancelada");
           const totalMes=factMes.reduce((s,f)=>s+(parseFloat(f.total_con_iva)||0),0);
           const factFiltradas=(filtroFacturaCliente?facturas.filter(f=>f.clienteId===filtroFacturaCliente):facturas);
           return(
@@ -3702,6 +3711,14 @@ function App() {
                 </div>
               </div>
               <div style={{marginBottom:12}}>
+                <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Estatus</label>
+                <select value={facturaForm.estatus} onChange={e=>setFacturaForm(f=>({...f,estatus:e.target.value}))} style={{...inS,background:"var(--bg-card)"}}>
+                  <option value="Emitida">Emitida</option>
+                  <option value="Pagada">Pagada</option>
+                  <option value="Cancelada">Cancelada</option>
+                </select>
+              </div>
+              <div style={{marginBottom:12}}>
                 <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Monto total con IVA ($) *</label>
                 <div style={{display:"flex",gap:6,alignItems:"center"}}>
                   <input type="number" value={facturaForm.monto_total} onChange={e=>{setMontoEditadoManualmente(true);setFacturaForm(f=>({...f,monto_total:e.target.value}));}} style={{...inS,flex:1}} min="0" step="0.01" placeholder="0.00"/>
@@ -3749,7 +3766,7 @@ function App() {
       {verFacturasClienteId&&(()=>{
         const cli=cliById(verFacturasClienteId)||{};
         const facsCli=facturas.filter(f=>f.clienteId===verFacturasClienteId);
-        const totalEmitido=facsCli.filter(f=>f.estatus==="Emitida").reduce((s,f)=>s+(parseFloat(f.total_con_iva)||0),0);
+        const totalEmitido=facsCli.filter(f=>f.estatus!=="Cancelada").reduce((s,f)=>s+(parseFloat(f.total_con_iva)||0),0);
         return(
           <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
             <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:520,padding:"22px 20px",maxHeight:"88vh",overflowY:"auto"}}>
@@ -4169,6 +4186,19 @@ function App() {
         const lectorNuevoConfirmar = async () => {
           const {numeroRemision,numeroOV,fecha,pesoNeto}=lectorData;
           const serie=(numeroRemision||"").split("-")[0].toUpperCase();
+          const numOvTrim=(numeroOV||"").trim();
+          // Si ya existe una OV con ese número, actualizarla con los datos de la remisión en lugar de duplicar.
+          const existe=numOvTrim&&ovs.find(o=>(o.num_ov||"").trim()===numOvTrim);
+          if(existe){
+            const patch={folio:numeroRemision||existe.folio,fecha_carga:fecha||existe.fecha_carga,toneladas:parseFloat(pesoNeto)||existe.toneladas,serie:serie||existe.serie};
+            const ok=await upd(existe.id,patch);
+            if(!ok) return;
+            cerrarLectorNuevo();
+            const precioActual=parseFloat(existe.precio_ton)||parseFloat(cliById(existe.clienteId)?.precio_ton)||0;
+            setForm({...existe,...patch,precio_ton:precioActual});
+            setShowForm(true);
+            return;
+          }
           const id=`OV-${Date.now()}`;
           const nuevaOV={...emptyOV,id,num_ov:numeroOV||"",folio:numeroRemision||"",fecha_carga:fecha||todayISO(),toneladas:parseFloat(pesoNeto)||0,serie};
           const prevOVs=ovs;
