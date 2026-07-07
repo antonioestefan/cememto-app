@@ -20,7 +20,7 @@
   </script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { getFirestore, collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, deleteField } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
     const firebaseConfig = {
       apiKey: "AIzaSyBXxj2MnF5AGFs46FTe7FN3Gl3iiXjT8gk",
       authDomain: "cemento-antonio.firebaseapp.com",
@@ -32,7 +32,7 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
     window.__db=db; window.__col=collection; window.__onSnapshot=onSnapshot;
-    window.__doc=doc; window.__setDoc=setDoc; window.__deleteDoc=deleteDoc;
+    window.__doc=doc; window.__setDoc=setDoc; window.__updateDoc=updateDoc; window.__deleteDoc=deleteDoc; window.__deleteField=deleteField;
     window.__dbReady=true; window.dispatchEvent(new Event("dbReady"));
   </script>
   <style>
@@ -814,7 +814,10 @@ function App() {
     return ()=>document.removeEventListener('paste',handlePasteChart);
   },[showChartLector]);
 
-  const saveToDb    = async (col,id,data)=>{ const {id:_,...rest}=data; await window.__setDoc(window.__doc(window.__db,col,id),rest); };
+  // merge:true → no borra campos ausentes en el objeto local; evita perder cambios concurrentes de otra sesión.
+  const saveToDb    = async (col,id,data)=>{ const {id:_,...rest}=data; await window.__setDoc(window.__doc(window.__db,col,id),rest,{merge:true}); };
+  // Actualiza solo los campos indicados (para no reescribir todo el documento). El doc debe existir.
+  const updateDb    = async (col,id,fields)=>{ await window.__updateDoc(window.__doc(window.__db,col,id),fields); };
   const deleteFromDb= async (col,id)    =>{ await window.__deleteDoc(window.__doc(window.__db,col,id)); };
 
   // Indicador de guardado: 'saving' se mantiene; 'saved'/'error' desaparecen solos.
@@ -1505,7 +1508,7 @@ function App() {
     const updated={...c,anticipo:(parseFloat(c.anticipo)||0)+monto,historial_anticipos:historial};
     const prevClientes=clientes;
     setClientes(prev=>prev.map(x=>x.id===id?updated:x));
-    await runSave(()=>saveToDb("clientes",id,updated), ()=>setClientes(prevClientes));
+    await runSave(()=>updateDb("clientes",id,{anticipo:updated.anticipo,historial_anticipos:historial}), ()=>setClientes(prevClientes));
   };
   const deleteAnticipo = async (cliId,realIdx)=>{
     const c=clientes.find(x=>x.id===cliId); if(!c) return;
@@ -1514,7 +1517,7 @@ function App() {
     const updated={...c,anticipo,historial_anticipos:historial};
     const prevClientes=clientes;
     setClientes(prev=>prev.map(x=>x.id===cliId?updated:x));
-    await runSave(()=>saveToDb("clientes",cliId,updated), ()=>setClientes(prevClientes));
+    await runSave(()=>updateDb("clientes",cliId,{anticipo,historial_anticipos:historial}), ()=>setClientes(prevClientes));
   };
   const editAnticipo = async (cliId,realIdx,newFecha,newMonto)=>{
     const c=clientes.find(x=>x.id===cliId); if(!c) return;
@@ -1523,7 +1526,7 @@ function App() {
     const updated={...c,anticipo,historial_anticipos:historial};
     const prevClientes=clientes;
     setClientes(prev=>prev.map(x=>x.id===cliId?updated:x));
-    const ok=await runSave(()=>saveToDb("clientes",cliId,updated), ()=>setClientes(prevClientes));
+    const ok=await runSave(()=>updateDb("clientes",cliId,{anticipo,historial_anticipos:historial}), ()=>setClientes(prevClientes));
     if(ok) setEditingAnticipo(null);
   };
 
@@ -1533,7 +1536,7 @@ function App() {
     const updated={...c,historial_anticipos:historial};
     const prevClientes=clientes;
     setClientes(prev=>prev.map(x=>x.id===cliId?updated:x));
-    await runSave(()=>saveToDb("clientes",cliId,updated), ()=>setClientes(prevClientes));
+    await runSave(()=>updateDb("clientes",cliId,{historial_anticipos:historial}), ()=>setClientes(prevClientes));
   };
   const marcarFacturadoLote = async (cliId,indices)=>{
     const c=clientes.find(x=>x.id===cliId); if(!c) return;
@@ -1541,7 +1544,7 @@ function App() {
     const updated={...c,historial_anticipos:historial};
     const prevClientes=clientes;
     setClientes(prev=>prev.map(x=>x.id===cliId?updated:x));
-    await runSave(()=>saveToDb("clientes",cliId,updated), ()=>setClientes(prevClientes));
+    await runSave(()=>updateDb("clientes",cliId,{historial_anticipos:historial}), ()=>setClientes(prevClientes));
   };
 
   // P0-4 (migración única): asigna un `id` estable a cada anticipo existente y convierte los
@@ -1567,7 +1570,7 @@ function App() {
       const updated={...c,historial_anticipos:nuevoHist};
       const prevClientes=clientes;
       setClientes(prev=>prev.map(x=>x.id===c.id?updated:x));
-      const ok=await runSave(()=>saveToDb("clientes",c.id,updated), ()=>setClientes(prevClientes));
+      const ok=await runSave(()=>updateDb("clientes",c.id,{historial_anticipos:nuevoHist}), ()=>setClientes(prevClientes));
       ok?clientesOk++:clientesFail++;
     }
     // 2) Convertir pagos_ligados de facturas: índice numérico → id del anticipo en esa posición.
@@ -1579,10 +1582,9 @@ function App() {
       if(!idMap) continue;
       const nuevos=ligados.map(l=>(typeof l==="number"&&idMap[l]!=null)?idMap[l]:l);
       if(!nuevos.some((v,i)=>v!==ligados[i])) continue;
-      const updated={...f,pagos_ligados:nuevos};
       const prevFacturas=facturas;
-      setFacturas(prev=>prev.map(x=>x.id===f.id?updated:x));
-      const ok=await runSave(()=>saveToDb("facturas",f.id,updated), ()=>setFacturas(prevFacturas));
+      setFacturas(prev=>prev.map(x=>x.id===f.id?{...x,pagos_ligados:nuevos}:x));
+      const ok=await runSave(()=>updateDb("facturas",f.id,{pagos_ligados:nuevos}), ()=>setFacturas(prevFacturas));
       ok?facOk++:facFail++;
     }
     const fail=clientesFail+facFail;
