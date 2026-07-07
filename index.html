@@ -753,6 +753,8 @@ function App() {
   const [gdError,setGdError]                     = useState("");
   const [gdProgress,setGdProgress]               = useState({cur:0,tot:0});
   const [procesados,setProcesados]               = useState({});
+  const [saveStatus,setSaveStatus]               = useState(null); // null | 'saving' | 'saved' | 'error'
+  const saveStatusTimer                          = useRef(null);
   const gdGroups = useMemo(()=>gdGroupFiles(gdFiles),[gdFiles]);
 
   useEffect(()=>{
@@ -801,6 +803,28 @@ function App() {
 
   const saveToDb    = async (col,id,data)=>{ const {id:_,...rest}=data; await window.__setDoc(window.__doc(window.__db,col,id),rest); };
   const deleteFromDb= async (col,id)    =>{ await window.__deleteDoc(window.__doc(window.__db,col,id)); };
+
+  // Indicador de guardado: 'saving' se mantiene; 'saved'/'error' desaparecen solos.
+  const showSaveStatus = (s)=>{
+    if(saveStatusTimer.current){ clearTimeout(saveStatusTimer.current); saveStatusTimer.current=null; }
+    setSaveStatus(s);
+    if(s==="saved"||s==="error") saveStatusTimer.current=setTimeout(()=>setSaveStatus(null), s==="error"?4000:2000);
+  };
+  // Ejecuta una escritura a Firestore mostrando el estado y revirtiendo el estado local optimista si falla.
+  // Devuelve true si guardó, false si hubo error.
+  const runSave = async (writeAsync, revert)=>{
+    showSaveStatus("saving");
+    try{
+      await writeAsync();
+      showSaveStatus("saved");
+      return true;
+    }catch(e){
+      console.error("[Firestore] Error al guardar:",e);
+      if(revert){ try{ revert(); }catch(re){ console.error("[Firestore] Error al revertir estado local:",re); } }
+      showSaveStatus("error");
+      return false;
+    }
+  };
 
   const cliById = (id) => clientes.find(c=>c.id===id)||null;
   const valorOV = (p)  => { const precio=parseFloat(p.precio_ton)||(parseFloat(cliById(p.clienteId)?.precio_ton)||0); return (parseFloat(p.toneladas)||0)*precio; };
@@ -1038,9 +1062,13 @@ function App() {
     const p=ovs.find(x=>x.id===id); if(!p) return;
     if(patch.folio!==undefined) patch={...patch,folio:limpiarFolio(patch.folio)};
     const updated={...p,...patch};
+    const prevOVs=ovs, prevSelected=selected;
     setOVs(prev=>prev.map(x=>x.id===id?updated:x));
     setSelected(s=>s&&s.id===id?updated:s);
-    await saveToDb("ovs",id,updated);
+    return await runSave(
+      ()=>saveToDb("ovs",id,updated),
+      ()=>{ setOVs(prevOVs); setSelected(prevSelected); }
+    );
   };
 
   const advance     = (id)=>{ const p=ovs.find(x=>x.id===id); if(p&&NEXT[p.status]) upd(id,{status:NEXT[p.status]}); };
@@ -1063,14 +1091,17 @@ function App() {
     if(folio&&otros.some(p=>p.folio&&p.folio===folio)){alert(`Ya existe otra OV con el folio de remisión "${folio}".`);return;}
     const precio_ton=parseFloat(form.precio_ton)||parseFloat(cliById(form.clienteId)?.precio_ton)||0;
     const n={...form,id,folio,toneladas:parseFloat(form.toneladas)||0,precio_ton};
+    const prevOVs=ovs;
     setOVs(prev=>prev.find(p=>p.id===id)?prev.map(p=>p.id===id?n:p):[n,...prev]);
-    await saveToDb("ovs",id,n);
+    const ok=await runSave(()=>saveToDb("ovs",id,n), ()=>setOVs(prevOVs));
+    if(!ok) return;
     setShowForm(false); setForm(emptyOV); setSelected(null);
   };
   const deleteOV = async (id)=>{
     if(!confirm("¿Eliminar esta OV?")) return;
+    const prevOVs=ovs, prevSelected=selected;
     setOVs(prev=>prev.filter(p=>p.id!==id)); setSelected(null);
-    await deleteFromDb("ovs",id);
+    await runSave(()=>deleteFromDb("ovs",id), ()=>{ setOVs(prevOVs); setSelected(prevSelected); });
   };
   const limpiarFoliosDuplicados = async ()=>{
     const campo="folio";
@@ -1396,15 +1427,19 @@ function App() {
         patch.clienteId=clienteId;
         if(!(parseFloat(existente.precio_ton)>0)) patch.precio_ton=precio_ton;
       }
-      await upd(existente.id,patch);
-      await window.__setDoc(window.__doc(window.__db,"remisiones_gdrive",regFile.id),{ovId:existente.id,fileName:regFile.name,fecha:todayISO(),clienteId,actualizada:true});
+      const ok=await upd(existente.id,patch);
+      if(!ok) return;
+      // marcador de seguimiento: si falla, la remisión reaparecerá como pendiente (no hay pérdida de datos)
+      await runSave(()=>window.__setDoc(window.__doc(window.__db,"remisiones_gdrive",regFile.id),{ovId:existente.id,fileName:regFile.name,fecha:todayISO(),clienteId,actualizada:true}));
       return;
     }
     const id=`OV-${Date.now()}`;
     const nueva={...emptyOV,id,num_ov:numeroOV,folio,fecha_carga:res.data.fecha||todayISO(),fecha_entrega:fechaEntrega,toneladas:parseFloat(res.data.pesoNeto)||0,serie,clienteId,precio_ton,status:"entregado"};
+    const prevOVs=ovs;
     setOVs(prev=>[nueva,...prev]);
-    await saveToDb("ovs",id,nueva);
-    await window.__setDoc(window.__doc(window.__db,"remisiones_gdrive",regFile.id),{ovId:id,fileName:regFile.name,fecha:todayISO(),clienteId,actualizada:false});
+    const ok=await runSave(()=>saveToDb("ovs",id,nueva), ()=>setOVs(prevOVs));
+    if(!ok) return;
+    await runSave(()=>window.__setDoc(window.__doc(window.__db,"remisiones_gdrive",regFile.id),{ovId:id,fileName:regFile.name,fecha:todayISO(),clienteId,actualizada:false}));
   };
   const gdAbrirEdicion=(res)=>{
     const {folio,numeroOV,serie,fechaEntrega}=gdDatosOV(res);
@@ -1433,99 +1468,115 @@ function App() {
 
   const toggleDiaHabil = async (iso)=>{
     const newVal=!esDiaHabilReal(iso,diasHabiles);
+    const prevDias=diasHabiles;
     if(newVal===esDiaHabilBase(iso)){
       setDiasHabiles(prev=>{const n={...prev};delete n[iso];return n;});
-      await deleteFromDb("diasHabiles",iso);
+      await runSave(()=>deleteFromDb("diasHabiles",iso), ()=>setDiasHabiles(prevDias));
     } else {
       setDiasHabiles(prev=>({...prev,[iso]:newVal}));
-      await saveToDb("diasHabiles",iso,{id:iso,trabajado:newVal});
+      await runSave(()=>saveToDb("diasHabiles",iso,{id:iso,trabajado:newVal}), ()=>setDiasHabiles(prevDias));
     }
   };
   const saveCliente = async ()=>{
     const id=cliForm.id||`CLI-${Date.now()}`;
     const nc={...cliForm,id,precio_ton:parseFloat(cliForm.precio_ton)||0,anticipo:parseFloat(cliForm.anticipo)||0};
+    const prevClientes=clientes;
     setClientes(prev=>prev.find(c=>c.id===id)?prev.map(c=>c.id===id?nc:c):[...prev,nc]);
-    await saveToDb("clientes",id,nc);
+    const ok=await runSave(()=>saveToDb("clientes",id,nc), ()=>setClientes(prevClientes));
+    if(!ok) return;
     setShowCliForm(false); setCliForm(emptyCliente);
   };
   const addAnticipo = async (id,monto,fecha)=>{
     const c=clientes.find(x=>x.id===id); if(!c) return;
     const historial=[...(c.historial_anticipos||[]),{fecha,monto,estatus_factura:"pendiente"}];
     const updated={...c,anticipo:(parseFloat(c.anticipo)||0)+monto,historial_anticipos:historial};
+    const prevClientes=clientes;
     setClientes(prev=>prev.map(x=>x.id===id?updated:x));
-    await saveToDb("clientes",id,updated);
+    await runSave(()=>saveToDb("clientes",id,updated), ()=>setClientes(prevClientes));
   };
   const deleteAnticipo = async (cliId,realIdx)=>{
     const c=clientes.find(x=>x.id===cliId); if(!c) return;
     const historial=(c.historial_anticipos||[]).filter((_,i)=>i!==realIdx);
     const anticipo=historial.reduce((s,a)=>s+(parseFloat(a.monto)||0),0);
     const updated={...c,anticipo,historial_anticipos:historial};
+    const prevClientes=clientes;
     setClientes(prev=>prev.map(x=>x.id===cliId?updated:x));
-    await saveToDb("clientes",cliId,updated);
+    await runSave(()=>saveToDb("clientes",cliId,updated), ()=>setClientes(prevClientes));
   };
   const editAnticipo = async (cliId,realIdx,newFecha,newMonto)=>{
     const c=clientes.find(x=>x.id===cliId); if(!c) return;
     const historial=(c.historial_anticipos||[]).map((a,i)=>i===realIdx?{...a,fecha:newFecha,monto:parseFloat(newMonto)||0}:a);
     const anticipo=historial.reduce((s,a)=>s+(parseFloat(a.monto)||0),0);
     const updated={...c,anticipo,historial_anticipos:historial};
+    const prevClientes=clientes;
     setClientes(prev=>prev.map(x=>x.id===cliId?updated:x));
-    await saveToDb("clientes",cliId,updated);
-    setEditingAnticipo(null);
+    const ok=await runSave(()=>saveToDb("clientes",cliId,updated), ()=>setClientes(prevClientes));
+    if(ok) setEditingAnticipo(null);
   };
 
   const toggleEstatusFactura = async (cliId,realIdx)=>{
     const c=clientes.find(x=>x.id===cliId); if(!c) return;
     const historial=(c.historial_anticipos||[]).map((a,i)=>i===realIdx?{...a,estatus_factura:(a.estatus_factura||"pendiente")==="facturado"?"pendiente":"facturado"}:a);
     const updated={...c,historial_anticipos:historial};
+    const prevClientes=clientes;
     setClientes(prev=>prev.map(x=>x.id===cliId?updated:x));
-    await saveToDb("clientes",cliId,updated);
+    await runSave(()=>saveToDb("clientes",cliId,updated), ()=>setClientes(prevClientes));
   };
   const marcarFacturadoLote = async (cliId,indices)=>{
     const c=clientes.find(x=>x.id===cliId); if(!c) return;
     const historial=(c.historial_anticipos||[]).map((a,i)=>indices.includes(i)?{...a,estatus_factura:"facturado"}:a);
     const updated={...c,historial_anticipos:historial};
+    const prevClientes=clientes;
     setClientes(prev=>prev.map(x=>x.id===cliId?updated:x));
-    await saveToDb("clientes",cliId,updated);
+    await runSave(()=>saveToDb("clientes",cliId,updated), ()=>setClientes(prevClientes));
   };
 
   const saveNota = async ()=>{
     const id=notaForm.id||`NOTA-${Date.now()}`;
     const n={...notaForm,id};
+    const prevNotas=notas;
     setNotas(prev=>prev.find(x=>x.id===id)?prev.map(x=>x.id===id?n:x):[n,...prev]);
-    await saveToDb("notas",id,n);
+    const ok=await runSave(()=>saveToDb("notas",id,n), ()=>setNotas(prevNotas));
+    if(!ok) return;
     setShowNotaForm(false); setNotaForm(emptyNota);
   };
   const completarNota = async (id)=>{
     const n=notas.find(x=>x.id===id); if(!n) return;
     const updated={...n,completada:true};
+    const prevNotas=notas;
     setNotas(prev=>prev.map(x=>x.id===id?updated:x));
-    await saveToDb("notas",id,updated);
+    await runSave(()=>saveToDb("notas",id,updated), ()=>setNotas(prevNotas));
   };
   const deleteNota = async (id)=>{
     if(!confirm("¿Eliminar esta nota?")) return;
+    const prevNotas=notas;
     setNotas(prev=>prev.filter(x=>x.id!==id));
-    await deleteFromDb("notas",id);
+    await runSave(()=>deleteFromDb("notas",id), ()=>setNotas(prevNotas));
   };
 
   const saveProsp = async ()=>{
     const id=prospForm.id||`PROSP-${Date.now()}`;
     const p={...prospForm,id};
+    const prevProsp=prospectos;
     setProspectos(prev=>prev.find(x=>x.id===id)?prev.map(x=>x.id===id?p:x):[p,...prev]);
-    await saveToDb("prospectos",id,p);
+    const ok=await runSave(()=>saveToDb("prospectos",id,p), ()=>setProspectos(prevProsp));
+    if(!ok) return;
     setShowProspForm(false); setProspForm(emptyProsp);
   };
   const deleteProsp = async (id)=>{
     if(!confirm("¿Eliminar este prospecto?")) return;
+    const prevProsp=prospectos, prevSel=selectedProsp;
     setProspectos(prev=>prev.filter(x=>x.id!==id));
     setSelectedProsp(null);
-    await deleteFromDb("prospectos",id);
+    await runSave(()=>deleteFromDb("prospectos",id), ()=>{ setProspectos(prevProsp); setSelectedProsp(prevSel); });
   };
   const avanzarProsp = async (id,etapa)=>{
     const p=prospectos.find(x=>x.id===id); if(!p) return;
     const updated={...p,etapa};
+    const prevProsp=prospectos, prevSel=selectedProsp;
     setProspectos(prev=>prev.map(x=>x.id===id?updated:x));
     setSelectedProsp(updated);
-    await saveToDb("prospectos",id,updated);
+    await runSave(()=>saveToDb("prospectos",id,updated), ()=>{ setProspectos(prevProsp); setSelectedProsp(prevSel); });
   };
   const convertirACliente = (p)=>{
     setSelectedProsp(null);
@@ -1823,15 +1874,18 @@ function App() {
     const monto_sin_iva=totalConIVA/1.16;
     const iva=totalConIVA-monto_sin_iva;
     const fac={...facturaForm,id,monto_sin_iva,iva,total_con_iva:totalConIVA};
+    const prevFacturas=facturas;
     setFacturas(prev=>prev.find(x=>x.id===id)?prev.map(x=>x.id===id?fac:x):[fac,...prev]);
-    await saveToDb("facturas",id,fac);
+    const ok=await runSave(()=>saveToDb("facturas",id,fac), ()=>setFacturas(prevFacturas));
+    if(!ok) return;
     setShowFacturaForm(false); setFacturaForm(emptyFactura); setMontoEditadoManualmente(false);
   };
   const cancelarFactura = async (id)=>{
     const f=facturas.find(x=>x.id===id); if(!f) return;
     const updated={...f,estatus:f.estatus==="Cancelada"?"Emitida":"Cancelada"};
+    const prevFacturas=facturas;
     setFacturas(prev=>prev.map(x=>x.id===id?updated:x));
-    await saveToDb("facturas",id,updated);
+    await runSave(()=>saveToDb("facturas",id,updated), ()=>setFacturas(prevFacturas));
   };
 
   const reporteWAPlanta = ()=>{
@@ -3871,9 +3925,9 @@ function App() {
           }
         };
 
-        const lectorConfirmar = () => {
-          upd(lectorOV.id,{folio:lectorData.numeroRemision,fecha_carga:lectorData.fecha,toneladas:parseFloat(lectorData.pesoNeto)});
-          setLectorStep("success");
+        const lectorConfirmar = async () => {
+          const ok=await upd(lectorOV.id,{folio:lectorData.numeroRemision,fecha_carga:lectorData.fecha,toneladas:parseFloat(lectorData.pesoNeto)});
+          if(ok) setLectorStep("success");
         };
 
         const cerrarLector = () => {setShowLector(false);setLectorOV(null);setLectorStep("idle");setLectorData(null);setLectorFiles({a:null,b:null});setLectorError("");};
@@ -4050,8 +4104,10 @@ function App() {
           const serie=(numeroRemision||"").split("-")[0].toUpperCase();
           const id=`OV-${Date.now()}`;
           const nuevaOV={...emptyOV,id,num_ov:numeroOV||"",folio:numeroRemision||"",fecha_carga:fecha||todayISO(),toneladas:parseFloat(pesoNeto)||0,serie};
+          const prevOVs=ovs;
           setOVs(prev=>[nuevaOV,...prev]);
-          await saveToDb("ovs",id,nuevaOV);
+          const ok=await runSave(()=>saveToDb("ovs",id,nuevaOV), ()=>setOVs(prevOVs));
+          if(!ok) return;
           cerrarLectorNuevo();
           setForm({...nuevaOV,precio_ton:""});
           setShowForm(true);
@@ -4222,8 +4278,7 @@ function App() {
                 if(cliExistente?.precio_ton) patch.precio_ton=cliExistente.precio_ton;
               }
               try{
-                await upd(existente.id,patch);
-                actualizadas++;
+                if(await upd(existente.id,patch)) actualizadas++;
               }catch(e){ /* continúa con las demás */ }
               continue;
             }
@@ -4574,6 +4629,22 @@ function App() {
             })()}
 
           </div>
+        </div>
+      )}
+
+      {/* TOAST DE ESTADO DE GUARDADO */}
+      {saveStatus&&(
+        <div style={{
+          position:"fixed",left:"50%",bottom:"calc(24px + env(safe-area-inset-bottom, 0px))",transform:"translateX(-50%)",
+          zIndex:9999,pointerEvents:"none",width:"max-content",maxWidth:"92vw",
+          display:"flex",alignItems:"center",justifyContent:"center",textAlign:"center",
+          background:saveStatus==="error"?"#dc2626":saveStatus==="saved"?"#16a34a":"#1e293b",
+          color:"white",borderRadius:12,padding:"12px 20px",fontSize:14,fontWeight:700,lineHeight:1.35,
+          boxShadow:"0 8px 28px #00000080",border:"1px solid rgba(255,255,255,0.12)"
+        }}>
+          {saveStatus==="saving"?"💾 Guardando..."
+            :saveStatus==="saved"?"✅ Guardado"
+            :"❌ Error al guardar. Verifica tu conexión e intenta de nuevo."}
         </div>
       )}
 
