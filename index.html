@@ -21,6 +21,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getFirestore, collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, deleteField } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { getAuth, signInAnonymously, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
     const firebaseConfig = {
       apiKey: "AIzaSyBXxj2MnF5AGFs46FTe7FN3Gl3iiXjT8gk",
       authDomain: "cemento-antonio.firebaseapp.com",
@@ -31,8 +32,15 @@
     };
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
+    const auth = getAuth(app);
     window.__db=db; window.__col=collection; window.__onSnapshot=onSnapshot;
     window.__doc=doc; window.__setDoc=setDoc; window.__updateDoc=updateDoc; window.__deleteDoc=deleteDoc; window.__deleteField=deleteField;
+    // Firebase Auth (sesión anónima). Para activar: Firebase Console → Authentication →
+    // Sign-in method → Anonymous → Habilitar. Luego publicar reglas de Firestore:
+    //   rules_version = '2';
+    //   service cloud.firestore { match /databases/{database}/documents {
+    //     match /{document=**} { allow read, write: if request.auth != null; } } }
+    window.__auth=auth; window.__signInAnon=signInAnonymously; window.__signOut=signOut; window.__onAuthStateChanged=onAuthStateChanged;
     window.__dbReady=true; window.dispatchEvent(new Event("dbReady"));
   </script>
   <style>
@@ -646,17 +654,16 @@ const AUTH_KEY  = 'ca_auth_expires';
 const AUTH_PW   = 'CruzAzul2024';
 const AUTH_DAYS = 30;
 
-function LoginScreen({ onSuccess }) {
+function LoginScreen({ onSubmit }) {
   const [pw,setPw]       = useState('');
-  const [error,setError] = useState(false);
-  const submit = () => {
-    if (pw === AUTH_PW) {
-      localStorage.setItem(AUTH_KEY, String(Date.now() + AUTH_DAYS * 86400000));
-      onSuccess();
-    } else {
-      setError(true);
-      setPw('');
-    }
+  const [error,setError] = useState('');
+  const [busy,setBusy]   = useState(false);
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true); setError('');
+    const r = await onSubmit(pw);
+    setBusy(false);
+    if (!r || !r.ok) { setError((r&&r.error)||'No se pudo iniciar sesión.'); setPw(''); }
   };
   return (
     <div style={{minHeight:'100vh',background:'var(--bg-main)',display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}}>
@@ -669,24 +676,29 @@ function LoginScreen({ onSuccess }) {
         <input
           type="password"
           value={pw}
-          onChange={e=>{setPw(e.target.value);setError(false);}}
+          onChange={e=>{setPw(e.target.value);setError('');}}
           onKeyDown={e=>e.key==='Enter'&&submit()}
           placeholder="Contraseña"
           autoFocus
+          disabled={busy}
           style={{width:'100%',padding:'12px 14px',border:error?'1.5px solid #ef4444':'1.5px solid var(--border)',borderRadius:12,fontSize:15,outline:'none',marginBottom:error?6:14,background:'var(--bg-main)',color:'var(--text-main)'}}
         />
-        {error&&<div style={{fontSize:12,color:'#ef4444',marginBottom:12,textAlign:'left',paddingLeft:2}}>Contraseña incorrecta. Inténtalo de nuevo.</div>}
-        <button onClick={submit} style={{width:'100%',background:'var(--accent)',color:'white',border:'none',borderRadius:12,padding:'13px',fontWeight:700,fontSize:15,cursor:'pointer'}}>Entrar</button>
+        {error&&<div style={{fontSize:12,color:'#ef4444',marginBottom:12,textAlign:'left',paddingLeft:2}}>{error}</div>}
+        <button onClick={submit} disabled={busy} style={{width:'100%',background:busy?'var(--border)':'var(--accent)',color:'white',border:'none',borderRadius:12,padding:'13px',fontWeight:700,fontSize:15,cursor:busy?'default':'pointer'}}>{busy?'Entrando…':'Entrar'}</button>
       </div>
     </div>
   );
 }
 
 function App() {
-  const [autenticado,setAutenticado] = useState(()=>{
+  // Auth: el código de acceso (AUTH_PW) valida al usuario en localStorage; Firebase Auth (anónimo)
+  // provee la sesión real que exigen las reglas de Firestore. Entra directo solo si AMBOS existen.
+  const [codigoOk,setCodigoOk]       = useState(()=>{
     const exp=localStorage.getItem(AUTH_KEY);
     return !!(exp && parseInt(exp,10)>Date.now());
   });
+  const [authUser,setAuthUser]       = useState(null);
+  const [authReady,setAuthReady]     = useState(false);
   const [tema,setTema]               = useState(()=>localStorage.getItem("tema")||"dark");
   const [dbReady,setDbReady]         = useState(!!window.__dbReady);
   const [clientes,setClientes]       = useState([]);
@@ -781,8 +793,16 @@ function App() {
   const [busquedaFactura,setBusquedaFactura]     = useState("");
   const gdGroups = useMemo(()=>gdGroupFiles(gdFiles),[gdFiles]);
 
+  // Auth: escuchar el estado de sesión de Firebase Auth (se restaura sola tras recargar).
   useEffect(()=>{
     if(!dbReady){window.addEventListener("dbReady",()=>setDbReady(true)); return;}
+    const unsub=window.__onAuthStateChanged(window.__auth,(user)=>{ setAuthUser(user); setAuthReady(true); });
+    return ()=>{ try{ unsub&&unsub(); }catch{} };
+  },[dbReady]);
+
+  // Firestore: suscribir SOLO con sesión autenticada (las reglas exigen request.auth != null).
+  useEffect(()=>{
+    if(!dbReady||!authUser) return;
     const db=window.__db;
     // P2-12 (futuro): estas suscripciones traen la colección COMPLETA sin límite. Funciona bien con
     // cientos de OVs. Cuando el volumen llegue a miles, paginar aquí: reemplazar window.__col(db,"ovs")
@@ -796,7 +816,7 @@ function App() {
     const u6=window.__onSnapshot(window.__col(db,"diasHabiles"),snap=>{const ov={};snap.docs.forEach(d=>{ov[d.id]=d.data().trabajado;});setDiasHabiles(ov);});
     const u7=window.__onSnapshot(window.__col(db,"remisiones_gdrive"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data();});setProcesados(m);});
     return ()=>{u1();u2();u3();u4();u5();u6();u7();};
-  },[dbReady]);
+  },[dbReady,authUser]);
 
   useEffect(()=>{
     document.body.className=tema;
@@ -2043,7 +2063,41 @@ function App() {
     </select>
   );
 
-  if(!autenticado) return <LoginScreen onSuccess={()=>setAutenticado(true)}/>;
+  // Login: valida el código de acceso y abre sesión anónima en Firebase Auth.
+  const iniciarSesion = async (pw)=>{
+    if(pw!==AUTH_PW) return {ok:false,error:"Contraseña incorrecta. Inténtalo de nuevo."};
+    try{
+      await window.__signInAnon(window.__auth);
+      localStorage.setItem(AUTH_KEY,String(Date.now()+AUTH_DAYS*86400000));
+      setCodigoOk(true);
+      return {ok:true};
+    }catch(e){
+      console.error("[Auth] signInAnonymously falló:",e);
+      const msg=(e&&e.code==="auth/operation-not-allowed")
+        ? "Falta habilitar 'Anonymous' en Firebase Console → Authentication → Sign-in method."
+        : "No se pudo conectar con el servidor. Verifica tu internet e intenta de nuevo.";
+      return {ok:false,error:msg};
+    }
+  };
+  const cerrarSesion = async ()=>{
+    if(!(await askConfirm("¿Cerrar sesión?"))) return;
+    try{ await window.__signOut(window.__auth); }catch(e){ console.error("[Auth] signOut falló:",e); }
+    try{ localStorage.removeItem(AUTH_KEY); }catch{}
+    setCodigoOk(false);
+  };
+
+  const autenticado = codigoOk && !!authUser;
+
+  if(!autenticado){
+    // Código validado pero aún no sabemos el estado de Firebase Auth → esperar (evita parpadeo del login al recargar).
+    if(codigoOk && !authReady) return (
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",flexDirection:"column",gap:16}}>
+        <div style={{fontSize:32}}>🔄</div>
+        <div style={{fontWeight:700,color:"var(--accent)"}}>Restaurando sesión...</div>
+      </div>
+    );
+    return <LoginScreen onSubmit={iniciarSesion}/>;
+  }
 
   if(!dbReady||loading) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",flexDirection:"column",gap:16}}>
@@ -2079,6 +2133,7 @@ function App() {
             )}
           </div>
           <button onClick={()=>setTema(t=>t==="dark"?"light":"dark")} title={tema==="dark"?"Cambiar a modo claro":"Cambiar a modo oscuro"} style={{background:"rgba(255,255,255,0.15)",color:"white",border:"none",borderRadius:8,width:34,height:34,fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{tema==="dark"?"🌙":"☀️"}</button>
+          <button onClick={cerrarSesion} title="Cerrar sesión" style={{background:"rgba(255,255,255,0.15)",color:"white",border:"none",borderRadius:8,width:34,height:34,fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>🚪</button>
         </div>
       </div>
 
