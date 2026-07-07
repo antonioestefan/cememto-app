@@ -601,6 +601,19 @@ const emptyNota    = {id:"",texto:"",fecha_vencimiento:todayISO(),prioridad:"med
 const emptyProsp   = {id:"",nombre:"",telefono:"",contacto:"",vol_mensual:0,etapa:"contacto",notas:"",fecha_seguimiento:todayISO()};
 const emptyFactura = {id:"",clienteId:"",folio_fiscal:"",fecha:todayISO(),monto_total:"",tipo:"Normal",estatus:"Emitida",pagos_ligados:[],notas:""};
 
+// P0-4: cada anticipo tiene un `id` estable y las facturas guardan esos ids en pagos_ligados.
+// Compatibilidad con datos viejos: pagos_ligados podía ser un índice posicional (número) → se acepta como respaldo.
+const ligadoCoincide = (ligados, anticipo, idx) =>
+  (ligados||[]).some(l => (anticipo && anticipo.id!=null && l===anticipo.id) || l===idx);
+// Suma los montos de los anticipos referidos por pagos_ligados (por id o, en datos viejos, por índice).
+const sumaLigados = (hist, ligados) =>
+  (ligados||[]).reduce((s,l)=>{
+    const a=(hist||[]).find((x,i)=>(x && x.id!=null && x.id===l) || i===l);
+    return s+(parseFloat(a?.monto)||0);
+  },0);
+// Clave estable de un anticipo para pagos_ligados: su id, o el índice si aún no fue migrado.
+const anticipoKey = (anticipo, idx) => (anticipo && anticipo.id!=null) ? anticipo.id : idx;
+
 function getWeekRange(offset=0) {
   const d=new Date(); d.setDate(d.getDate()+offset*7);
   const day=d.getDay(); const mon=new Date(d); mon.setDate(d.getDate()-((day+6)%7));
@@ -886,7 +899,7 @@ function App() {
     clientes.forEach(c=>{
       const facActivas=facturas.filter(f=>f.clienteId===c.id&&f.estatus!=="Cancelada");
       result[c.id]=(c.historial_anticipos||[]).map((a,idx)=>{
-        const ligadas=facActivas.filter(f=>(f.pagos_ligados||[]).includes(idx));
+        const ligadas=facActivas.filter(f=>ligadoCoincide(f.pagos_ligados,a,idx));
         if(ligadas.length===0) return {estatus:"pendiente",pendiente:parseFloat(a.monto)||0};
         const totalCubierto=ligadas.reduce((s,f)=>s+(parseFloat(f.total_con_iva)||0),0);
         const montoP=parseFloat(a.monto)||0;
@@ -1488,7 +1501,7 @@ function App() {
   };
   const addAnticipo = async (id,monto,fecha)=>{
     const c=clientes.find(x=>x.id===id); if(!c) return;
-    const historial=[...(c.historial_anticipos||[]),{fecha,monto,estatus_factura:"pendiente"}];
+    const historial=[...(c.historial_anticipos||[]),{id:Date.now().toString(),fecha,monto,estatus_factura:"pendiente"}];
     const updated={...c,anticipo:(parseFloat(c.anticipo)||0)+monto,historial_anticipos:historial};
     const prevClientes=clientes;
     setClientes(prev=>prev.map(x=>x.id===id?updated:x));
@@ -1529,6 +1542,51 @@ function App() {
     const prevClientes=clientes;
     setClientes(prev=>prev.map(x=>x.id===cliId?updated:x));
     await runSave(()=>saveToDb("clientes",cliId,updated), ()=>setClientes(prevClientes));
+  };
+
+  // P0-4 (migración única): asigna un `id` estable a cada anticipo existente y convierte los
+  // pagos_ligados de las facturas (que guardaban índices posicionales) a esos ids.
+  const migrarIdsAnticipos = async ()=>{
+    const antSinId=clientes.reduce((n,c)=>n+(c.historial_anticipos||[]).filter(a=>a.id==null).length,0);
+    const facConIndices=facturas.filter(f=>(f.pagos_ligados||[]).some(l=>typeof l==="number")).length;
+    if(antSinId===0&&facConIndices===0){ alert("✅ Nada que migrar: todos los anticipos ya tienen id y las facturas usan ids."); return; }
+    if(!confirm(`Se asignará un id único a ${antSinId} anticipo${antSinId!==1?"s":""} sin id y se convertirán ${facConIndices} factura${facConIndices!==1?"s":""} de índices a ids.\n\n¿Continuar?`)) return;
+
+    const base=Date.now();
+    let counter=0;
+    // 1) Asignar ids a los anticipos (por cliente) y recordar el id por posición para convertir facturas.
+    const idPorClienteYPos={};
+    let clientesOk=0, clientesFail=0;
+    for(const c of clientes){
+      const hist=c.historial_anticipos||[];
+      if(!hist.length) continue;
+      const nuevoHist=hist.map(a=>a.id!=null?a:{...a,id:`${base}-${counter++}`});
+      idPorClienteYPos[c.id]=nuevoHist.map(a=>a.id);
+      const cambio=nuevoHist.some((a,i)=>a!==hist[i]);
+      if(!cambio) continue;
+      const updated={...c,historial_anticipos:nuevoHist};
+      const prevClientes=clientes;
+      setClientes(prev=>prev.map(x=>x.id===c.id?updated:x));
+      const ok=await runSave(()=>saveToDb("clientes",c.id,updated), ()=>setClientes(prevClientes));
+      ok?clientesOk++:clientesFail++;
+    }
+    // 2) Convertir pagos_ligados de facturas: índice numérico → id del anticipo en esa posición.
+    let facOk=0, facFail=0;
+    for(const f of facturas){
+      const ligados=f.pagos_ligados||[];
+      if(!ligados.length) continue;
+      const idMap=idPorClienteYPos[f.clienteId];
+      if(!idMap) continue;
+      const nuevos=ligados.map(l=>(typeof l==="number"&&idMap[l]!=null)?idMap[l]:l);
+      if(!nuevos.some((v,i)=>v!==ligados[i])) continue;
+      const updated={...f,pagos_ligados:nuevos};
+      const prevFacturas=facturas;
+      setFacturas(prev=>prev.map(x=>x.id===f.id?updated:x));
+      const ok=await runSave(()=>saveToDb("facturas",f.id,updated), ()=>setFacturas(prevFacturas));
+      ok?facOk++:facFail++;
+    }
+    const fail=clientesFail+facFail;
+    alert(`✅ Migración completa.\nClientes actualizados: ${clientesOk}\nFacturas convertidas: ${facOk}${fail>0?`\n⚠ ${fail} escritura(s) fallaron — revisa tu conexión y vuelve a ejecutar.`:""}`);
   };
 
   const saveNota = async ()=>{
@@ -2256,7 +2314,10 @@ function App() {
         {/* ---- CLIENTES ---- */}
         {tab==="clientes"&&(
           <>
-            <button onClick={()=>{setCliForm(emptyCliente);setShowCliForm(true);}} style={{background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"8px 16px",fontWeight:700,cursor:"pointer",fontSize:13,marginBottom:14}}>+ Nuevo cliente</button>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
+              <button onClick={()=>{setCliForm(emptyCliente);setShowCliForm(true);}} style={{background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"8px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>+ Nuevo cliente</button>
+              <button onClick={migrarIdsAnticipos} title="Migración única: asigna ids estables a los anticipos y actualiza las facturas" style={{background:"#f59e0b22",color:"#b45309",border:"1px solid #f59e0b55",borderRadius:8,padding:"8px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>🔧 Migrar IDs anticipos</button>
+            </div>
             {clientes.length===0
               ?<EmptyState icon="👥" msg="Aún no tienes clientes. Agrega tu primer cliente."/>
               :<div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -2321,7 +2382,7 @@ function App() {
                             </div>
                           </div>
                           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                            <button onClick={()=>{const hist=c.historial_anticipos||[];const eps=estatusPagos[c.id]||[];const pendIdx=hist.map((_,i)=>i).filter(i=>(eps[i]?.estatus||"pendiente")!=="facturado");const suma=pendIdx.reduce((s,i)=>s+(parseFloat(hist[i]?.monto)||0),0);setFacturaForm({...emptyFactura,clienteId:c.id,pagos_ligados:pendIdx,monto_total:suma>0?String(suma):""});setMontoEditadoManualmente(false);setShowFacturaForm(true);}} style={{background:"var(--accent-soft)",border:"1px solid #10B98133",borderRadius:6,padding:"5px 10px",fontSize:11,cursor:"pointer",color:"#1d4ed8",fontWeight:600}}>🧾 Nueva factura</button>
+                            <button onClick={()=>{const hist=c.historial_anticipos||[];const eps=estatusPagos[c.id]||[];const pendientes=hist.map((a,i)=>({a,i})).filter(({i})=>(eps[i]?.estatus||"pendiente")!=="facturado");const pendIds=pendientes.map(({a,i})=>anticipoKey(a,i));const suma=pendientes.reduce((s,{a})=>s+(parseFloat(a.monto)||0),0);setFacturaForm({...emptyFactura,clienteId:c.id,pagos_ligados:pendIds,monto_total:suma>0?String(suma):""});setMontoEditadoManualmente(false);setShowFacturaForm(true);}} style={{background:"var(--accent-soft)",border:"1px solid #10B98133",borderRadius:6,padding:"5px 10px",fontSize:11,cursor:"pointer",color:"#1d4ed8",fontWeight:600}}>🧾 Nueva factura</button>
                             <button onClick={()=>setVerFacturasClienteId(c.id)} style={{background:"var(--bg-card-alt)",border:"1px solid var(--border)",borderRadius:6,padding:"5px 10px",fontSize:11,cursor:"pointer",color:"var(--accent)",fontWeight:600}}>📋 Ver facturas</button>
                           </div>
                         </div>
@@ -3643,7 +3704,7 @@ function App() {
                 <div style={{display:"flex",gap:6,alignItems:"center"}}>
                   <input type="number" value={facturaForm.monto_total} onChange={e=>{setMontoEditadoManualmente(true);setFacturaForm(f=>({...f,monto_total:e.target.value}));}} style={{...inS,flex:1}} min="0" step="0.01" placeholder="0.00"/>
                   {facturaForm.pagos_ligados.length>0&&(
-                    <button onClick={()=>{setMontoEditadoManualmente(false);const suma=facturaForm.pagos_ligados.reduce((s,i)=>s+(parseFloat(hist[i]?.monto)||0),0);setFacturaForm(f=>({...f,monto_total:String(suma)}));}} title="Recalcular desde anticipos" style={{background:"none",border:"1px solid var(--border)",borderRadius:6,padding:"5px 9px",cursor:"pointer",fontSize:15,color:"var(--text-tertiary)",flexShrink:0,lineHeight:1}}>↺</button>
+                    <button onClick={()=>{setMontoEditadoManualmente(false);const suma=sumaLigados(hist,facturaForm.pagos_ligados);setFacturaForm(f=>({...f,monto_total:String(suma)}));}} title="Recalcular desde anticipos" style={{background:"none",border:"1px solid var(--border)",borderRadius:6,padding:"5px 9px",cursor:"pointer",fontSize:15,color:"var(--text-tertiary)",flexShrink:0,lineHeight:1}}>↺</button>
                   )}
                 </div>
                 {totalConIVA>0&&<div style={{fontSize:11,color:"var(--text-tertiary)",marginTop:4,display:"flex",gap:14}}>
@@ -3654,14 +3715,18 @@ function App() {
                 <div style={{marginBottom:12}}>
                   <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:6}}>Pagos ligados (opcional)</label>
                   <div style={{border:"1px solid var(--border)",borderRadius:8,overflow:"hidden"}}>
-                    {hist.map((a,idx)=>(
-                      <label key={idx} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:facturaForm.pagos_ligados.includes(idx)?"#eff6ff":"white",borderTop:idx>0?"1px solid var(--border-soft)":"none",cursor:"pointer"}}>
-                        <input type="checkbox" checked={facturaForm.pagos_ligados.includes(idx)} onChange={e=>{const newLigados=e.target.checked?[...facturaForm.pagos_ligados,idx]:facturaForm.pagos_ligados.filter(i=>i!==idx);const suma=newLigados.reduce((s,i)=>s+(parseFloat(hist[i]?.monto)||0),0);setFacturaForm(f=>({...f,pagos_ligados:newLigados,...(!montoEditadoManualmente&&{monto_total:String(suma)})}));}}/>
+                    {hist.map((a,idx)=>{
+                      const key=anticipoKey(a,idx);
+                      const ligado=facturaForm.pagos_ligados.includes(key);
+                      return (
+                      <label key={key} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:ligado?"#eff6ff":"white",borderTop:idx>0?"1px solid var(--border-soft)":"none",cursor:"pointer"}}>
+                        <input type="checkbox" checked={ligado} onChange={e=>{const newLigados=e.target.checked?[...facturaForm.pagos_ligados,key]:facturaForm.pagos_ligados.filter(l=>l!==key);const suma=sumaLigados(hist,newLigados);setFacturaForm(f=>({...f,pagos_ligados:newLigados,...(!montoEditadoManualmente&&{monto_total:String(suma)})}));}}/>
                         <span style={{flex:"0 0 86px",fontSize:12,color:"var(--text-tertiary)"}}>{a.fecha}</span>
                         <span style={{flex:1,fontSize:12,fontWeight:600}}>{fmt(a.monto)}</span>
                         {(()=>{const ep=facEstatuses[idx]||{estatus:"pendiente"};return<span style={{fontSize:10,fontWeight:700,color:ep.estatus==="facturado"?"#15803d":ep.estatus==="parcial"?"#b45309":"#c2410c",background:ep.estatus==="facturado"?"#dcfce7":ep.estatus==="parcial"?"#fefce8":"#fff7ed",borderRadius:4,padding:"2px 5px",whiteSpace:"nowrap"}}>{ep.estatus==="facturado"?"✅ Facturado":ep.estatus==="parcial"?"🟡 Parcial":"🟠 Pendiente"}</span>;})()}
                       </label>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
