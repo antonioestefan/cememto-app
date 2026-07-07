@@ -106,10 +106,15 @@ const GRANEL_CONFIG = [{label:"Puebla",color:"#7c3aed"},{label:"Aguascalientes",
 const SACO_CONFIG   = [{label:"Bodega Querétaro",color:"#4ade80"}];
 
 /* ---- días hábiles México ---- */
+// Caché por año: festivosMexico se llama en bucles (contarDiasHabiles, gráficas, inteligencia);
+// sin caché reconstruía el Set miles de veces por render.
+const festCache = {};
 const festivosMexico = (year) => {
+  if(festCache[year]) return festCache[year];
   const s=new Set([`${year}-01-01`,`${year}-02-05`,`${year}-03-21`,`${year}-05-01`,`${year}-09-16`,`${year}-11-20`,`${year}-12-25`]);
   const d1=new Date(year,1,1); while(d1.getDay()!==1)d1.setDate(d1.getDate()+1); s.add(d1.toISOString().slice(0,10));
   const d2=new Date(year,2,1); let cnt=0; while(cnt<3){if(d2.getDay()===1)cnt++;if(cnt<3)d2.setDate(d2.getDate()+1);} s.add(d2.toISOString().slice(0,10));
+  festCache[year]=s;
   return s;
 };
 const esDiaHabilBase = (iso) => { const d=new Date(iso+"T12:00"); return d.getDay()!==0&&!festivosMexico(d.getFullYear()).has(iso); };
@@ -776,6 +781,10 @@ function App() {
   useEffect(()=>{
     if(!dbReady){window.addEventListener("dbReady",()=>setDbReady(true)); return;}
     const db=window.__db;
+    // P2-12 (futuro): estas suscripciones traen la colección COMPLETA sin límite. Funciona bien con
+    // cientos de OVs. Cuando el volumen llegue a miles, paginar aquí: reemplazar window.__col(db,"ovs")
+    // por una query con where("fecha_carga",">=",...) + orderBy + limit (importar query/where/orderBy/limit
+    // de firestore y exponerlos como globales), o cargar por mes/rango bajo demanda.
     const u1=window.__onSnapshot(window.__col(db,"clientes"),snap=>{setClientes(snap.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false);});
     const u2=window.__onSnapshot(window.__col(db,"ovs"),snap=>{setOVs(snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.fecha_carga||"").localeCompare(a.fecha_carga||"")));});
     const u3=window.__onSnapshot(window.__col(db,"notas"),snap=>{setNotas(snap.docs.map(d=>({id:d.id,...d.data()})));});
@@ -845,7 +854,9 @@ function App() {
     }
   };
 
-  const cliById = (id) => clientes.find(c=>c.id===id)||null;
+  // P2-10: lookup O(1) por id en vez de clientes.find() lineal en cada OV.
+  const cliMap  = useMemo(()=>new Map(clientes.map(c=>[c.id,c])),[clientes]);
+  const cliById = (id) => cliMap.get(id)||null;
   const valorOV = (p)  => {
     const precioOV=parseFloat(p.precio_ton)||0;
     // OV entregada/firmada: usar SIEMPRE el precio guardado en la OV (congelado al momento de la entrega),
@@ -1655,7 +1666,7 @@ function App() {
     setTab("clientes");
   };
 
-  const ovsFiltrados = (()=>{
+  const ovsFiltrados = useMemo(()=>{
     let list=filtroCliente ? ovs.filter(p=>p.clienteId===filtroCliente) : [...ovs];
     if(filtroSinRemision) list=list.filter(p=>p.clienteId&&!p.folio&&p.status!=="entregado");
     if(filtroSinCliente)  list=list.filter(p=>!p.clienteId);
@@ -1670,7 +1681,7 @@ function App() {
           folio.includes(q)||
           limpiarFolio(p.folio).toLowerCase().includes(q)||
           folioSinPrefijo.includes(qLimpio)||
-          (cliById(p.clienteId)?.nombre||"").toLowerCase().includes(q);
+          (cliMap.get(p.clienteId)?.nombre||"").toLowerCase().includes(q);
       });
     }
     if(sortOVs==="fecha_desc") list=list.slice().sort((a,b)=>(b.fecha_carga||"").localeCompare(a.fecha_carga||""));
@@ -1678,13 +1689,13 @@ function App() {
     else if(sortOVs==="folio_desc") list=list.slice().sort((a,b)=>(parseInt(b.folio)||0)-(parseInt(a.folio)||0));
     else if(sortOVs==="folio_asc")  list=list.slice().sort((a,b)=>(parseInt(a.folio)||0)-(parseInt(b.folio)||0));
     return list;
-  })();
+  },[ovs,filtroCliente,filtroSinRemision,filtroSinCliente,filtroSinFirma,busqueda,sortOVs,cliMap]);
   const semana       = getWeekRange(weekOffset);
-  const ovsSemana    = ovs.filter(p=>p.fecha_carga>=semana.start&&p.fecha_carga<=semana.end).sort((a,b)=>(a.fecha_carga||"").localeCompare(b.fecha_carga||""));
-  const porConfirmar = ovs.filter(p=>p.fecha_carga===nextWorkdayISO()).sort((a,b)=>a.confirm==="por_confirmar"?-1:1);
-  const entregasHoy  = ovs.filter(p=>p.fecha_entrega===todayISO()&&["listo_para_envio","en_camino","entregado"].includes(p.status)&&!p.remision_firmada);
-  const enEspera     = ovs.filter(p=>p.status==="listo_para_envio"&&p.fecha_entrega!==todayISO());
-  const sinCliente    = ovs.filter(p=>!p.clienteId&&p.status!=="entregado");
+  const ovsSemana    = useMemo(()=>{const s=getWeekRange(weekOffset);return ovs.filter(p=>p.fecha_carga>=s.start&&p.fecha_carga<=s.end).sort((a,b)=>(a.fecha_carga||"").localeCompare(b.fecha_carga||""));},[ovs,weekOffset]);
+  const porConfirmar = useMemo(()=>ovs.filter(p=>p.fecha_carga===nextWorkdayISO()).sort((a,b)=>a.confirm==="por_confirmar"?-1:1),[ovs]);
+  const entregasHoy  = useMemo(()=>ovs.filter(p=>p.fecha_entrega===todayISO()&&["listo_para_envio","en_camino","entregado"].includes(p.status)&&!p.remision_firmada),[ovs]);
+  const enEspera     = useMemo(()=>ovs.filter(p=>p.status==="listo_para_envio"&&p.fecha_entrega!==todayISO()),[ovs]);
+  const sinCliente   = useMemo(()=>ovs.filter(p=>!p.clienteId&&p.status!=="entregado"),[ovs]);
   const ovsSinFirma   = ovs.filter(p=>p.status==="entregado"&&!p.remision_firmada);
   const notasBadge    = notas.filter(n=>!n.completada&&n.fecha_vencimiento&&n.fecha_vencimiento<=todayISO()).length;
   const notasUrgentes      = notas.filter(n=>!n.completada&&n.fecha_vencimiento&&n.fecha_vencimiento<=todayISO()).sort((a,b)=>(a.fecha_vencimiento||"").localeCompare(b.fecha_vencimiento||""));
