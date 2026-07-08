@@ -132,6 +132,23 @@ const contarDiasHabiles = (startISO, endISO, overrides) => {
   while(d<=end){const iso=d.toISOString().slice(0,10); if(esDiaHabilReal(iso,overrides))n++; d.setDate(d.getDate()+1);}
   return n;
 };
+// Fecha del día hábil nº diasActual dentro del mes `ym` (para comparar meses al mismo día hábil).
+// Si diasActual===0 o no se alcanza, devuelve el último día del mes.
+const findCutoffHabil = (ym, diasActual, overrides) => {
+  const [y,m]=ym.split("-").map(Number);
+  const lastDay=new Date(y,m,0).getDate();
+  const endISO=`${ym}-${String(lastDay).padStart(2,"0")}`;
+  if(diasActual===0) return endISO;
+  let cnt=0;
+  const d=new Date(`${ym}-01T12:00`);
+  const end=new Date(endISO+"T12:00");
+  while(d<=end){
+    const iso=d.toISOString().slice(0,10);
+    if(esDiaHabilReal(iso,overrides)){cnt++;if(cnt===diasActual)return iso;}
+    d.setDate(d.getDate()+1);
+  }
+  return endISO;
+};
 
 const STATUSES = [
   {key:"ov_asignada",      label:"OV asignada",          color:"#7c3aed",bg:"#7c3aed22",hint:"Permiso de carga de corporativo"},
@@ -150,6 +167,8 @@ const CONFIRM = {
   reprogramado: {label:"Reprogramado", color:"#dc2626",bg:"#dc262622"},
 };
 const MOTIVOS = ["Sin dotación en planta","Contratiempo del cliente","Contratiempo de la fletera","Otro"];
+// Prompt único para leer remisiones con IA (usado por el lector de OV, la nueva OV desde remisión y Google Drive).
+const PROMPT_REMISION = "Extrae los siguientes datos de esta remisión de cemento Cruz Azul: Número de remisión (formato: AG-XXXXXX, PU-XXXXXX o BQ-XXXXXX), Número de OV (Orden de Venta) — el número de OV en la remisión puede aparecer en formato como 'SG-2292690-1.000'; extrae ÚNICAMENTE el número central (los dígitos entre el primer y segundo guión, ej. '2292690'), Fecha de remisión, Peso neto en toneladas (usar el del ticket de báscula/reverso si hay dos valores). Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto";
 const PRIORIDAD = {
   alta: {label:"Alta",  color:"#dc2626",bg:"#dc262622"},
   media:{label:"Media", color:"#d97706",bg:"#d9770622"},
@@ -171,6 +190,204 @@ function Badge({status}) { const s=getS(status); return <span style={{background
 function ConfirmBadge({c}) { const s=CONFIRM[c]||CONFIRM.por_confirmar; return <span style={{background:s.bg,color:s.color,border:`1px solid ${s.color}30`,borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>{s.label}</span>; }
 function PlantaBadge({serie}) { const p=plantaDeSerie(serie); return <span style={{background:plantaBg[p]||"var(--bg-card-alt)",color:plantaColor[p]||"var(--text-tertiary)",border:`1px solid ${plantaColor[p]||"var(--text-tertiary)"}30`,borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>🏭 {p}</span>; }
 function EmptyState({icon,msg,btn,onClick}) { return <div style={{textAlign:"center",padding:"48px 20px",color:"var(--text-sec)"}}><div style={{fontSize:40,marginBottom:12}}>{icon}</div><div style={{fontSize:14,marginBottom:20}}>{msg}</div>{btn&&<button onClick={onClick} style={{background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"10px 20px",fontWeight:700,cursor:"pointer",fontSize:14}}>{btn}</button>}</div>; }
+
+// Lector de remisiones con IA. Reutilizado por el lector dentro de una OV y por "Nueva OV desde remisión".
+// El padre decide qué hacer con los datos vía onConfirm(data)->Promise<bool>. Mantiene su propio estado
+// (se remonta limpio cada vez que se muestra).
+function LectorRemision({inS,titulo,subtitulo,encabezadoConfirm,mostrarPlanta,notaConfirm,confirmLabel,successView,onConfirm,onClose}){
+  const [step,setStep]=useState("idle"); // idle|loading|confirm|success|error
+  const [data,setData]=useState(null);
+  const [files,setFiles]=useState({a:null,b:null});
+  const [mode,setMode]=useState("single");
+  const [error,setError]=useState("");
+
+  const toBase64 = (file) => new Promise((resolve,reject)=>{
+    const r=new FileReader();
+    r.onload=e=>resolve(e.target.result.split(',')[1]);
+    r.onerror=reject;
+    r.readAsDataURL(file);
+  });
+  const fileToBlock = async (file) => {
+    const b64=await toBase64(file);
+    if(file.type==='application/pdf') return {type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}};
+    return {type:"image",source:{type:"base64",media_type:file.type||"image/jpeg",data:b64}};
+  };
+  const leerRemision = async () => {
+    setStep("loading"); setError("");
+    try {
+      let blocks=[];
+      if(mode==="single"){
+        if(!files.a){setError("Selecciona un archivo");setStep("idle");return;}
+        blocks.push(await fileToBlock(files.a));
+      } else if(mode==="dual"){
+        if(!files.a||!files.b){setError("Selecciona ambos archivos");setStep("idle");return;}
+        blocks.push(await fileToBlock(files.a));
+        blocks.push(await fileToBlock(files.b));
+      } else if(mode==="clipboard"){
+        const items=await navigator.clipboard.read();
+        let found=false;
+        for(const item of items){
+          for(const type of item.types){
+            if(type.startsWith('image/')){
+              const blob=await item.getType(type);
+              const arr=await blob.arrayBuffer();
+              const b64=btoa(String.fromCharCode(...new Uint8Array(arr)));
+              blocks.push({type:"image",source:{type:"base64",media_type:type,data:b64}});
+              found=true; break;
+            }
+          }
+          if(found) break;
+        }
+        if(!found){setError("No hay imagen en el portapapeles");setStep("idle");return;}
+      }
+      const resp=await fetch('/.netlify/functions/claude-proxy',{
+        method:'POST',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1024,messages:[{role:'user',content:[...blocks,{type:'text',text:PROMPT_REMISION}]}]})
+      });
+      if(!resp.ok){const err=await resp.json();throw new Error(err.error?.message||err.error||`Error ${resp.status}`);}
+      const respData=await resp.json();
+      const raw=respData.content[0].text;
+      const cleaned=raw.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
+      setData(JSON.parse(cleaned));
+      setStep("confirm");
+    } catch(e){
+      setError(e.message||"Error al procesar");
+      setStep("error");
+    }
+  };
+  const confirmar = async () => {
+    const ok=await onConfirm(data);
+    if(ok&&successView) setStep("success");
+  };
+  const tabBtn = (m,label) => (
+    <button key={m} onClick={()=>{setMode(m);setStep("idle");setError("");}} style={{padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer",border:"none",borderRadius:6,background:mode===m?"var(--accent)":"var(--bg-card-alt)",color:mode===m?"white":"var(--text-sec)"}}>{label}</button>
+  );
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+      <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div style={{fontWeight:800,fontSize:17}}>{titulo}</div>
+          <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"var(--text-sec)"}}>✕</button>
+        </div>
+        <div style={{background:"var(--bg-card-alt)",borderRadius:8,padding:"8px 12px",fontSize:12,color:"var(--text-sec)",marginBottom:14}}>
+          {subtitulo}
+        </div>
+
+        {step==="success"?(
+          <div style={{textAlign:"center",padding:"30px 20px"}}>
+            <div style={{fontSize:42,marginBottom:10}}>✅</div>
+            <div style={{fontWeight:700,fontSize:15,color:"#16a34a",marginBottom:6}}>Remisión registrada</div>
+            <div style={{fontSize:13,color:"var(--text-tertiary)",marginBottom:20}}>Folio, fecha y toneladas actualizados en la OV</div>
+            <button onClick={onClose} style={{background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"10px 28px",fontWeight:700,cursor:"pointer",fontSize:14}}>Cerrar</button>
+          </div>
+        ):(
+          <>
+            <div style={{display:"flex",gap:6,marginBottom:14}}>
+              {tabBtn("single","📎 Archivo único")}
+              {tabBtn("clipboard","📋 Portapapeles")}
+              {tabBtn("dual","🔁 Frente + reverso")}
+            </div>
+
+            {(step==="idle"||step==="error")&&(
+              <>
+                {mode==="single"&&(
+                  <div style={{marginBottom:14}}>
+                    <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:4}}>Imagen JPG o PDF de la remisión</label>
+                    <input type="file" accept="image/*,.pdf" onChange={e=>setFiles(f=>({...f,a:e.target.files[0]||null}))} style={{...inS,padding:"6px 8px"}}/>
+                    {files.a&&<div style={{fontSize:11,color:"#0891b2",marginTop:4}}>✓ {files.a.name}</div>}
+                  </div>
+                )}
+                {mode==="dual"&&(
+                  <div style={{marginBottom:14}}>
+                    <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:4}}>Frente (portada de la remisión AG)</label>
+                    <input type="file" accept="image/*,.pdf" onChange={e=>setFiles(f=>({...f,a:e.target.files[0]||null}))} style={{...inS,padding:"6px 8px"}}/>
+                    {files.a&&<div style={{fontSize:11,color:"#0891b2",marginTop:4,marginBottom:8}}>✓ {files.a.name}</div>}
+                    <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:4,marginTop:6}}>Reverso (ticket de báscula — peso neto)</label>
+                    <input type="file" accept="image/*,.pdf" onChange={e=>setFiles(f=>({...f,b:e.target.files[0]||null}))} style={{...inS,padding:"6px 8px"}}/>
+                    {files.b&&<div style={{fontSize:11,color:"#0891b2",marginTop:4}}>✓ {files.b.name}</div>}
+                  </div>
+                )}
+                {mode==="clipboard"&&(
+                  <div style={{marginBottom:14,background:"var(--bg-card-alt)",borderRadius:8,padding:"18px",textAlign:"center"}}>
+                    <div style={{fontSize:32,marginBottom:8}}>📋</div>
+                    <div style={{fontSize:13,color:"var(--text-sec)",marginBottom:4}}>Copia una imagen al portapapeles</div>
+                    <div style={{fontSize:11,color:"var(--text-sec)"}}>Ctrl+C sobre la imagen, o "Copiar imagen" en el menú contextual</div>
+                  </div>
+                )}
+                {error&&<div style={{background:"#ef444422",color:"#dc2626",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:12,border:"1px solid #fecaca"}}>{error}</div>}
+                <button onClick={leerRemision} style={{width:"100%",background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:"pointer",fontSize:14}}>
+                  {mode==="clipboard"?"📋 Leer imagen del portapapeles":"🔍 Analizar con IA"}
+                </button>
+              </>
+            )}
+
+            {step==="loading"&&(
+              <div style={{textAlign:"center",padding:"32px 20px",color:"var(--text-tertiary)"}}>
+                <div style={{fontSize:36,marginBottom:10}}>⏳</div>
+                <div style={{fontSize:14,fontWeight:700,color:"var(--accent)"}}>Analizando remisión...</div>
+                <div style={{fontSize:12,color:"var(--text-sec)",marginTop:4}}>Claude está leyendo los datos</div>
+              </div>
+            )}
+
+            {step==="confirm"&&data&&(
+              <div>
+                <div style={{fontWeight:700,fontSize:13,color:"var(--accent)",marginBottom:10}}>{encabezadoConfirm}</div>
+                <div style={{background:"var(--bg-card-alt)",borderRadius:8,padding:"14px",marginBottom:14,border:"1px solid var(--border)"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:"8px 12px",alignItems:"center",fontSize:13}}>
+                    <span style={{fontSize:11,color:"var(--text-sec)",fontWeight:700,textTransform:"uppercase"}}>No. Remisión</span>
+                    <span style={{fontWeight:700,color:"#0891b2",fontSize:14}}>{data.numeroRemision||"—"}</span>
+                    <span style={{fontSize:11,color:"var(--text-sec)",fontWeight:700,textTransform:"uppercase"}}>No. OV</span>
+                    <span style={{fontWeight:600}}>{data.numeroOV||"—"}</span>
+                    <span style={{fontSize:11,color:"var(--text-sec)",fontWeight:700,textTransform:"uppercase"}}>Fecha</span>
+                    <span style={{fontWeight:600}}>{data.fecha||"—"}</span>
+                    <span style={{fontSize:11,color:"var(--text-sec)",fontWeight:700,textTransform:"uppercase"}}>Peso neto</span>
+                    <span style={{fontWeight:700,color:"#16a34a",fontSize:14}}>{data.pesoNeto||"—"} ton</span>
+                    {mostrarPlanta&&(<>
+                      <span style={{fontSize:11,color:"var(--text-sec)",fontWeight:700,textTransform:"uppercase"}}>Planta</span>
+                      <span style={{fontWeight:600}}>{plantaDeSerie((data.numeroRemision||"").split("-")[0])||"—"}</span>
+                    </>)}
+                  </div>
+                </div>
+                <div style={{fontSize:11,color:"var(--text-sec)",marginBottom:12}}>{notaConfirm}</div>
+                <div style={{display:"flex",gap:10}}>
+                  <button onClick={()=>{setStep("idle");setData(null);}} style={{flex:1,background:"var(--bg-card-alt)",color:"var(--text-tertiary)",border:"none",borderRadius:8,padding:"10px",fontWeight:600,cursor:"pointer",fontSize:14}}>← Volver</button>
+                  <button onClick={confirmar} style={{flex:2,background:"#16a34a",color:"white",border:"none",borderRadius:8,padding:"10px",fontWeight:700,cursor:"pointer",fontSize:14}}>{confirmLabel}</button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Selector de período (Mensual / Histórico / Rango) reutilizado en Reportes y Plantas.
+function SelectorPeriodo({value,onChange,mes,onMes,meses,rangoInicio,onRangoInicio,rangoFin,onRangoFin,inS}){
+  return (
+    <div style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
+      <div style={{fontSize:11,color:"var(--text-tertiary)",fontWeight:700,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Período del reporte</div>
+      <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+        {[["mensual","📅 Mensual"],["historico","📂 Histórico"],["rango","📆 Rango"]].map(([k,l])=>(
+          <button key={k} onClick={()=>onChange(k)} style={{background:value===k?"var(--accent)":"var(--bg-card-alt)",color:value===k?"white":"var(--text-sec)",border:"none",borderRadius:20,padding:"6px 14px",fontWeight:700,fontSize:12,cursor:"pointer"}}>{l}</button>
+        ))}
+      </div>
+      {value==="mensual"&&(
+        <select value={mes} onChange={e=>onMes(e.target.value)} style={{...inS,background:"var(--bg-card)"}}>
+          {meses.map(ym=><option key={ym} value={ym}>{mesLabel(ym)}</option>)}
+        </select>
+      )}
+      {value==="rango"&&(
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div><label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Fecha inicio</label><input type="date" value={rangoInicio} onChange={e=>onRangoInicio(e.target.value)} style={inS}/></div>
+          <div><label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Fecha fin</label><input type="date" value={rangoFin} onChange={e=>onRangoFin(e.target.value)} style={inS}/></div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function GraficaPlantas({meses,data,plantasConfig,tema}){
   const canvasRef=useRef(null);
@@ -329,17 +546,8 @@ function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV
   const prevYM=mkYM(-1);
   const antYM=mkYM(-2);
   const diasActual=contarDiasHabiles(`${curYM}-01`,today,diasHabiles);
-  const findCutoff=(ym)=>{
-    const[y,m]=ym.split("-").map(Number);
-    const lastDay=new Date(y,m,0).getDate();
-    const endISO=`${ym}-${String(lastDay).padStart(2,"0")}`;
-    if(diasActual===0) return endISO;
-    let cnt=0; const d=new Date(`${ym}-01T12:00`); const end=new Date(endISO+"T12:00");
-    while(d<=end){const iso=d.toISOString().slice(0,10);if(esDiaHabilReal(iso,diasHabiles)){cnt++;if(cnt===diasActual)return iso;}d.setDate(d.getDate()+1);}
-    return endISO;
-  };
-  const prevCutoff=findCutoff(prevYM);
-  const antCutoff=findCutoff(antYM);
+  const prevCutoff=findCutoffHabil(prevYM,diasActual,diasHabiles);
+  const antCutoff=findCutoffHabil(antYM,diasActual,diasHabiles);
   const prevDay=parseInt(prevCutoff.slice(8)||"0");
   const antDay=parseInt(antCutoff.slice(8)||"0");
   const tonActual=ovsEntMes.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
@@ -750,11 +958,6 @@ function App() {
   const [historialExpandido,setHistorialExpandido] = useState({});
   const [showLector,setShowLector]               = useState(false);
   const [lectorOV,setLectorOV]                   = useState(null);
-  const [lectorStep,setLectorStep]               = useState("idle"); // idle|loading|confirm|success|error
-  const [lectorData,setLectorData]               = useState(null);
-  const [lectorFiles,setLectorFiles]             = useState({a:null,b:null});
-  const [lectorMode,setLectorMode]               = useState("single");
-  const [lectorError,setLectorError]             = useState("");
   const [showOVMenu,setShowOVMenu]               = useState(false);
   const [showLectorNuevo,setShowLectorNuevo]     = useState(false);
   const [showChartLector,setShowChartLector]     = useState(false);
@@ -1055,23 +1258,8 @@ function App() {
     const prevYM=mkYM(-1);
     const antYM=mkYM(-2);
     const diasActual=contarDiasHabiles(`${curYM}-01`,today,diasHabiles);
-    const findCutoff=(ym)=>{
-      const [y,m]=ym.split("-").map(Number);
-      const lastDay=new Date(y,m,0).getDate();
-      const endISO=`${ym}-${String(lastDay).padStart(2,"0")}`;
-      if(diasActual===0) return endISO;
-      let cnt=0;
-      const d=new Date(`${ym}-01T12:00`);
-      const end=new Date(endISO+"T12:00");
-      while(d<=end){
-        const iso=d.toISOString().slice(0,10);
-        if(esDiaHabilReal(iso,diasHabiles)){cnt++;if(cnt===diasActual)return iso;}
-        d.setDate(d.getDate()+1);
-      }
-      return endISO;
-    };
-    const prevCutoff=findCutoff(prevYM);
-    const antCutoff=findCutoff(antYM);
+    const prevCutoff=findCutoffHabil(prevYM,diasActual,diasHabiles);
+    const antCutoff=findCutoffHabil(antYM,diasActual,diasHabiles);
     const cls=estadoCuenta.filter(c=>c.id!=="__sin__");
     const labels=cls.map(c=>c.nombre);
     const mesActual =cls.map(c=>ovs.filter(p=>p.clienteId===c.id&&p.status==="entregado"&&(p.fecha_carga||"").startsWith(curYM)).reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0));
@@ -1102,23 +1290,8 @@ function App() {
     const prevYM=mkYM(-1);
     const antYM=mkYM(-2);
     const diasActual=contarDiasHabiles(`${curYM}-01`,today,diasHabiles);
-    const findCutoff=(ym)=>{
-      const [y,m]=ym.split("-").map(Number);
-      const lastDay=new Date(y,m,0).getDate();
-      const endISO=`${ym}-${String(lastDay).padStart(2,"0")}`;
-      if(diasActual===0) return endISO;
-      let cnt=0;
-      const d=new Date(`${ym}-01T12:00`);
-      const end=new Date(endISO+"T12:00");
-      while(d<=end){
-        const iso=d.toISOString().slice(0,10);
-        if(esDiaHabilReal(iso,diasHabiles)){cnt++;if(cnt===diasActual)return iso;}
-        d.setDate(d.getDate()+1);
-      }
-      return endISO;
-    };
-    const prevCutoff=findCutoff(prevYM);
-    const antCutoff=findCutoff(antYM);
+    const prevCutoff=findCutoffHabil(prevYM,diasActual,diasHabiles);
+    const antCutoff=findCutoffHabil(antYM,diasActual,diasHabiles);
     const calcT=(planta,ym,cutoff)=>ovs.filter(p=>(p.fecha_carga||"").startsWith(ym)&&(p.fecha_carga||"")<=cutoff&&plantaDeSerie(p.serie)===planta&&p.status!=="ov_asignada"&&p.status!=="fletera_planta").reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
     const puA=calcT("Puebla",curYM,today),  agA=calcT("Aguascalientes",curYM,today);
     const puP=calcT("Puebla",prevYM,prevCutoff), agP=calcT("Aguascalientes",prevYM,prevCutoff);
@@ -1209,7 +1382,6 @@ function App() {
   /* ── Google Drive ── */
   const GD_API="https://www.googleapis.com/drive/v3";
   const GD_SCOPE="https://www.googleapis.com/auth/drive";
-  const GD_PROMPT="Extrae los siguientes datos de esta remisión de cemento Cruz Azul: Número de remisión (formato: AG-XXXXXX, PU-XXXXXX o BQ-XXXXXX), Número de OV (Orden de Venta) — el número de OV en la remisión puede aparecer en formato como 'SG-2292690-1.000'; extrae ÚNICAMENTE el número central (los dígitos entre el primer y segundo guión, ej. '2292690'), Fecha de remisión, Peso neto en toneladas (usar el del ticket de báscula/reverso si hay dos valores). Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto";
   // Safari/iOS purga localStorage de forma agresiva; se guarda también en sessionStorage como respaldo.
   const gdSaveToken=(tokenObj)=>{
     const json=JSON.stringify(tokenObj);
@@ -1445,7 +1617,7 @@ function App() {
         const token=gdToken||await gdGetToken(false);
         const blocks=[await gdDownloadBlock(group.page1,token)];
         if(group.page2) blocks.push(await gdDownloadBlock(group.page2,token));
-        const resp=await fetch("/.netlify/functions/claude-proxy",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1024,messages:[{role:"user",content:[...blocks,{type:"text",text:GD_PROMPT}]}]})});
+        const resp=await fetch("/.netlify/functions/claude-proxy",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1024,messages:[{role:"user",content:[...blocks,{type:"text",text:PROMPT_REMISION}]}]})});
         if(!resp.ok){const err=await resp.json();throw new Error(err.error?.message||err.error||`Error ${resp.status}`);}
         const apiData=await resp.json();
         const raw=apiData.content[0].text;
@@ -2122,7 +2294,7 @@ function App() {
                 <div style={{position:"fixed",inset:0,zIndex:199}} onClick={()=>setShowOVMenu(false)}/>
                 <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",background:"var(--bg-card)",borderRadius:10,border:"1px solid var(--border)",boxShadow:"0 8px 24px #00000090",zIndex:200,overflow:"hidden",minWidth:220}}>
                   <button onClick={()=>{setShowOVMenu(false);setForm({...emptyOV,fecha_carga:todayISO()});setShowForm(true);}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"var(--text-main)",fontSize:13,cursor:"pointer",fontWeight:600}}>✏️ Captura manual</button>
-                  <button onClick={()=>{setShowOVMenu(false);setShowLectorNuevo(true);setLectorStep("idle");setLectorData(null);setLectorFiles({a:null,b:null});setLectorError("");setLectorMode("single");}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#0891b2",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid var(--border)"}}>📄 Leer remisión con IA</button>
+                  <button onClick={()=>{setShowOVMenu(false);setShowLectorNuevo(true);}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#0891b2",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid var(--border)"}}>📄 Leer remisión con IA</button>
                   <button onClick={()=>{setShowOVMenu(false);setShowChartLector(true);setChartStep("idle");setChartPlanta("");setChartFile(null);setChartPreviewUrl(null);setChartRows([]);setChartError("");setChartResumen(null);}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#0891b2",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid var(--border)"}}>📊 Leer chart corporativo</button>
                   <button onClick={()=>{setShowOVMenu(false);gdOpen();}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#7c3aed",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid var(--border)"}}>📂 Importar desde Google Drive</button>
                   <button onClick={()=>{setShowOVMenu(false);limpiarFoliosDuplicados();}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#f59e0b",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid var(--border)"}}>🔧 Limpiar folios duplicados</button>
@@ -2551,25 +2723,13 @@ function App() {
               </select>
             </div>
             {/* SELECTOR PERÍODO */}
-            <div style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
-              <div style={{fontSize:11,color:"var(--text-tertiary)",fontWeight:700,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Período del reporte</div>
-              <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
-                {[["mensual","📅 Mensual"],["historico","📂 Histórico"],["rango","📆 Rango"]].map(([k,l])=>(
-                  <button key={k} onClick={()=>setReportePeriodo(k)} style={{background:reportePeriodo===k?"var(--accent)":"var(--bg-card-alt)",color:reportePeriodo===k?"white":"var(--text-sec)",border:"none",borderRadius:20,padding:"6px 14px",fontWeight:700,fontSize:12,cursor:"pointer"}}>{l}</button>
-                ))}
-              </div>
-              {reportePeriodo==="mensual"&&(
-                <select value={reporteMes} onChange={e=>setReporteMes(e.target.value)} style={{...inS,background:"var(--bg-card)"}}>
-                  {mesesDisponibles.map(ym=><option key={ym} value={ym}>{mesLabel(ym)}</option>)}
-                </select>
-              )}
-              {reportePeriodo==="rango"&&(
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  <div><label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Fecha inicio</label><input type="date" value={reporteRangoInicio} onChange={e=>setReporteRangoInicio(e.target.value)} style={inS}/></div>
-                  <div><label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Fecha fin</label><input type="date" value={reporteRangoFin} onChange={e=>setReporteRangoFin(e.target.value)} style={inS}/></div>
-                </div>
-              )}
-            </div>
+            <SelectorPeriodo
+              value={reportePeriodo} onChange={setReportePeriodo}
+              mes={reporteMes} onMes={setReporteMes} meses={mesesDisponibles}
+              rangoInicio={reporteRangoInicio} onRangoInicio={setReporteRangoInicio}
+              rangoFin={reporteRangoFin} onRangoFin={setReporteRangoFin}
+              inS={inS}
+            />
             <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
               <button onClick={()=>exportExcel(reporteCliente)} style={{background:"#16a34a",color:"white",border:"none",borderRadius:8,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13}}>⬇ {reporteCliente?`Excel — ${cliById(reporteCliente)?.nombre}`:"Excel — Todos"}</button>
               <button onClick={()=>reporteWA(reporteCliente)} style={{background:"#25D366",color:"white",border:"none",borderRadius:8,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13}}>💬 {reporteCliente?`WhatsApp — ${cliById(reporteCliente)?.nombre}`:"WhatsApp — Todos"}</button>
@@ -2728,25 +2888,13 @@ function App() {
         {tab==="plantas"&&(
           <>
             {/* SELECTOR PERÍODO */}
-            <div style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
-              <div style={{fontSize:11,color:"var(--text-tertiary)",fontWeight:700,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Período del reporte</div>
-              <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
-                {[["mensual","📅 Mensual"],["historico","📂 Histórico"],["rango","📆 Rango"]].map(([k,l])=>(
-                  <button key={k} onClick={()=>setReportePeriodo(k)} style={{background:reportePeriodo===k?"var(--accent)":"var(--bg-card-alt)",color:reportePeriodo===k?"white":"var(--text-sec)",border:"none",borderRadius:20,padding:"6px 14px",fontWeight:700,fontSize:12,cursor:"pointer"}}>{l}</button>
-                ))}
-              </div>
-              {reportePeriodo==="mensual"&&(
-                <select value={reporteMes} onChange={e=>setReporteMes(e.target.value)} style={{...inS,background:"var(--bg-card)"}}>
-                  {mesesDisponibles.map(ym=><option key={ym} value={ym}>{mesLabel(ym)}</option>)}
-                </select>
-              )}
-              {reportePeriodo==="rango"&&(
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  <div><label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Fecha inicio</label><input type="date" value={reporteRangoInicio} onChange={e=>setReporteRangoInicio(e.target.value)} style={inS}/></div>
-                  <div><label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Fecha fin</label><input type="date" value={reporteRangoFin} onChange={e=>setReporteRangoFin(e.target.value)} style={inS}/></div>
-                </div>
-              )}
-            </div>
+            <SelectorPeriodo
+              value={reportePeriodo} onChange={setReportePeriodo}
+              mes={reporteMes} onMes={setReporteMes} meses={mesesDisponibles}
+              rangoInicio={reporteRangoInicio} onRangoInicio={setReporteRangoInicio}
+              rangoFin={reporteRangoFin} onRangoFin={setReporteRangoFin}
+              inS={inS}
+            />
             {(()=>{
               const puE=reportePlanta.find(r=>r.planta==="Puebla");
               const agE=reportePlanta.find(r=>r.planta==="Aguascalientes");
@@ -3272,8 +3420,6 @@ function App() {
 
           const lastDayCur=new Date(cy,cm,0).getDate();
           const lastDayCurISO=`${curYM}-${String(lastDayCur).padStart(2,"0")}`;
-          const lastDayPrev=new Date(cy,cm-1,0).getDate();
-          const lastDayPrevISO=`${prevYM}-${String(lastDayPrev).padStart(2,"0")}`;
 
           const diasTranscurridos=contarDiasHabiles(`${curYM}-01`,today,diasHabiles);
           const totalDiasMes=contarDiasHabiles(`${curYM}-01`,lastDayCurISO,diasHabiles);
@@ -3282,19 +3428,7 @@ function App() {
           const ovsEntCur=ovs.filter(p=>p.status==="entregado"&&(p.fecha_carga||"").startsWith(curYM));
           const tonMesActual=ovsEntCur.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
 
-          const findCutoffPrev=()=>{
-            if(diasTranscurridos===0) return lastDayPrevISO;
-            let cnt=0;
-            const d=new Date(`${prevYM}-01T12:00`);
-            const end=new Date(lastDayPrevISO+"T12:00");
-            while(d<=end){
-              const iso=d.toISOString().slice(0,10);
-              if(esDiaHabilReal(iso,diasHabiles)){cnt++;if(cnt===diasTranscurridos)return iso;}
-              d.setDate(d.getDate()+1);
-            }
-            return lastDayPrevISO;
-          };
-          const prevCutoff=findCutoffPrev();
+          const prevCutoff=findCutoffHabil(prevYM,diasTranscurridos,diasHabiles);
           const ovsEntPrev=ovs.filter(p=>p.status==="entregado"&&(p.fecha_carga||"").startsWith(prevYM)&&(p.fecha_carga||"")<=prevCutoff);
           const tonMesPrev=ovsEntPrev.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
 
@@ -3638,7 +3772,7 @@ function App() {
                 {NEXT[selected.status]&&<button onClick={()=>advance(selected.id)} style={{background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>{NEXT_LABEL[selected.status]}</button>}
                 <button onClick={()=>reprogramar(selected.id)} style={{background:"#ef444422",color:"#dc2626",border:"1px solid #fecaca",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>↻ Reprogramar</button>
                 {selected.status==="entregado"&&<button onClick={()=>upd(selected.id,{remision_firmada:!selected.remision_firmada})} style={{background:selected.remision_firmada?"var(--bg-card-alt)":"#7c3aed",color:selected.remision_firmada?"var(--text-tertiary)":"white",border:"none",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>{selected.remision_firmada?"↩ Quitar firma":"✓ Remisión firmada"}</button>}
-                <button onClick={()=>{setLectorOV(selected);setShowLector(true);setLectorStep("idle");setLectorData(null);setLectorFiles({a:null,b:null});setLectorError("");}} style={{background:"#0891b222",color:"#0891b2",border:"1px solid #0891b244",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>📄 Leer remisión</button>
+                <button onClick={()=>{setLectorOV(selected);setShowLector(true);}} style={{background:"#0891b222",color:"#0891b2",border:"1px solid #0891b244",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>📄 Leer remisión</button>
                 <button onClick={()=>{const precioActual=parseFloat(selected.precio_ton)||parseFloat(cliById(selected.clienteId)?.precio_ton)||0;setForm({...selected,precio_ton:precioActual});setShowForm(true);setSelected(null);}} style={{background:"var(--bg-card-alt)",color:"var(--accent)",border:"1px solid var(--border)",borderRadius:8,padding:"9px 16px",fontWeight:600,cursor:"pointer",fontSize:13}}>✏️ Editar</button>
                 <button onClick={()=>deleteOV(selected.id)} style={{background:"#ef444422",color:"#dc2626",border:"1px solid #fecaca",borderRadius:8,padding:"9px 16px",fontWeight:600,cursor:"pointer",fontSize:13}}>🗑 Eliminar</button>
               </div>
@@ -4094,358 +4228,62 @@ function App() {
       })()}
 
       {/* LECTOR DE REMISIONES */}
-      {showLector&&lectorOV&&(()=>{
-        const PROMPT_LECTOR = "Extrae los siguientes datos de esta remisión de cemento Cruz Azul: Número de remisión (formato: AG-XXXXXX, PU-XXXXXX o BQ-XXXXXX), Número de OV (Orden de Venta) — el número de OV en la remisión puede aparecer en formato como 'SG-2292690-1.000'; extrae ÚNICAMENTE el número central (los dígitos entre el primer y segundo guión, ej. '2292690'), Fecha de remisión, Peso neto en toneladas (usar el del ticket de báscula/reverso si hay dos valores). Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto";
-
-        const toBase64 = (file) => new Promise((resolve,reject)=>{
-          const r=new FileReader();
-          r.onload=e=>resolve(e.target.result.split(',')[1]);
-          r.onerror=reject;
-          r.readAsDataURL(file);
-        });
-
-        const fileToBlock = async (file) => {
-          const b64=await toBase64(file);
-          if(file.type==='application/pdf') return {type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}};
-          return {type:"image",source:{type:"base64",media_type:file.type||"image/jpeg",data:b64}};
-        };
-
-        const leerRemision = async () => {
-          setLectorStep("loading"); setLectorError("");
-          try {
-            let blocks=[];
-            if(lectorMode==="single"){
-              if(!lectorFiles.a){setLectorError("Selecciona un archivo");setLectorStep("idle");return;}
-              blocks.push(await fileToBlock(lectorFiles.a));
-            } else if(lectorMode==="dual"){
-              if(!lectorFiles.a||!lectorFiles.b){setLectorError("Selecciona ambos archivos");setLectorStep("idle");return;}
-              blocks.push(await fileToBlock(lectorFiles.a));
-              blocks.push(await fileToBlock(lectorFiles.b));
-            } else if(lectorMode==="clipboard"){
-              const items=await navigator.clipboard.read();
-              let found=false;
-              for(const item of items){
-                for(const type of item.types){
-                  if(type.startsWith('image/')){
-                    const blob=await item.getType(type);
-                    const arr=await blob.arrayBuffer();
-                    const b64=btoa(String.fromCharCode(...new Uint8Array(arr)));
-                    blocks.push({type:"image",source:{type:"base64",media_type:type,data:b64}});
-                    found=true; break;
-                  }
-                }
-                if(found) break;
-              }
-              if(!found){setLectorError("No hay imagen en el portapapeles");setLectorStep("idle");return;}
-            }
-            const resp=await fetch('/.netlify/functions/claude-proxy',{
-              method:'POST',
-              headers:{'content-type':'application/json'},
-              body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1024,messages:[{role:'user',content:[...blocks,{type:'text',text:PROMPT_LECTOR}]}]})
-            });
-            if(!resp.ok){const err=await resp.json();throw new Error(err.error?.message||err.error||`Error ${resp.status}`);}
-            const data=await resp.json();
-            const raw=data.content[0].text;
-            const cleaned=raw.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
-            setLectorData(JSON.parse(cleaned));
-            setLectorStep("confirm");
-          } catch(e){
-            setLectorError(e.message||"Error al procesar");
-            setLectorStep("error");
-          }
-        };
-
-        const lectorConfirmar = async () => {
-          const ok=await upd(lectorOV.id,{folio:lectorData.numeroRemision,fecha_carga:lectorData.fecha,toneladas:parseFloat(lectorData.pesoNeto)});
-          if(ok) setLectorStep("success");
-        };
-
-        const cerrarLector = () => {setShowLector(false);setLectorOV(null);setLectorStep("idle");setLectorData(null);setLectorFiles({a:null,b:null});setLectorError("");};
-
-        const tabBtn = (mode,label) => (
-          <button key={mode} onClick={()=>{setLectorMode(mode);setLectorStep("idle");setLectorError("");}} style={{padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer",border:"none",borderRadius:6,background:lectorMode===mode?"var(--accent)":"var(--bg-card-alt)",color:lectorMode===mode?"white":"var(--text-sec)"}}>{label}</button>
-        );
-
-        return (
-          <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-            <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"90vh",overflowY:"auto"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-                <div style={{fontWeight:800,fontSize:17}}>📄 Lector de Remisiones</div>
-                <button onClick={cerrarLector} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"var(--text-sec)"}}>✕</button>
-              </div>
-              <div style={{background:"var(--bg-card-alt)",borderRadius:8,padding:"8px 12px",fontSize:12,color:"var(--text-sec)",marginBottom:14}}>
-                OV: <strong>{lectorOV.num_ov}</strong>{lectorOV.serie?` · Serie: ${lectorOV.serie}`:""}
-              </div>
-
-              {lectorStep==="success"?(
-                <div style={{textAlign:"center",padding:"30px 20px"}}>
-                  <div style={{fontSize:42,marginBottom:10}}>✅</div>
-                  <div style={{fontWeight:700,fontSize:15,color:"#16a34a",marginBottom:6}}>Remisión registrada</div>
-                  <div style={{fontSize:13,color:"var(--text-tertiary)",marginBottom:20}}>Folio, fecha y toneladas actualizados en la OV</div>
-                  <button onClick={cerrarLector} style={{background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"10px 28px",fontWeight:700,cursor:"pointer",fontSize:14}}>Cerrar</button>
-                </div>
-              ):(
-                <>
-                  <div style={{display:"flex",gap:6,marginBottom:14}}>
-                    {tabBtn("single","📎 Archivo único")}
-                    {tabBtn("clipboard","📋 Portapapeles")}
-                    {tabBtn("dual","🔁 Frente + reverso")}
-                  </div>
-
-                  {(lectorStep==="idle"||lectorStep==="error")&&(
-                    <>
-                      {lectorMode==="single"&&(
-                        <div style={{marginBottom:14}}>
-                          <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:4}}>Imagen JPG o PDF de la remisión</label>
-                          <input type="file" accept="image/*,.pdf" onChange={e=>setLectorFiles(f=>({...f,a:e.target.files[0]||null}))} style={{...inS,padding:"6px 8px"}}/>
-                          {lectorFiles.a&&<div style={{fontSize:11,color:"#0891b2",marginTop:4}}>✓ {lectorFiles.a.name}</div>}
-                        </div>
-                      )}
-                      {lectorMode==="dual"&&(
-                        <div style={{marginBottom:14}}>
-                          <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:4}}>Frente (portada de la remisión AG)</label>
-                          <input type="file" accept="image/*,.pdf" onChange={e=>setLectorFiles(f=>({...f,a:e.target.files[0]||null}))} style={{...inS,padding:"6px 8px"}}/>
-                          {lectorFiles.a&&<div style={{fontSize:11,color:"#0891b2",marginTop:4,marginBottom:8}}>✓ {lectorFiles.a.name}</div>}
-                          <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:4,marginTop:6}}>Reverso (ticket de báscula — peso neto)</label>
-                          <input type="file" accept="image/*,.pdf" onChange={e=>setLectorFiles(f=>({...f,b:e.target.files[0]||null}))} style={{...inS,padding:"6px 8px"}}/>
-                          {lectorFiles.b&&<div style={{fontSize:11,color:"#0891b2",marginTop:4}}>✓ {lectorFiles.b.name}</div>}
-                        </div>
-                      )}
-                      {lectorMode==="clipboard"&&(
-                        <div style={{marginBottom:14,background:"var(--bg-card-alt)",borderRadius:8,padding:"18px",textAlign:"center"}}>
-                          <div style={{fontSize:32,marginBottom:8}}>📋</div>
-                          <div style={{fontSize:13,color:"var(--text-sec)",marginBottom:4}}>Copia una imagen al portapapeles</div>
-                          <div style={{fontSize:11,color:"var(--text-sec)"}}>Ctrl+C sobre la imagen, o "Copiar imagen" en el menú contextual</div>
-                        </div>
-                      )}
-                      {lectorError&&<div style={{background:"#ef444422",color:"#dc2626",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:12,border:"1px solid #fecaca"}}>{lectorError}</div>}
-                      <button onClick={leerRemision} style={{width:"100%",background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:"pointer",fontSize:14}}>
-                        {lectorMode==="clipboard"?"📋 Leer imagen del portapapeles":"🔍 Analizar con IA"}
-                      </button>
-                    </>
-                  )}
-
-                  {lectorStep==="loading"&&(
-                    <div style={{textAlign:"center",padding:"32px 20px",color:"var(--text-tertiary)"}}>
-                      <div style={{fontSize:36,marginBottom:10}}>⏳</div>
-                      <div style={{fontSize:14,fontWeight:700,color:"var(--accent)"}}>Analizando remisión...</div>
-                      <div style={{fontSize:12,color:"var(--text-sec)",marginTop:4}}>Claude está leyendo los datos</div>
-                    </div>
-                  )}
-
-                  {lectorStep==="confirm"&&lectorData&&(
-                    <div>
-                      <div style={{fontWeight:700,fontSize:13,color:"var(--accent)",marginBottom:10}}>Datos extraídos — confirma antes de guardar:</div>
-                      <div style={{background:"var(--bg-card-alt)",borderRadius:8,padding:"14px",marginBottom:14,border:"1px solid var(--border)"}}>
-                        <div style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:"8px 12px",alignItems:"center",fontSize:13}}>
-                          <span style={{fontSize:11,color:"var(--text-sec)",fontWeight:700,textTransform:"uppercase"}}>No. Remisión</span>
-                          <span style={{fontWeight:700,color:"#0891b2",fontSize:14}}>{lectorData.numeroRemision||"—"}</span>
-                          <span style={{fontSize:11,color:"var(--text-sec)",fontWeight:700,textTransform:"uppercase"}}>No. OV</span>
-                          <span style={{fontWeight:600}}>{lectorData.numeroOV||"—"}</span>
-                          <span style={{fontSize:11,color:"var(--text-sec)",fontWeight:700,textTransform:"uppercase"}}>Fecha</span>
-                          <span style={{fontWeight:600}}>{lectorData.fecha||"—"}</span>
-                          <span style={{fontSize:11,color:"var(--text-sec)",fontWeight:700,textTransform:"uppercase"}}>Peso neto</span>
-                          <span style={{fontWeight:700,color:"#16a34a",fontSize:14}}>{lectorData.pesoNeto||"—"} ton</span>
-                        </div>
-                      </div>
-                      <div style={{fontSize:11,color:"var(--text-sec)",marginBottom:12}}>Se actualizará en la OV: folio de remisión, fecha de carga y toneladas pesadas</div>
-                      <div style={{display:"flex",gap:10}}>
-                        <button onClick={()=>{setLectorStep("idle");setLectorData(null);}} style={{flex:1,background:"var(--bg-card-alt)",color:"var(--text-tertiary)",border:"none",borderRadius:8,padding:"10px",fontWeight:600,cursor:"pointer",fontSize:14}}>← Volver</button>
-                        <button onClick={lectorConfirmar} style={{flex:2,background:"#16a34a",color:"white",border:"none",borderRadius:8,padding:"10px",fontWeight:700,cursor:"pointer",fontSize:14}}>✓ Confirmar y guardar</button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        );
-      })()}
+      {showLector&&lectorOV&&(
+        <LectorRemision
+          inS={inS}
+          titulo="📄 Lector de Remisiones"
+          subtitulo={<>OV: <strong>{lectorOV.num_ov}</strong>{lectorOV.serie?` · Serie: ${lectorOV.serie}`:""}</>}
+          encabezadoConfirm="Datos extraídos — confirma antes de guardar:"
+          mostrarPlanta={false}
+          notaConfirm="Se actualizará en la OV: folio de remisión, fecha de carga y toneladas pesadas"
+          confirmLabel="✓ Confirmar y guardar"
+          successView={true}
+          onConfirm={async(d)=>await upd(lectorOV.id,{folio:d.numeroRemision,fecha_carga:d.fecha,toneladas:parseFloat(d.pesoNeto)})}
+          onClose={()=>{setShowLector(false);setLectorOV(null);}}
+        />
+      )}
 
       {/* LECTOR NUEVA OV — sin OV previa */}
-      {showLectorNuevo&&(()=>{
-        const PROMPT_LECTOR = "Extrae los siguientes datos de esta remisión de cemento Cruz Azul: Número de remisión (formato: AG-XXXXXX, PU-XXXXXX o BQ-XXXXXX), Número de OV (Orden de Venta) — el número de OV en la remisión puede aparecer en formato como 'SG-2292690-1.000'; extrae ÚNICAMENTE el número central (los dígitos entre el primer y segundo guión, ej. '2292690'), Fecha de remisión, Peso neto en toneladas (usar el del ticket de báscula/reverso si hay dos valores). Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto";
-
-        const toBase64 = (file) => new Promise((resolve,reject)=>{
-          const r=new FileReader();
-          r.onload=e=>resolve(e.target.result.split(',')[1]);
-          r.onerror=reject;
-          r.readAsDataURL(file);
-        });
-
-        const fileToBlock = async (file) => {
-          const b64=await toBase64(file);
-          if(file.type==='application/pdf') return {type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}};
-          return {type:"image",source:{type:"base64",media_type:file.type||"image/jpeg",data:b64}};
-        };
-
-        const leerRemision = async () => {
-          setLectorStep("loading"); setLectorError("");
-          try {
-            let blocks=[];
-            if(lectorMode==="single"){
-              if(!lectorFiles.a){setLectorError("Selecciona un archivo");setLectorStep("idle");return;}
-              blocks.push(await fileToBlock(lectorFiles.a));
-            } else if(lectorMode==="dual"){
-              if(!lectorFiles.a||!lectorFiles.b){setLectorError("Selecciona ambos archivos");setLectorStep("idle");return;}
-              blocks.push(await fileToBlock(lectorFiles.a));
-              blocks.push(await fileToBlock(lectorFiles.b));
-            } else if(lectorMode==="clipboard"){
-              const items=await navigator.clipboard.read();
-              let found=false;
-              for(const item of items){
-                for(const type of item.types){
-                  if(type.startsWith('image/')){
-                    const blob=await item.getType(type);
-                    const arr=await blob.arrayBuffer();
-                    const b64=btoa(String.fromCharCode(...new Uint8Array(arr)));
-                    blocks.push({type:"image",source:{type:"base64",media_type:type,data:b64}});
-                    found=true; break;
-                  }
-                }
-                if(found) break;
-              }
-              if(!found){setLectorError("No hay imagen en el portapapeles");setLectorStep("idle");return;}
+      {showLectorNuevo&&(
+        <LectorRemision
+          inS={inS}
+          titulo="📄 Nueva OV desde Remisión"
+          subtitulo="La IA extraerá los datos. Podrás asignar el cliente y precio en el formulario siguiente."
+          encabezadoConfirm="Datos extraídos — confirma para crear la OV:"
+          mostrarPlanta={true}
+          notaConfirm="Se creará la OV. A continuación asignarás el cliente y precio."
+          confirmLabel="✓ Crear OV y completar datos"
+          successView={false}
+          onConfirm={async(d)=>{
+            const {numeroRemision,numeroOV,fecha,pesoNeto}=d;
+            const serie=(numeroRemision||"").split("-")[0].toUpperCase();
+            const numOvTrim=(numeroOV||"").trim();
+            // Si ya existe una OV con ese número, actualizarla con los datos de la remisión en lugar de duplicar.
+            const existe=numOvTrim&&ovs.find(o=>(o.num_ov||"").trim()===numOvTrim);
+            if(existe){
+              const patch={folio:numeroRemision||existe.folio,fecha_carga:fecha||existe.fecha_carga,toneladas:parseFloat(pesoNeto)||existe.toneladas,serie:serie||existe.serie};
+              const ok=await upd(existe.id,patch);
+              if(!ok) return false;
+              setShowLectorNuevo(false);
+              const precioActual=parseFloat(existe.precio_ton)||parseFloat(cliById(existe.clienteId)?.precio_ton)||0;
+              setForm({...existe,...patch,precio_ton:precioActual});
+              setShowForm(true);
+              return true;
             }
-            const resp=await fetch('/.netlify/functions/claude-proxy',{
-              method:'POST',
-              headers:{'content-type':'application/json'},
-              body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1024,messages:[{role:'user',content:[...blocks,{type:'text',text:PROMPT_LECTOR}]}]})
-            });
-            if(!resp.ok){const err=await resp.json();throw new Error(err.error?.message||err.error||`Error ${resp.status}`);}
-            const data=await resp.json();
-            const raw=data.content[0].text;
-            const cleaned=raw.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
-            setLectorData(JSON.parse(cleaned));
-            setLectorStep("confirm");
-          } catch(e){
-            setLectorError(e.message||"Error al procesar");
-            setLectorStep("error");
-          }
-        };
-
-        const cerrarLectorNuevo = () => {
-          setShowLectorNuevo(false);
-          setLectorStep("idle"); setLectorData(null); setLectorFiles({a:null,b:null}); setLectorError("");
-        };
-
-        const lectorNuevoConfirmar = async () => {
-          const {numeroRemision,numeroOV,fecha,pesoNeto}=lectorData;
-          const serie=(numeroRemision||"").split("-")[0].toUpperCase();
-          const numOvTrim=(numeroOV||"").trim();
-          // Si ya existe una OV con ese número, actualizarla con los datos de la remisión en lugar de duplicar.
-          const existe=numOvTrim&&ovs.find(o=>(o.num_ov||"").trim()===numOvTrim);
-          if(existe){
-            const patch={folio:numeroRemision||existe.folio,fecha_carga:fecha||existe.fecha_carga,toneladas:parseFloat(pesoNeto)||existe.toneladas,serie:serie||existe.serie};
-            const ok=await upd(existe.id,patch);
-            if(!ok) return;
-            cerrarLectorNuevo();
-            const precioActual=parseFloat(existe.precio_ton)||parseFloat(cliById(existe.clienteId)?.precio_ton)||0;
-            setForm({...existe,...patch,precio_ton:precioActual});
+            const id=`OV-${Date.now()}`;
+            const nuevaOV={...emptyOV,id,num_ov:numeroOV||"",folio:numeroRemision||"",fecha_carga:fecha||todayISO(),toneladas:parseFloat(pesoNeto)||0,serie};
+            const prevOVs=ovs;
+            setOVs(prev=>[nuevaOV,...prev]);
+            const ok=await runSave(()=>saveToDb("ovs",id,nuevaOV), ()=>setOVs(prevOVs));
+            if(!ok) return false;
+            setShowLectorNuevo(false);
+            setForm({...nuevaOV,precio_ton:""});
             setShowForm(true);
-            return;
-          }
-          const id=`OV-${Date.now()}`;
-          const nuevaOV={...emptyOV,id,num_ov:numeroOV||"",folio:numeroRemision||"",fecha_carga:fecha||todayISO(),toneladas:parseFloat(pesoNeto)||0,serie};
-          const prevOVs=ovs;
-          setOVs(prev=>[nuevaOV,...prev]);
-          const ok=await runSave(()=>saveToDb("ovs",id,nuevaOV), ()=>setOVs(prevOVs));
-          if(!ok) return;
-          cerrarLectorNuevo();
-          setForm({...nuevaOV,precio_ton:""});
-          setShowForm(true);
-        };
-
-        const tabBtn = (mode,label) => (
-          <button key={mode} onClick={()=>{setLectorMode(mode);setLectorStep("idle");setLectorError("");}} style={{padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer",border:"none",borderRadius:6,background:lectorMode===mode?"var(--accent)":"var(--bg-card-alt)",color:lectorMode===mode?"white":"var(--text-sec)"}}>{label}</button>
-        );
-
-        return (
-          <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-            <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"90vh",overflowY:"auto"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-                <div style={{fontWeight:800,fontSize:17}}>📄 Nueva OV desde Remisión</div>
-                <button onClick={cerrarLectorNuevo} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"var(--text-sec)"}}>✕</button>
-              </div>
-              <div style={{background:"var(--bg-card-alt)",borderRadius:8,padding:"8px 12px",fontSize:12,color:"var(--text-sec)",marginBottom:14}}>
-                La IA extraerá los datos. Podrás asignar el cliente y precio en el formulario siguiente.
-              </div>
-
-              <div style={{display:"flex",gap:6,marginBottom:14}}>
-                {tabBtn("single","📎 Archivo único")}
-                {tabBtn("clipboard","📋 Portapapeles")}
-                {tabBtn("dual","🔁 Frente + reverso")}
-              </div>
-
-              {(lectorStep==="idle"||lectorStep==="error")&&(
-                <>
-                  {lectorMode==="single"&&(
-                    <div style={{marginBottom:14}}>
-                      <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:4}}>Imagen JPG o PDF de la remisión</label>
-                      <input type="file" accept="image/*,.pdf" onChange={e=>setLectorFiles(f=>({...f,a:e.target.files[0]||null}))} style={{...inS,padding:"6px 8px"}}/>
-                      {lectorFiles.a&&<div style={{fontSize:11,color:"#0891b2",marginTop:4}}>✓ {lectorFiles.a.name}</div>}
-                    </div>
-                  )}
-                  {lectorMode==="dual"&&(
-                    <div style={{marginBottom:14}}>
-                      <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:4}}>Frente (portada de la remisión AG)</label>
-                      <input type="file" accept="image/*,.pdf" onChange={e=>setLectorFiles(f=>({...f,a:e.target.files[0]||null}))} style={{...inS,padding:"6px 8px"}}/>
-                      {lectorFiles.a&&<div style={{fontSize:11,color:"#0891b2",marginTop:4,marginBottom:8}}>✓ {lectorFiles.a.name}</div>}
-                      <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:4,marginTop:6}}>Reverso (ticket de báscula — peso neto)</label>
-                      <input type="file" accept="image/*,.pdf" onChange={e=>setLectorFiles(f=>({...f,b:e.target.files[0]||null}))} style={{...inS,padding:"6px 8px"}}/>
-                      {lectorFiles.b&&<div style={{fontSize:11,color:"#0891b2",marginTop:4}}>✓ {lectorFiles.b.name}</div>}
-                    </div>
-                  )}
-                  {lectorMode==="clipboard"&&(
-                    <div style={{marginBottom:14,background:"var(--bg-card-alt)",borderRadius:8,padding:"18px",textAlign:"center"}}>
-                      <div style={{fontSize:32,marginBottom:8}}>📋</div>
-                      <div style={{fontSize:13,color:"var(--text-sec)",marginBottom:4}}>Copia una imagen al portapapeles</div>
-                      <div style={{fontSize:11,color:"var(--text-sec)"}}>Ctrl+C sobre la imagen, o "Copiar imagen" en el menú contextual</div>
-                    </div>
-                  )}
-                  {lectorError&&<div style={{background:"#ef444422",color:"#dc2626",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:12,border:"1px solid #fecaca"}}>{lectorError}</div>}
-                  <button onClick={leerRemision} style={{width:"100%",background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:"pointer",fontSize:14}}>
-                    {lectorMode==="clipboard"?"📋 Leer imagen del portapapeles":"🔍 Analizar con IA"}
-                  </button>
-                </>
-              )}
-
-              {lectorStep==="loading"&&(
-                <div style={{textAlign:"center",padding:"32px 20px",color:"var(--text-tertiary)"}}>
-                  <div style={{fontSize:36,marginBottom:10}}>⏳</div>
-                  <div style={{fontSize:14,fontWeight:700,color:"var(--accent)"}}>Analizando remisión...</div>
-                  <div style={{fontSize:12,color:"var(--text-sec)",marginTop:4}}>Claude está leyendo los datos</div>
-                </div>
-              )}
-
-              {lectorStep==="confirm"&&lectorData&&(
-                <div>
-                  <div style={{fontWeight:700,fontSize:13,color:"var(--accent)",marginBottom:10}}>Datos extraídos — confirma para crear la OV:</div>
-                  <div style={{background:"var(--bg-card-alt)",borderRadius:8,padding:"14px",marginBottom:14,border:"1px solid var(--border)"}}>
-                    <div style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:"8px 12px",alignItems:"center",fontSize:13}}>
-                      <span style={{fontSize:11,color:"var(--text-sec)",fontWeight:700,textTransform:"uppercase"}}>No. Remisión</span>
-                      <span style={{fontWeight:700,color:"#0891b2",fontSize:14}}>{lectorData.numeroRemision||"—"}</span>
-                      <span style={{fontSize:11,color:"var(--text-sec)",fontWeight:700,textTransform:"uppercase"}}>No. OV</span>
-                      <span style={{fontWeight:600}}>{lectorData.numeroOV||"—"}</span>
-                      <span style={{fontSize:11,color:"var(--text-sec)",fontWeight:700,textTransform:"uppercase"}}>Fecha</span>
-                      <span style={{fontWeight:600}}>{lectorData.fecha||"—"}</span>
-                      <span style={{fontSize:11,color:"var(--text-sec)",fontWeight:700,textTransform:"uppercase"}}>Peso neto</span>
-                      <span style={{fontWeight:700,color:"#16a34a",fontSize:14}}>{lectorData.pesoNeto||"—"} ton</span>
-                      <span style={{fontSize:11,color:"var(--text-sec)",fontWeight:700,textTransform:"uppercase"}}>Planta</span>
-                      <span style={{fontWeight:600}}>{plantaDeSerie((lectorData.numeroRemision||"").split("-")[0])||"—"}</span>
-                    </div>
-                  </div>
-                  <div style={{fontSize:11,color:"var(--text-sec)",marginBottom:12}}>Se creará la OV. A continuación asignarás el cliente y precio.</div>
-                  <div style={{display:"flex",gap:10}}>
-                    <button onClick={()=>{setLectorStep("idle");setLectorData(null);}} style={{flex:1,background:"var(--bg-card-alt)",color:"var(--text-tertiary)",border:"none",borderRadius:8,padding:"10px",fontWeight:600,cursor:"pointer",fontSize:14}}>← Volver</button>
-                    <button onClick={lectorNuevoConfirmar} style={{flex:2,background:"#16a34a",color:"white",border:"none",borderRadius:8,padding:"10px",fontWeight:700,cursor:"pointer",fontSize:14}}>✓ Crear OV y completar datos</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })()}
+            return true;
+          }}
+          onClose={()=>{setShowLectorNuevo(false);}}
+        />
+      )}
 
       {/* LECTOR CHART CORPORATIVO */}
       {showChartLector&&(()=>{
