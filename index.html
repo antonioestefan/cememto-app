@@ -1092,6 +1092,7 @@ function App() {
   const [gdOvsCliente,setGdOvsCliente]           = useState([]);
   const [gdFiles,setGdFiles]                     = useState([]);
   const [gdFiltro,setGdFiltro]                   = useState("pendientes");
+  const [gdCleaningDups,setGdCleaningDups]       = useState(false);
   const [gdSelected,setGdSelected]               = useState(new Set());
   const [gdResults,setGdResults]                 = useState([]);
   const [gdFechaEntrega,setGdFechaEntrega]       = useState({});
@@ -1106,7 +1107,9 @@ function App() {
   const [dialog,setDialog]                       = useState(null); // {kind:'confirm'|'prompt'|'alert', ...}
   const [busquedaCliente,setBusquedaCliente]     = useState("");
   const [busquedaFactura,setBusquedaFactura]     = useState("");
-  const gdGroups = useMemo(()=>gdGroupFiles(gdFiles),[gdFiles]);
+  const gdGroups   = useMemo(()=>gdGroupFiles(gdFiles),[gdFiles]);
+  // Archivos con sufijo de copia de Windows: "nombre (1).jpg", "nombre (2).pdf", etc.
+  const gdDupFiles = useMemo(()=>gdFiles.filter(f=>/\s*\(\d+\)\.[^/.]+$/.test(f.name)),[gdFiles]);
 
   // Auth: escuchar el estado de sesión de Firebase Auth (se restaura sola tras recargar).
   useEffect(()=>{
@@ -1717,6 +1720,31 @@ function App() {
     const updated=await r.json();
     return {renamed:true,file:{...file,name:updated.name||newName}};
   };
+  const gdDeleteFile=async(fileId,token)=>{
+    const sp=new URLSearchParams();
+    if(window.__GOOGLE_API_KEY) sp.set("key",window.__GOOGLE_API_KEY);
+    const r=await fetch(`${GD_API}/files/${fileId}${sp.toString()?`?${sp.toString()}`:""}`,{method:"DELETE",headers:{Authorization:`Bearer ${token}`}});
+    if(!r.ok&&r.status!==204) throw new Error(`Error eliminando: ${r.status}`);
+  };
+  const gdLimpiarDuplicados=async()=>{
+    if(!gdDupFiles.length) return;
+    const n=gdDupFiles.length;
+    const ok=await askConfirm(`Se eliminarán ${n} archivo${n!==1?"s":""} duplicado${n!==1?"s":""} de Google Drive. Esta acción no se puede deshacer.`,{danger:true});
+    if(!ok) return;
+    setGdCleaningDups(true);
+    let eliminados=0, errores=0;
+    try{
+      const token=gdToken||await gdGetToken(false);
+      for(const f of gdDupFiles){
+        try{await gdDeleteFile(f.id,token);eliminados++;}
+        catch(e){errores++;console.warn("[GDrive] no se pudo eliminar:",f.name,e);}
+      }
+      const nuevos=await gdListRemisionFiles(gdSelectedFolder,token);
+      setGdFiles(nuevos);
+    }catch(e){await notify("Error: "+e.message);}
+    setGdCleaningDups(false);
+    await notify(`✅ ${eliminados} duplicado${eliminados!==1?"s":""} eliminado${eliminados!==1?"s":""}${errores?` · ${errores} con error`:""}.`);
+  };
   const gdProcess=async()=>{
     const toProcess=gdGroups.filter(g=>gdSelected.has(g.key)&&!gdProcesadoInfo(g));
     if(!toProcess.length) return;
@@ -1840,7 +1868,7 @@ function App() {
     setShowGDrive(false); setGdStep("auth"); setGdToken(null); setGdFolders([]); setGdPendingCounts({});
     setGdSelectedFolder(null); setGdOvsCliente([]); setGdFiles([]); setGdSelected(new Set()); setGdFiltro("pendientes");
     setGdResults([]); setGdFechaEntrega({}); setGdConfirmandoTodos(false); setGdLoading(false); setGdError(""); setGdProgress({cur:0,tot:0});
-    setGdEditImages(null);
+    setGdEditImages(null); setGdCleaningDups(false);
   };
 
   const toggleDiaHabil = async (iso)=>{
@@ -4836,6 +4864,20 @@ function App() {
                   <button onClick={()=>setGdFiltro("pendientes")} style={{flex:1,background:gdFiltro==="pendientes"?"var(--accent)":"var(--bg-card-alt)",color:gdFiltro==="pendientes"?"white":"var(--text-sec)",border:`1px solid ${gdFiltro==="pendientes"?"var(--accent)":"var(--border)"}`,borderRadius:6,padding:"6px 10px",fontSize:12,fontWeight:700,cursor:"pointer"}}>🆕 Solo nuevas</button>
                   <button onClick={()=>setGdFiltro("todas")} style={{flex:1,background:gdFiltro==="todas"?"var(--accent)":"var(--bg-card-alt)",color:gdFiltro==="todas"?"white":"var(--text-sec)",border:`1px solid ${gdFiltro==="todas"?"var(--accent)":"var(--border)"}`,borderRadius:6,padding:"6px 10px",fontSize:12,fontWeight:700,cursor:"pointer"}}>Todas</button>
                 </div>
+                {gdDupFiles.length>0&&(
+                  <div style={{background:"#ef444415",border:"1px solid #fecaca",borderRadius:8,padding:"10px 12px",marginBottom:12}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:12,fontWeight:700,color:"#dc2626"}}>⚠ {gdDupFiles.length} archivo{gdDupFiles.length!==1?"s":""} duplicado{gdDupFiles.length!==1?"s":""} detectado{gdDupFiles.length!==1?"s":""}</div>
+                        <div style={{fontSize:10,color:"var(--text-sec)",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{gdDupFiles.map(f=>f.name).join(", ")}</div>
+                      </div>
+                      <button onClick={gdLimpiarDuplicados} disabled={gdCleaningDups}
+                        style={{background:"#dc2626",color:"white",border:"none",borderRadius:6,padding:"6px 11px",fontWeight:700,cursor:gdCleaningDups?"default":"pointer",fontSize:12,flexShrink:0,opacity:gdCleaningDups?0.7:1}}>
+                        {gdCleaningDups?"⏳ Limpiando...":"🗑 Limpiar duplicados"}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {gdGroups.length===0&&<div style={{color:"var(--text-tertiary)",fontSize:13,textAlign:"center",padding:"24px 0"}}>No hay archivos JPG/PNG/PDF en la carpeta Remisiones</div>}
                 {gdGroups.length>0&&visibles.length===0&&(
                   <div style={{color:"var(--accent)",fontSize:13,textAlign:"center",padding:"24px 0"}}>✅ Todo al día — no hay remisiones nuevas para este cliente</div>
