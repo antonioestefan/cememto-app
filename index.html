@@ -191,6 +191,89 @@ function ConfirmBadge({c}) { const s=CONFIRM[c]||CONFIRM.por_confirmar; return <
 function PlantaBadge({serie}) { const p=plantaDeSerie(serie); return <span style={{background:plantaBg[p]||"var(--bg-card-alt)",color:plantaColor[p]||"var(--text-tertiary)",border:`1px solid ${plantaColor[p]||"var(--text-tertiary)"}30`,borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>🏭 {p}</span>; }
 function EmptyState({icon,msg,btn,onClick}) { return <div style={{textAlign:"center",padding:"48px 20px",color:"var(--text-sec)"}}><div style={{fontSize:40,marginBottom:12}}>{icon}</div><div style={{fontSize:14,marginBottom:20}}>{msg}</div>{btn&&<button onClick={onClick} style={{background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"10px 20px",fontWeight:700,cursor:"pointer",fontSize:14}}>{btn}</button>}</div>; }
 
+// Visor de imagen con zoom, pan y pinch-to-zoom. Usado en la vista split de edición de OV desde GDrive.
+function ImageViewer({images}){
+  const [scale,setScale]=useState(1);
+  const [tx,setTx]=useState(0);
+  const [ty,setTy]=useState(0);
+  const [idx,setIdx]=useState(0);
+  const dragging=useRef(false);
+  const origin=useRef({x:0,y:0,tx:0,ty:0});
+  const pinch=useRef(null);
+  const cRef=useRef(null);
+
+  const img=images[idx]||images[0];
+  const switchImg=(i)=>{setIdx(i);setScale(1);setTx(0);setTy(0);};
+  const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+  const clampPan=(ntx,nty,s)=>{
+    const el=cRef.current;
+    const mx=el?Math.max(0,(el.offsetWidth*(s-1))/2):0;
+    const my=el?Math.max(0,(el.offsetHeight*(s-1))/2):0;
+    return{tx:clamp(ntx,-mx,mx),ty:clamp(nty,-my,my)};
+  };
+  const doScale=(s)=>setScale(clamp(s,0.5,5));
+  const zoomIn=()=>doScale(scale*1.5);
+  const zoomOut=()=>{doScale(scale/1.5);if(scale<=1.5){setTx(0);setTy(0);}};
+  const reset=()=>{setScale(1);setTx(0);setTy(0);};
+
+  const onMD=(e)=>{if(scale<=1)return;dragging.current=true;origin.current={x:e.clientX,y:e.clientY,tx,ty};e.preventDefault();};
+  const onMM=(e)=>{
+    if(!dragging.current)return;
+    const{tx:cx,ty:cy}=clampPan(origin.current.tx+(e.clientX-origin.current.x),origin.current.ty+(e.clientY-origin.current.y),scale);
+    setTx(cx);setTy(cy);
+  };
+  const onMU=()=>{dragging.current=false;};
+  const onDbl=()=>{if(scale>=1.9)reset();else setScale(2);};
+
+  const onTS=(e)=>{
+    if(e.touches.length===1)origin.current={x:e.touches[0].clientX,y:e.touches[0].clientY,tx,ty};
+    else if(e.touches.length===2){const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);pinch.current={d,scale};}
+  };
+  const onTM=(e)=>{
+    e.preventDefault();
+    if(e.touches.length===1&&scale>1){
+      const{tx:cx,ty:cy}=clampPan(origin.current.tx+(e.touches[0].clientX-origin.current.x),origin.current.ty+(e.touches[0].clientY-origin.current.y),scale);
+      setTx(cx);setTy(cy);
+    }else if(e.touches.length===2&&pinch.current){
+      const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+      doScale(pinch.current.scale*(d/pinch.current.d));
+    }
+  };
+  const onTE=()=>{pinch.current=null;};
+
+  const btnS={background:"#2a2a2a",color:"#e0e0e0",border:"1px solid #444",borderRadius:6,padding:"5px 11px",cursor:"pointer",fontSize:13,fontWeight:700};
+  return(
+    <div style={{display:"flex",flexDirection:"column",height:"100%",background:"#0d0d0d"}}>
+      {images.length>1&&(
+        <div style={{display:"flex",background:"#111",borderBottom:"1px solid #2a2a2a"}}>
+          {images.map((_,i)=>(
+            <button key={i} onClick={()=>switchImg(i)} style={{flex:1,padding:"8px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",background:idx===i?"#0891b2":"transparent",color:idx===i?"white":"#888",borderBottom:idx===i?"2px solid #0891b2":"2px solid transparent"}}>
+              {i===0?"📄 Frente":"📄 Reverso"}
+            </button>
+          ))}
+        </div>
+      )}
+      <div style={{display:"flex",gap:6,padding:"8px 10px",alignItems:"center",background:"#111",borderBottom:"1px solid #2a2a2a"}}>
+        <button onClick={zoomIn} title="Acercar" style={btnS}>🔍+</button>
+        <button onClick={zoomOut} title="Alejar" style={btnS}>🔍−</button>
+        <button onClick={reset} title="Restablecer" style={btnS}>↺</button>
+        <span style={{fontSize:11,color:"#666",marginLeft:6}}>{Math.round(scale*100)}%</span>
+        {scale>1&&<span style={{fontSize:10,color:"#555",marginLeft:4}}>· arrastra para mover</span>}
+      </div>
+      <div ref={cRef}
+        style={{flex:1,overflow:"hidden",cursor:scale>1?"grab":"zoom-in",userSelect:"none",display:"flex",alignItems:"center",justifyContent:"center"}}
+        onMouseDown={onMD} onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU}
+        onDoubleClick={onDbl} onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE}
+      >
+        {img&&(img.isPdf
+          ?<embed src={img.url} type="application/pdf" style={{width:"100%",height:"100%"}}/>
+          :<img src={img.url} draggable={false} style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain",pointerEvents:"none",display:"block",transform:`translate(${tx}px,${ty}px) scale(${scale})`,transition:"transform 0.15s ease",transformOrigin:"center center"}}/>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Lector de remisiones con IA. Reutilizado por el lector dentro de una OV y por "Nueva OV desde remisión".
 // El padre decide qué hacer con los datos vía onConfirm(data)->Promise<bool>. Mantiene su propio estado
 // (se remonta limpio cada vez que se muestra).
@@ -989,6 +1072,7 @@ function App() {
   const [showOVMenu,setShowOVMenu]               = useState(false);
   const [showLectorNuevo,setShowLectorNuevo]     = useState(false);
   const [showChartLector,setShowChartLector]     = useState(false);
+  const [gdEditImages,setGdEditImages]           = useState(null); // [{url,isPdf}]|null — activa vista split de GDrive
   const [chartStep,setChartStep]                 = useState("idle"); // idle|loading|confirm|creating|success|error
   const [chartPlanta,setChartPlanta]             = useState(""); // "" | "PU" | "AG"
   const [chartFile,setChartFile]                 = useState(null);
@@ -1378,7 +1462,7 @@ function App() {
     setOVs(prev=>prev.find(p=>p.id===id)?prev.map(p=>p.id===id?n:p):[n,...prev]);
     const ok=await runSave(()=>saveToDb("ovs",id,n), ()=>setOVs(prevOVs));
     if(!ok) return;
-    setShowForm(false); setForm(emptyOV); setSelected(null);
+    setShowForm(false); setForm(emptyOV); setSelected(null); setGdEditImages(null);
   };
   const deleteOV = async (id)=>{
     if(!(await askConfirm("¿Eliminar esta OV?",{danger:true}))) return;
@@ -1742,6 +1826,7 @@ function App() {
       precio_ton:precioFinal,
       status:"entregado",
     });
+    setGdEditImages(res.previewUrls||[]);
     setShowForm(true);
   };
   const gdConfirmarTodos=async()=>{
@@ -1755,6 +1840,7 @@ function App() {
     setShowGDrive(false); setGdStep("auth"); setGdToken(null); setGdFolders([]); setGdPendingCounts({});
     setGdSelectedFolder(null); setGdOvsCliente([]); setGdFiles([]); setGdSelected(new Set()); setGdFiltro("pendientes");
     setGdResults([]); setGdFechaEntrega({}); setGdConfirmandoTodos(false); setGdLoading(false); setGdError(""); setGdProgress({cur:0,tot:0});
+    setGdEditImages(null);
   };
 
   const toggleDiaHabil = async (iso)=>{
@@ -3819,7 +3905,7 @@ function App() {
       })()}
 
       {/* OV FORM */}
-      {showForm&&(
+      {showForm&&!gdEditImages&&(
         <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:350,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
           <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"92vh",overflowY:"auto"}}>
             <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>{form.id?"Editar OV":"Nueva Orden de Venta"}</div>
@@ -3880,6 +3966,92 @@ function App() {
               <button onClick={()=>setShowForm(false)} style={{flex:1,background:"var(--bg-card-alt)",color:"var(--text-tertiary)",border:"none",borderRadius:8,padding:"11px",fontWeight:600,cursor:"pointer",fontSize:14}}>Cancelar</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* OV FORM — VISTA SPLIT GDRIVE (imagen + formulario en pantalla completa) */}
+      {showForm&&gdEditImages&&(
+        <div style={{position:"fixed",inset:0,zIndex:400,background:"var(--bg-card)",display:"flex",flexDirection:"column"}}>
+          {/* Barra superior siempre visible */}
+          <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:"1px solid var(--border)",flexShrink:0}}>
+            <button onClick={()=>{setShowForm(false);setGdEditImages(null);}}
+              style={{background:"var(--bg-card-alt)",border:"1px solid var(--border)",borderRadius:8,padding:"7px 12px",fontWeight:700,cursor:"pointer",fontSize:13,color:"var(--text-main)"}}>
+              ← Cancelar
+            </button>
+            <div style={{flex:1,fontWeight:800,fontSize:15,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+              ✏️ Editar OV {form.num_ov?`— ${form.num_ov}`:""}
+            </div>
+            <button onClick={saveOV} disabled={!form.num_ov}
+              style={{background:form.num_ov?"var(--accent)":"var(--border)",color:"white",border:"none",borderRadius:8,padding:"7px 18px",fontWeight:700,cursor:form.num_ov?"pointer":"default",fontSize:14,flexShrink:0}}>
+              Guardar
+            </button>
+          </div>
+          {/* Cuerpo responsivo */}
+          {(()=>{
+            const mobile=window.innerWidth<640;
+            return(
+              <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:mobile?"column":"row",minHeight:0}}>
+                {/* Panel izquierdo: visor de imagen */}
+                {gdEditImages.length>0&&(
+                  <div style={{flexShrink:0,width:mobile?"100%":"40%",height:mobile?280:"100%",borderRight:mobile?"none":"1px solid var(--border)",borderBottom:mobile?"1px solid var(--border)":"none"}}>
+                    <ImageViewer images={gdEditImages}/>
+                  </div>
+                )}
+                {/* Panel derecho: formulario */}
+                <div style={{flex:1,overflowY:"auto",padding:"16px 18px"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                    <div><label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>No. de OV</label><input value={form.num_ov} onChange={e=>setForm(f=>({...f,num_ov:e.target.value}))} style={inS} placeholder="OV-XXXXX"/></div>
+                    <div><label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Fecha de carga</label><input type="date" value={form.fecha_carga} onChange={e=>setForm(f=>({...f,fecha_carga:e.target.value}))} style={inS}/></div>
+                  </div>
+                  <div style={{marginTop:10}}>
+                    <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Cliente (opcional)</label>
+                    <select value={form.clienteId} onChange={e=>{const cliId=e.target.value;const nc=clientes.find(c=>c.id===cliId);setForm(f=>({...f,clienteId:cliId,precio_ton:(!f.id||!parseFloat(f.precio_ton))?String(parseFloat(nc?.precio_ton)||0):f.precio_ton}));}} style={inS}>
+                      <option value="">— Sin asignar —</option>
+                      {clientes.map(c=><option key={c.id} value={c.id}>{c.nombre} ({fmt(c.precio_ton)}/ton)</option>)}
+                    </select>
+                  </div>
+                  <div style={{marginTop:10}}>
+                    <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Tipo de cemento</label>
+                    <select value={form.tipo||"granel"} onChange={e=>setForm(f=>({...f,tipo:e.target.value}))} style={inS}>
+                      <option value="granel">Granel</option>
+                      <option value="saco">Saco</option>
+                    </select>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:10}}>
+                    <div>
+                      <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Serie / Planta</label>
+                      <select value={form.serie} onChange={e=>{
+                        const serie=e.target.value;
+                        setForm(f=>{const bare=(f.folio||"").replace(FOLIO_PREFIJO_RE,"");return{...f,serie,folio:bare?limpiarFolio(serie?`${serie}-${bare}`:bare):f.folio};});
+                      }} style={{...inS,background:"var(--bg-card)"}}>
+                        <option value="">— Selecciona —</option>
+                        {Object.entries(PLANTAS).map(([k,v])=><option key={k} value={k}>{k} — {v}</option>)}
+                      </select>
+                      {form.serie&&<div style={{fontSize:11,color:plantaColor[PLANTAS[form.serie]]||"var(--text-tertiary)",fontWeight:600,marginTop:5}}>🏭 {PLANTAS[form.serie]||form.serie}</div>}
+                    </div>
+                    <div><label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Folio remisión</label><input value={(form.folio||"").replace(FOLIO_PREFIJO_RE,"")} onChange={e=>{
+                      const raw=e.target.value,rawTrim=raw.trim();
+                      const folio=!rawTrim?"":FOLIO_PREFIJO_RE.test(rawTrim)?limpiarFolio(raw):limpiarFolio(form.serie?`${form.serie}-${raw}`:raw);
+                      setForm(f=>({...f,folio}));
+                    }} style={inS} placeholder="ej. 479646"/></div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:10}}>
+                    <div><label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Ton pesadas</label><input type="number" step="0.01" value={form.toneladas} onChange={e=>setForm(f=>({...f,toneladas:e.target.value}))} style={inS}/></div>
+                    <div><label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Precio / ton ($)</label><input type="number" step="1" value={form.precio_ton} onChange={e=>setForm(f=>({...f,precio_ton:e.target.value}))} style={inS} placeholder="0"/></div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:10}}>
+                    <div><label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Fecha de entrega</label><input type="date" value={form.fecha_entrega} onChange={e=>setForm(f=>({...f,fecha_entrega:e.target.value}))} style={inS}/></div>
+                    <div><label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Estatus</label>
+                      <select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))} style={inS}>
+                        {STATUSES.map(s=><option key={s.key} value={s.key}>{s.label}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{marginTop:10,marginBottom:8}}><label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Notas</label><input value={form.notas} onChange={e=>setForm(f=>({...f,notas:e.target.value}))} style={inS}/></div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
