@@ -1645,6 +1645,7 @@ function App() {
         const token=gdToken||await gdGetToken(false);
         const blocks=[await gdDownloadBlock(group.page1,token)];
         if(group.page2) blocks.push(await gdDownloadBlock(group.page2,token));
+        const previewUrls=blocks.map(b=>({url:`data:${b.source.media_type};base64,${b.source.data}`,isPdf:b.type==="document"}));
         const resp=await fetch("/.netlify/functions/claude-proxy",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1024,messages:[{role:"user",content:[...blocks,{type:"text",text:PROMPT_REMISION}]}]})});
         if(!resp.ok){const err=await resp.json();throw new Error(err.error?.message||err.error||`Error ${resp.status}`);}
         const apiData=await resp.json();
@@ -1672,8 +1673,8 @@ function App() {
             renameInfo={ok:false,error:e.message};
           }
         }
-        results.push({group:finalGroup,data,ok:true,renameInfo});
-      }catch(e){results.push({group,data:null,ok:false,error:e.message});}
+        results.push({group:finalGroup,data,ok:true,renameInfo,previewUrls});
+      }catch(e){results.push({group,data:null,ok:false,error:e.message,previewUrls:[]});}
     }
     setGdResults(results);
     setGdFechaEntrega(prev=>{
@@ -1725,14 +1726,22 @@ function App() {
   };
   const gdAbrirEdicion=(res)=>{
     const {folio,numeroOV,serie,fechaEntrega}=gdDatosOV(res);
+    const clienteId=gdSelectedFolder?.clienteId||"";
+    const precio_ton=parseFloat(clientes.find(c=>c.id===clienteId)?.precio_ton)||0;
     const existente=numeroOV&&ovs.find(o=>(o.num_ov||"").trim()===numeroOV);
-    if(existente){
-      const precioActual=parseFloat(existente.precio_ton)||parseFloat(cliById(existente.clienteId)?.precio_ton)||0;
-      setForm({...existente,precio_ton:precioActual});
-    } else {
-      const precio_ton=parseFloat(clientes.find(c=>c.id===gdSelectedFolder?.clienteId)?.precio_ton)||0;
-      setForm({...emptyOV,num_ov:numeroOV,folio,fecha_carga:res.data.fecha||todayISO(),fecha_entrega:fechaEntrega,toneladas:parseFloat(res.data.pesoNeto)||0,serie,clienteId:gdSelectedFolder?.clienteId||"",precio_ton,status:"entregado"});
-    }
+    const precioFinal=existente?(parseFloat(existente.precio_ton)||parseFloat(cliById(existente.clienteId)?.precio_ton)||precio_ton):precio_ton;
+    setForm({
+      ...(existente||emptyOV),
+      num_ov:numeroOV,
+      folio,
+      toneladas:parseFloat(res.data.pesoNeto)||0,
+      fecha_carga:res.data.fecha||todayISO(),
+      fecha_entrega:fechaEntrega,
+      serie,
+      clienteId:clienteId||(existente?.clienteId||""),
+      precio_ton:precioFinal,
+      status:"entregado",
+    });
     setShowForm(true);
   };
   const gdConfirmarTodos=async()=>{
@@ -4709,6 +4718,19 @@ function App() {
                     <div style={{fontWeight:600,fontSize:11,color:"var(--text-tertiary)",marginBottom:8,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>📄 {res.group.folioBase} {res.group.page2?"(2 páginas)":""}</div>
                     {res.ok&&res.data?(
                       <>
+                        {res.previewUrls?.length>0&&(
+                          <div style={{display:"flex",gap:8,marginBottom:10}}>
+                            {res.previewUrls.map((p,i)=>(
+                              <div key={i} style={{flex:1,minWidth:0,textAlign:"center"}}>
+                                {p.isPdf
+                                  ?<embed src={p.url} type="application/pdf" style={{width:"100%",height:190,borderRadius:8,border:"1px solid var(--border)"}}/>
+                                  :<img src={p.url} alt={`Remisión${res.previewUrls.length>1?` ${i===0?"frente":"reverso"}`:""}`} style={{width:"100%",maxHeight:190,objectFit:"contain",borderRadius:8,border:"1px solid var(--border)",background:"#fff"}}/>
+                                }
+                                {res.previewUrls.length>1&&<div style={{fontSize:10,color:"var(--text-sec)",marginTop:3,fontWeight:700}}>{i===0?"Frente":"Reverso"}</div>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
                           <div><div style={{fontSize:10,color:"var(--text-tertiary)"}}>No. OV</div><div style={{fontWeight:700,color:"#7c3aed",fontSize:13}}>{res.data.numeroOV||"—"}</div></div>
                           <div><div style={{fontSize:10,color:"var(--text-tertiary)"}}>Remisión</div><div style={{fontWeight:700,color:"#0891b2",fontSize:13}}>{res.group.folioBase||"—"}</div></div>
