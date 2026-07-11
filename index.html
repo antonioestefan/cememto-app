@@ -4532,7 +4532,7 @@ function App() {
             const resp=await fetch('/.netlify/functions/claude-proxy',{
               method:'POST',
               headers:{'content-type':'application/json'},
-              body:JSON.stringify({model:'claude-opus-4-8',max_tokens:4096,messages:[{role:'user',content:[block,{type:'text',text:PROMPT_CHART}]}]})
+              body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:4096,messages:[{role:'user',content:[block,{type:'text',text:PROMPT_CHART}]}]})
             });
             if(!resp.ok){const err=await resp.json();throw new Error(err.error?.message||err.error||`Error ${resp.status}`);}
             const data=await resp.json();
