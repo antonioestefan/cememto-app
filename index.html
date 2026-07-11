@@ -1684,6 +1684,15 @@ function App() {
     setGdLoading(false);
   };
   const gdToggle=(key)=>setGdSelected(prev=>{const s=new Set(prev);s.has(key)?s.delete(key):s.add(key);return s;});
+  const gdReprocesar=async(group)=>{
+    const ok=await askConfirm("¿Marcar esta remisión como pendiente para reprocesar?");
+    if(!ok) return;
+    const regId=(group.page1&&procesados[group.page1.id])?group.page1.id
+               :(group.page2&&procesados[group.page2.id])?group.page2.id
+               :null;
+    if(!regId) return;
+    await runSave(()=>deleteFromDb("remisiones_gdrive",regId));
+  };
   const gdProcesadoInfo=(group,opts)=>{
     const {candidatas:candidatasOverride,silent}=opts||{};
     const reg=(group.page1&&procesados[group.page1.id])||(group.page2&&procesados[group.page2.id]);
@@ -4918,6 +4927,12 @@ function App() {
                         {done?<div style={{fontSize:10,color:"var(--accent)",marginTop:1}}>OV: {info.ovId||"—"} · {info.fecha||""}</div>
                              :<div style={{fontSize:10,color:"var(--text-muted)",marginTop:1}}>{size?Math.round(size/1024)+"KB":"—"}</div>}
                       </div>
+                      {done&&(
+                        <button onClick={e=>{e.stopPropagation();gdReprocesar(g);}}
+                          style={{background:"none",border:"1px solid var(--text-muted)",color:"var(--text-sec)",fontSize:10,padding:"3px 8px",borderRadius:5,cursor:"pointer",flexShrink:0,whiteSpace:"nowrap"}}>
+                          ↩ Reprocesar
+                        </button>
+                      )}
                     </div>
                   );
                 })}
