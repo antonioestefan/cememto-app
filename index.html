@@ -1815,6 +1815,15 @@ function App() {
     const regFile=res.group.page1||res.group.page2;
     const clienteId=gdSelectedFolder?.clienteId||"";
     const precio_ton=parseFloat(clientes.find(c=>c.id===clienteId)?.precio_ton)||0;
+    if(folio&&clienteId){
+      const conflictos=ovs.filter(o=>limpiarFolio(o.folio)===folio&&o.clienteId&&o.clienteId!==clienteId);
+      if(conflictos.length>0){
+        const otroNombre=cliById(conflictos[0].clienteId)?.nombre||conflictos[0].clienteId;
+        const esteNombre=cliById(clienteId)?.nombre||"el cliente de esta carpeta";
+        const ok=await askConfirm(`⚠️ La remisión ${folio} ya está registrada para ${otroNombre}. ¿Estás seguro de que pertenece a ${esteNombre}?`,{danger:true});
+        if(!ok) return;
+      }
+    }
     const existente=numeroOV&&ovs.find(o=>(o.num_ov||"").trim()===numeroOV);
     if(existente){
       const patch={folio,toneladas:parseFloat(res.data.pesoNeto)||0,fecha_carga:res.data.fecha||todayISO(),fecha_entrega:fechaEntrega,status:"entregado"};
