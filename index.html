@@ -1108,8 +1108,20 @@ function App() {
   const [busquedaCliente,setBusquedaCliente]     = useState("");
   const [busquedaFactura,setBusquedaFactura]     = useState("");
   const gdGroups   = useMemo(()=>gdGroupFiles(gdFiles),[gdFiles]);
-  // Archivos con sufijo de copia de Windows: "nombre (1).jpg", "nombre (2).pdf", etc.
-  const gdDupFiles = useMemo(()=>gdFiles.filter(f=>/\s*\(\d+\)\.[^/.]+$/.test(f.name)),[gdFiles]);
+  // Duplicados: mismo nombre exacto (Drive duplica el ID) o sufijo Windows "(1)", "(2)", etc.
+  // Para mismo nombre: conservar el más antiguo (createdTime), marcar los más nuevos para borrar.
+  const gdDupFiles = useMemo(()=>{
+    const byName={};
+    gdFiles.forEach(f=>{const n=f.name||"";if(!byName[n])byName[n]=[];byName[n].push(f);});
+    const porNombre=[];
+    Object.values(byName).forEach(grupo=>{
+      if(grupo.length<2) return;
+      const sorted=[...grupo].sort((a,b)=>new Date(a.createdTime||a.modifiedTime||0)-new Date(b.createdTime||b.modifiedTime||0));
+      porNombre.push(...sorted.slice(1)); // conservar el más antiguo, eliminar el resto
+    });
+    const porSufijo=gdFiles.filter(f=>/\s*\(\d+\)\.[^/.]+$/.test(f.name)&&!porNombre.find(d=>d.id===f.id));
+    return [...porNombre,...porSufijo];
+  },[gdFiles]);
 
   // Auth: escuchar el estado de sesión de Firebase Auth (se restaura sola tras recargar).
   useEffect(()=>{
@@ -1594,7 +1606,7 @@ function App() {
     const remSub=(sub.files||[]).find(f=>(f.name||"").toLowerCase()==="remisiones");
     const targetId=remSub?remSub.id:folder.id;
     const mimeQ="(mimeType='application/pdf' or mimeType='image/jpeg' or mimeType='image/png')";
-    const fd=await gdApi("/files",{q:`'${targetId}' in parents and trashed=false and ${mimeQ}`,fields:"files(id,name,size,mimeType,modifiedTime)",pageSize:"200",orderBy:"modifiedTime desc"},token);
+    const fd=await gdApi("/files",{q:`'${targetId}' in parents and trashed=false and ${mimeQ}`,fields:"files(id,name,size,mimeType,modifiedTime,createdTime)",pageSize:"200",orderBy:"modifiedTime desc"},token);
     return fd.files||[];
   };
   const gdClienteCandidatas=(folder)=>{
@@ -4877,7 +4889,7 @@ function App() {
                   <div style={{background:"#ef444415",border:"1px solid #fecaca",borderRadius:8,padding:"10px 12px",marginBottom:12}}>
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:12,fontWeight:700,color:"#dc2626"}}>⚠ {gdDupFiles.length} archivo{gdDupFiles.length!==1?"s":""} duplicado{gdDupFiles.length!==1?"s":""} detectado{gdDupFiles.length!==1?"s":""}</div>
+                        <div style={{fontSize:12,fontWeight:700,color:"#dc2626"}}>⚠ {gdDupFiles.length} archivo{gdDupFiles.length!==1?"s":""} duplicado{gdDupFiles.length!==1?"s":""} detectado{gdDupFiles.length!==1?"s":""} (mismo nombre, diferente versión)</div>
                         <div style={{fontSize:10,color:"var(--text-sec)",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{gdDupFiles.map(f=>f.name).join(", ")}</div>
                       </div>
                       <button onClick={gdLimpiarDuplicados} disabled={gdCleaningDups}
