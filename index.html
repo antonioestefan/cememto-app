@@ -773,7 +773,10 @@ function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV
                   <tbody>
                     {ovsEntMes.map((p,i)=>(
                       <tr key={p.id} style={{borderTop:"1px solid var(--border-soft)",background:i%2?"var(--bg-zebra)":"var(--bg-card)"}}>
-                        <td style={{padding:"7px 8px",fontWeight:700,color:"#0891b2"}}>{p.folio||p.num_ov||"—"}</td>
+                        <td style={{padding:"7px 8px",fontWeight:700,color:"#0891b2"}}>
+                          {p.folio||p.num_ov||"—"}
+                          {!p.folio&&<span style={{marginLeft:5,fontSize:9,background:"#fef3c7",color:"#d97706",borderRadius:4,padding:"1px 5px",fontWeight:700,whiteSpace:"nowrap"}}>⚠️ Sin remisión</span>}
+                        </td>
                         <td style={{padding:"7px 8px",textAlign:"center",color:"var(--text-sec)"}}>{(p.fecha_carga||"").slice(5).replace("-","/")}</td>
                         <td style={{padding:"7px 8px",textAlign:"center",color:"var(--text-sec)"}}>{p.fecha_entrega?(p.fecha_entrega.slice(5).replace("-","/")):"—"}</td>
                         <td style={{padding:"7px 8px",textAlign:"right",fontWeight:600}}>{fmtT(p.toneladas)}</td>
@@ -2168,10 +2171,12 @@ function App() {
     } else {
       remisiones.forEach((p,i)=>{
         const ton=parseFloat(p.toneladas)||0, precio=parseFloat(p.precio_ton)||(parseFloat(cuenta.precio_ton)||0), monto=ton*precio;
-        r=ws.addRow([serieFolio(p.serie,p.folio,"s/f"),p.fecha_carga||"—",p.fecha_entrega||"—",ton,precio,monto]);
-        const bg=i%2===1?ALTGRAY:"FFFFFF";
+        const sinR=!p.folio;
+        r=ws.addRow([sinR?"⚠ Sin remisión":serieFolio(p.serie,p.folio,"s/f"),p.fecha_carga||"—",p.fecha_entrega||"—",ton,precio,monto]);
+        const bg=sinR?"FFF3CD":i%2===1?ALTGRAY:"FFFFFF";
         for(let c=1;c<=N;c++){
           r.getCell(c).fill=fill(bg);
+          if(sinR&&c===1) r.getCell(1).font={bold:true,color:{argb:"FFD97706"},size:10};
           if(c===4){r.getCell(c).numFmt="0.00"; r.getCell(c).alignment={horizontal:"right"};}
           if(c===5||c===6){r.getCell(c).numFmt='"$"#,##0'; r.getCell(c).alignment={horizontal:"right"};}
         }
@@ -2325,7 +2330,7 @@ function App() {
       t+=`*${c.nombre}*\nEntregado: ${fmtT(tonPer)} ton (${fmt(valPer)})\n`;
       if(clienteId){
         entsFilt.sort((a,b)=>(a.fecha_entrega||"").localeCompare(b.fecha_entrega||""))
-          .forEach(p=>{ t+=`  • ${serieFolio(p.serie,p.folio,"s/f")} | ${p.fecha_entrega||"—"} | ${fmtT(p.toneladas)} ton | ${fmt(valorOV(p))}\n`; });
+          .forEach(p=>{ t+=`  • ${serieFolio(p.serie,p.folio,"s/f")}${!p.folio?" ⚠️ Sin remisión":""} | ${p.fecha_entrega||"—"} | ${fmtT(p.toneladas)} ton | ${fmt(valorOV(p))}\n`; });
       }
       t+=`Anticipo: ${fmt(c.anticipo)}\n`;
       t+=c.saldo>=0?`Saldo a favor: ${fmt(c.saldo)}\n\n`:`*Adeudo: ${fmt(-c.saldo)}*\n\n`;
@@ -3042,7 +3047,10 @@ function App() {
                             </div>
                             {g.remisiones.map((p,i)=>(
                               <div key={p.id} style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 0.9fr 1fr 0.8fr 1fr",padding:"8px 14px",fontSize:11,borderTop:"1px solid var(--border-soft)",background:i%2?"var(--bg-zebra)":"var(--bg-card)",gap:4}}>
-                                <div style={{color:"var(--accent)",fontWeight:500}}>{serieFolio(p.serie,p.folio)||"—"}</div>
+                                <div style={{color:"var(--accent)",fontWeight:500}}>
+                                  {serieFolio(p.serie,p.folio)||p.num_ov||"—"}
+                                  {!p.folio&&<span style={{marginLeft:4,fontSize:9,background:"#fef3c7",color:"#d97706",borderRadius:4,padding:"1px 4px",fontWeight:700,whiteSpace:"nowrap"}}>⚠️ S/R</span>}
+                                </div>
                                 <div style={{color:"var(--text-sec)"}}>{p.fecha_carga||"—"}</div>
                                 <div style={{color:"var(--text-sec)"}}>{p.num_ov||"—"}</div>
                                 <div style={{color:"var(--text-sec)"}}>{p.fecha_entrega||"—"}</div>
