@@ -186,7 +186,7 @@ const CONFIRM = {
 const MOTIVOS = ["Sin dotación en planta","Contratiempo del cliente","Contratiempo de la fletera","Otro"];
 // Prompt único para leer remisiones con IA (usado por el lector de OV, la nueva OV desde remisión y Google Drive).
 const PROMPT_REMISION = "Extrae los siguientes datos de esta remisión de cemento Cruz Azul: Número de remisión (formato: AG-XXXXXX, PU-XXXXXX o BQ-XXXXXX), Número de OV (Orden de Venta) — el número de OV en la remisión puede aparecer en formato como 'SG-2292690-1.000'; extrae ÚNICAMENTE el número central (los dígitos entre el primer y segundo guión, ej. '2292690'), Fecha de remisión, Peso neto en toneladas. Para determinar el peso neto: (1) Remisiones de Puebla (PU): el peso neto aparece en el ticket de pesaje integrado como 'NETO=XXXXX' (en kilogramos) — dividir entre 1000 para obtener toneladas. (2) Remisiones de Aguascalientes (AG): el peso neto aparece como 'PESO NETO: XX,XXX kg' en el reverso — dividir entre 1000. (3) SIEMPRE usar el peso neto real de báscula; NUNCA usar el peso nominal de 36.000 que aparece en el campo TONELADAS del documento. Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto";
-const PROMPT_REMISION_DOBLE = "Se te envían dos imágenes de la misma remisión de Cruz Azul. Identifica cuál es el FRENTE (tiene logo Cruz Azul, datos del cliente, número de OV) y cuál es el REVERSO (ticket de báscula con FOLIO, PESO BRUTO, PESO TARA, PESO NETO). Extrae el número de remisión que aparece en ambas. El peso neto viene del REVERSO (ticket de báscula). Para determinar el peso neto: (1) Remisiones de Puebla (PU): el peso neto aparece en el ticket de pesaje como 'NETO=XXXXX' (en kilogramos) — dividir entre 1000 para obtener toneladas. (2) Remisiones de Aguascalientes (AG): el peso neto aparece como 'PESO NETO: XX,XXX kg' en el reverso — dividir entre 1000. (3) SIEMPRE usar el peso neto real de báscula; NUNCA usar el peso nominal de 36.000 del campo TONELADAS. Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto, imagenFrente (1 o 2), imagenReverso (1 o 2)";
+const PROMPT_REMISION_DOBLE = "Se te envían dos imágenes de la misma remisión de Cruz Azul. Identifica cuál es el FRENTE (tiene logo Cruz Azul, datos del cliente, número de OV) y cuál es el REVERSO (ticket de báscula con FOLIO, PESO BRUTO, PESO TARA, PESO NETO). Extrae el número de remisión que aparece en ambas. El peso neto viene del REVERSO (ticket de báscula). Para determinar el peso neto: (1) Remisiones de Puebla (PU): el peso neto aparece en el ticket de pesaje como 'NETO=XXXXX' (en kilogramos) — dividir entre 1000 para obtener toneladas. (2) Remisiones de Aguascalientes (AG): el peso neto aparece como 'PESO NETO: XX,XXX kg' en el reverso — dividir entre 1000. (3) SIEMPRE usar el peso neto real de báscula; NUNCA usar el peso nominal de 36.000 del campo TONELADAS. Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto, imagenFrente (1 o 2), imagenReverso (1 o 2). IMPORTANTE: Responde ÚNICAMENTE con el JSON, sin texto adicional, sin explicaciones, sin la palabra 'Analizando'";
 const PRIORIDAD = {
   alta: {label:"Alta",  color:"#dc2626",bg:"#dc262622"},
   media:{label:"Media", color:"#d97706",bg:"#d9770622"},
@@ -1823,7 +1823,16 @@ function App() {
         const apiData=await resp.json();
         const raw=apiData.content[0].text;
         const cleaned=raw.replace(/```json\n?/g,"").replace(/```\n?/g,"").trim();
-        const data=JSON.parse(cleaned);
+        let data=null;
+        try{ data=JSON.parse(cleaned); }catch{
+          // Fallback: extraer número de remisión del texto libre si la IA no respondió JSON puro
+          const m=raw.match(/[AP][GU]-\d+/);
+          if(m) data={numeroRemision:m[0],numeroOV:"",fecha:"",pesoNeto:0};
+        }
+        if(!data){
+          results.push({group,data:null,ok:false,error:null,noFolioUnreadable:true,previewUrls});
+          continue;
+        }
 
         let finalGroup=group; let renameInfo=null;
         const numeroRemision=(data.numeroRemision||"").trim();
@@ -5075,7 +5084,14 @@ function App() {
                         }
                       </>
                     ):(
-                      <div style={{color:"#dc2626",fontSize:12}}>⚠ {res.error||"No se pudo extraer"}</div>
+                      res.noFolioUnreadable?(
+                        <div>
+                          <div style={{fontSize:12,color:"#d97706",marginBottom:10}}>📸 No se pudo leer esta imagen. ¿Quieres procesarla manualmente?</div>
+                          <button onClick={()=>{setGdStep("files");setShowLectorNuevo(true);}} style={{width:"100%",background:"var(--bg-card)",color:"var(--text-main)",border:"1px solid var(--border)",borderRadius:6,padding:"9px",fontWeight:700,cursor:"pointer",fontSize:13}}>📄 Abrir en lector manual</button>
+                        </div>
+                      ):(
+                        <div style={{color:"#dc2626",fontSize:12}}>⚠ {res.error||"No se pudo extraer"}</div>
+                      )
                     )}
                   </div>
                   );
