@@ -64,7 +64,24 @@
   </style>
 </head>
 <body>
-<script>document.body.className = localStorage.getItem("tema") || "dark";</script>
+<script>
+  document.body.className = localStorage.getItem("tema") || "dark";
+  // Limpiar token de Google Drive expirado antes de que cualquier código lo use.
+  // Un token expirado en localStorage puede provocar que gdTrySilentRenew() cuelgue
+  // la inicialización si algo lo invoca antes de que Firebase esté listo.
+  (function(){
+    try{
+      var raw=localStorage.getItem("gd_token")||sessionStorage.getItem("gd_token");
+      var tok=raw?JSON.parse(raw):null;
+      if(tok&&tok.expires_at&&Date.now()>tok.expires_at){
+        ["gd_token","gd_granted"].forEach(function(k){
+          try{localStorage.removeItem(k);}catch{}
+          try{sessionStorage.removeItem(k);}catch{}
+        });
+      }
+    }catch{}
+  })();
+</script>
 <div id="root"></div>
 <script type="text/babel">
 const { useState, useMemo, useEffect, useRef } = React;
@@ -1849,7 +1866,7 @@ function App() {
         if(!ok) return;
       }
     }
-    const existente=numeroOV&&ovs.find(o=>(o.num_ov||"").trim()===numeroOV);
+    const existente=numeroOV&&ovs.find(o=>String(o.num_ov||"").trim()===numeroOV);
     if(existente){
       const patch={folio,toneladas:parseFloat(res.data.pesoNeto)||0,fecha_carga:res.data.fecha||todayISO(),fecha_entrega:fechaEntrega,status:"entregado"};
       if(clienteId){
@@ -1874,7 +1891,7 @@ function App() {
     const {folio,numeroOV,serie,fechaEntrega}=gdDatosOV(res);
     const clienteId=gdSelectedFolder?.clienteId||"";
     const precio_ton=parseFloat(clientes.find(c=>c.id===clienteId)?.precio_ton)||0;
-    const existente=numeroOV&&ovs.find(o=>(o.num_ov||"").trim()===numeroOV);
+    const existente=numeroOV&&ovs.find(o=>String(o.num_ov||"").trim()===numeroOV);
     const precioFinal=existente?(parseFloat(existente.precio_ton)||parseFloat(cliById(existente.clienteId)?.precio_ton)||precio_ton):precio_ton;
     setForm({
       ...(existente||emptyOV),
@@ -4541,7 +4558,7 @@ function App() {
             const serie=(numeroRemision||"").split("-")[0].toUpperCase();
             const numOvTrim=(numeroOV||"").trim();
             // Si ya existe una OV con ese número, actualizarla con los datos de la remisión en lugar de duplicar.
-            const existe=numOvTrim&&ovs.find(o=>(o.num_ov||"").trim()===numOvTrim);
+            const existe=numOvTrim&&ovs.find(o=>String(o.num_ov||"").trim()===numOvTrim);
             if(existe){
               const patch={folio:numeroRemision||existe.folio,fecha_carga:fecha||existe.fecha_carga,toneladas:parseFloat(pesoNeto)||existe.toneladas,serie:serie||existe.serie};
               const ok=await upd(existe.id,patch);
@@ -4637,8 +4654,8 @@ function App() {
           const nuevas=[];
           for(let i=0;i<chartRows.length;i++){
             const r=chartRows[i];
-            const numOv=(r.num_ov||"").trim();
-            const existente=numOv&&ovs.find(o=>(o.num_ov||"").trim()===numOv);
+            const numOv=String(r.num_ov||"").trim();
+            const existente=numOv&&ovs.find(o=>String(o.num_ov||"").trim()===numOv);
 
             if(existente){
               const patch={fecha_carga:r.fecha_retiro,fecha_entrega:r.fecha_entrega,serie:chartPlanta};
