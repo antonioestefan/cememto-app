@@ -1073,6 +1073,7 @@ function App() {
   const [filtroSinCliente,setFiltroSinCliente]   = useState(false);
   const [filtroSinFirma,setFiltroSinFirma]       = useState(false);
   const [sortOVs,setSortOVs]                     = useState("fecha_desc");
+  const [filtroPlanta,setFiltroPlanta]           = useState("");
   const [reporteCliente,setReporteCliente]     = useState("");
   const [reporteMes,setReporteMes]             = useState(currentYM());
   const [plantaExpandida,setPlantaExpandida]   = useState({});
@@ -2137,6 +2138,7 @@ function App() {
 
   const ovsFiltrados = useMemo(()=>{
     let list=filtroCliente ? ovs.filter(p=>p.clienteId===filtroCliente) : [...ovs];
+    if(filtroPlanta)      list=list.filter(p=>(p.serie||"").toUpperCase().startsWith(filtroPlanta));
     if(filtroSinRemision) list=list.filter(p=>p.clienteId&&!p.folio&&p.status!=="entregado");
     if(filtroSinCliente)  list=list.filter(p=>!p.clienteId);
     if(filtroSinFirma)    list=list.filter(p=>p.status==="entregado"&&!p.remision_firmada);
@@ -2158,7 +2160,7 @@ function App() {
     else if(sortOVs==="folio_desc") list=list.slice().sort((a,b)=>(parseInt(b.folio)||0)-(parseInt(a.folio)||0));
     else if(sortOVs==="folio_asc")  list=list.slice().sort((a,b)=>(parseInt(a.folio)||0)-(parseInt(b.folio)||0));
     return list;
-  },[ovs,filtroCliente,filtroSinRemision,filtroSinCliente,filtroSinFirma,busqueda,sortOVs,cliMap]);
+  },[ovs,filtroCliente,filtroPlanta,filtroSinRemision,filtroSinCliente,filtroSinFirma,busqueda,sortOVs,cliMap]);
   const semana       = getWeekRange(weekOffset);
   const ovsSemana    = useMemo(()=>{const s=getWeekRange(weekOffset);return ovs.filter(p=>p.fecha_carga>=s.start&&p.fecha_carga<=s.end).sort((a,b)=>(a.fecha_carga||"").localeCompare(b.fecha_carga||""));},[ovs,weekOffset]);
   const porConfirmar = useMemo(()=>ovs.filter(p=>p.fecha_carga===nextWorkdayISO()).sort((a,b)=>a.confirm==="por_confirmar"?-1:1),[ovs,nextWorkdayISO()]);
@@ -2616,10 +2618,18 @@ function App() {
                       <option value="folio_asc"  style={{background:"var(--bg-card)",color:"var(--text-main)",fontWeight:600}}>↑ Folio</option>
                     </select>
                   </div>
-                  <select value={filtroCliente} onChange={e=>{setFiltroCliente(e.target.value);if(e.target.value)setFiltroSinCliente(false);}} style={{...inS,background:"var(--bg-card)",marginBottom:8}}>
-                    <option value="">— Todos los clientes —</option>
-                    {clientes.map(c=><option key={c.id} value={c.id}>{c.nombre}</option>)}
-                  </select>
+                  <div style={{display:"flex",gap:8,marginBottom:8}}>
+                    <select value={filtroCliente} onChange={e=>{setFiltroCliente(e.target.value);if(e.target.value)setFiltroSinCliente(false);}} style={{...inS,background:"var(--bg-card)",flex:1}}>
+                      <option value="">— Todos los clientes —</option>
+                      {clientes.map(c=><option key={c.id} value={c.id}>{c.nombre}</option>)}
+                    </select>
+                    <select value={filtroPlanta} onChange={e=>setFiltroPlanta(e.target.value)} style={{...inS,background:"var(--bg-card)",width:176,flexShrink:0}}>
+                      <option value="">🏭 Todas las plantas</option>
+                      <option value="PU">🏭 Puebla</option>
+                      <option value="AG">🏭 Aguascalientes</option>
+                      <option value="BQ">📦 Bodega Querétaro</option>
+                    </select>
+                  </div>
                   <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                     <button onClick={()=>setFiltroSinRemision(v=>!v)} style={{background:filtroSinRemision?"#d97706":"var(--bg-card-alt)",color:filtroSinRemision?"white":"var(--text-sec)",border:`1.5px solid ${filtroSinRemision?"#d97706":"var(--border)"}`,borderRadius:20,padding:"5px 14px",fontWeight:600,fontSize:12,cursor:"pointer",transition:"all .15s"}}>
                       📋 Sin remisión{totales.sinRemision>0?` (${totales.sinRemision})`:""}
@@ -2630,8 +2640,8 @@ function App() {
                     <button onClick={()=>setFiltroSinFirma(v=>!v)} style={{background:filtroSinFirma?"#7c3aed":"var(--bg-card-alt)",color:filtroSinFirma?"white":"var(--text-sec)",border:`1.5px solid ${filtroSinFirma?"#7c3aed":"var(--border)"}`,borderRadius:20,padding:"5px 14px",fontWeight:600,fontSize:12,cursor:"pointer",transition:"all .15s"}}>
                       ✍️ Sin firma{ovsSinFirma.length>0?` (${ovsSinFirma.length})`:""}
                     </button>
-                    {(busqueda||filtroCliente||filtroSinRemision||filtroSinCliente||filtroSinFirma)&&(
-                      <button onClick={()=>{setBusqueda("");setFiltroCliente("");setFiltroSinRemision(false);setFiltroSinCliente(false);setFiltroSinFirma(false);}} style={{background:"#ef444422",color:"#dc2626",border:"1.5px solid #fecaca",borderRadius:20,padding:"5px 14px",fontWeight:700,fontSize:12,cursor:"pointer",transition:"all .15s"}}>
+                    {(busqueda||filtroCliente||filtroPlanta||filtroSinRemision||filtroSinCliente||filtroSinFirma)&&(
+                      <button onClick={()=>{setBusqueda("");setFiltroCliente("");setFiltroPlanta("");setFiltroSinRemision(false);setFiltroSinCliente(false);setFiltroSinFirma(false);}} style={{background:"#ef444422",color:"#dc2626",border:"1.5px solid #fecaca",borderRadius:20,padding:"5px 14px",fontWeight:700,fontSize:12,cursor:"pointer",transition:"all .15s"}}>
                         ✕ Limpiar filtros
                       </button>
                     )}
