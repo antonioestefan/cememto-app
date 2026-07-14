@@ -2148,7 +2148,7 @@ function App() {
       list=list.filter(p=>{
         const folio=(p.folio||"").toLowerCase();
         const folioSinPrefijo=folio.replace(/^(ag|pu|bq)-/i,"");
-        return (p.num_ov||"").toLowerCase().includes(q)||
+        return String(p.num_ov||"").toLowerCase().includes(q)||
           folio.includes(q)||
           limpiarFolio(p.folio).toLowerCase().includes(q)||
           folioSinPrefijo.includes(qLimpio)||
