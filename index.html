@@ -1112,7 +1112,7 @@ function App() {
   const [showChartLector,setShowChartLector]     = useState(false);
   const [gdEditImages,setGdEditImages]           = useState(null); // [{url,isPdf}]|null — activa vista split de GDrive
   const [gdLightbox,setGdLightbox]               = useState(null); // url|null — lightbox de imagen en confirm
-  const [remisionViewer,setRemisionViewer]       = useState(null); // null|{images:[{url,isPdf}],folio}
+  const [remisionViewer,setRemisionViewer]       = useState(null); // null|{images:[{url,isPdf}],folio,ov}
   const [remisionViewerLoading,setRemisionViewerLoading] = useState(false);
   const [chartStep,setChartStep]                 = useState("idle"); // idle|loading|confirm|creating|success|error
   const [chartPlanta,setChartPlanta]             = useState(""); // "" | "PU" | "AG"
@@ -1799,7 +1799,7 @@ function App() {
       const token=await gdGetToken(false);
       const blocks=await Promise.all(archivos.map(f=>gdDownloadBlock(f,token)));
       const images=blocks.map(b=>({url:`data:${b.source.media_type};base64,${b.source.data}`,isPdf:b.type==="document"}));
-      setRemisionViewer({images,folio:ov.folio});
+      setRemisionViewer({images,folio:ov.folio,ov});
     }catch(e){await notify(`Error al cargar remisión: ${e.message}`);}
     finally{setRemisionViewerLoading(false);}
   };
@@ -5151,18 +5151,55 @@ function App() {
         </div>
       )}
 
-      {/* VISOR DE REMISIÓN DESDE GDRIVE */}
-      {remisionViewer&&(
-        <div style={{position:"fixed",inset:0,background:"#000000f0",zIndex:610,display:"flex",flexDirection:"column"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",background:"#111",borderBottom:"1px solid #2a2a2a",flexShrink:0}}>
-            <div style={{fontWeight:700,fontSize:14,color:"white"}}>📄 Remisión: <span style={{color:"#22d3ee"}}>{remisionViewer.folio}</span></div>
-            <button onClick={()=>setRemisionViewer(null)} style={{background:"none",border:"none",color:"#aaa",fontSize:24,cursor:"pointer",lineHeight:1,padding:"0 4px"}}>✕</button>
+      {/* VISOR DE REMISIÓN DESDE GDRIVE — modal dos paneles */}
+      {remisionViewer&&(()=>{
+        const ov=remisionViewer.ov;
+        const c=cliById(ov.clienteId);
+        const mobile=window.innerWidth<640;
+        const precio=parseFloat(ov.precio_ton)||(parseFloat(c?.precio_ton)||0);
+        const st=getS(ov.status);
+        const fila=(label,val,valColor)=>(
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"7px 0",borderBottom:"1px solid var(--border-soft)",gap:8}}>
+            <span style={{fontSize:12,color:"var(--text-tertiary)",flexShrink:0}}>{label}</span>
+            <span style={{fontSize:12,color:valColor||"var(--text-main)",fontWeight:600,textAlign:"right"}}>{val||"—"}</span>
           </div>
-          <div style={{flex:1,minHeight:0}}>
-            <ImageViewer images={remisionViewer.images}/>
+        );
+        return(
+          <div style={{position:"fixed",inset:0,background:"#00000088",zIndex:610,display:"flex",alignItems:"center",justifyContent:"center",padding:mobile?0:16}}>
+            <div style={{background:"var(--bg-card)",borderRadius:mobile?0:16,width:mobile?"100%":"90vw",height:mobile?"100%":"90vh",maxWidth:1100,display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 8px 40px #000000a0"}}>
+              {/* Header */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 18px",borderBottom:"1px solid var(--border)",flexShrink:0}}>
+                <div style={{fontWeight:700,fontSize:15,color:"var(--text-main)"}}>📄 Remisión <span style={{color:"var(--accent)"}}>{ov.folio}</span></div>
+                <button onClick={()=>setRemisionViewer(null)} style={{background:"none",border:"none",color:"var(--text-sec)",fontSize:24,cursor:"pointer",lineHeight:1,padding:"0 4px"}}>✕</button>
+              </div>
+              {/* Body */}
+              <div style={{flex:1,minHeight:0,display:"flex",flexDirection:mobile?"column":"row",overflow:"hidden"}}>
+                {/* Panel izquierdo — imagen */}
+                <div style={{flexShrink:0,width:mobile?"100%":"50%",height:mobile?280:"100%",borderRight:mobile?"none":"1px solid var(--border)",borderBottom:mobile?"1px solid var(--border)":"none"}}>
+                  <ImageViewer images={remisionViewer.images}/>
+                </div>
+                {/* Panel derecho — datos OV */}
+                <div style={{flex:1,overflowY:"auto",padding:"16px 20px"}}>
+                  <div style={{fontWeight:700,fontSize:13,color:"var(--text-tertiary)",marginBottom:8,textTransform:"uppercase",letterSpacing:1}}>Datos de la OV</div>
+                  {fila("No. OV", ov.num_ov, "#7c3aed")}
+                  {fila("Folio remisión", ov.folio)}
+                  {fila("Cliente", c?.nombre||"(sin asignar)")}
+                  {fila("Planta", ov.serie?plantaDeSerie(ov.serie):"—")}
+                  {fila("Fecha de carga", ov.fecha_carga?diaLabel(ov.fecha_carga):"—")}
+                  {fila("Fecha de entrega", ov.fecha_entrega?diaLabel(ov.fecha_entrega):"—")}
+                  {fila("Toneladas", ov.toneladas>0?`${fmtT(ov.toneladas)} ton`:"—")}
+                  {fila("Precio/ton", precio>0?fmt(precio):"—")}
+                  {fila("Monto", ov.toneladas>0&&precio>0?fmt(valorOV(ov)):"—", "#16a34a")}
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"7px 0",gap:8}}>
+                    <span style={{fontSize:12,color:"var(--text-tertiary)",flexShrink:0}}>Estatus</span>
+                    <span style={{fontSize:12,fontWeight:700,color:st.color,textAlign:"right"}}>{st.label}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* DIÁLOGO (confirm / prompt / alert) — bottom-sheet, reemplaza los nativos del navegador */}
       {dialog&&(
