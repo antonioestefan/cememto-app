@@ -187,7 +187,7 @@ const MOTIVOS = ["Sin dotación en planta","Contratiempo del cliente","Contratie
 // Prompt único para leer remisiones con IA (usado por el lector de OV, la nueva OV desde remisión y Google Drive).
 const PROMPT_REMISION = "Extrae los siguientes datos de esta remisión de cemento Cruz Azul: Número de remisión (formato: AG-XXXXXX, PU-XXXXXX o BQ-XXXXXX), Número de OV (Orden de Venta) — el número de OV en la remisión puede aparecer en formato como 'SG-2292690-1.000'; extrae ÚNICAMENTE el número central (los dígitos entre el primer y segundo guión, ej. '2292690'), Fecha de remisión, Peso neto en toneladas. Para determinar el peso neto: (1) Remisiones de Puebla (PU): el peso neto aparece en el ticket de pesaje integrado como 'NETO=XXXXX' (en kilogramos) — dividir entre 1000 para obtener toneladas. (2) Remisiones de Aguascalientes (AG): el peso neto aparece como 'PESO NETO: XX,XXX kg' en el reverso — dividir entre 1000. (3) SIEMPRE usar el peso neto real de báscula; NUNCA usar el peso nominal de 36.000 que aparece en el campo TONELADAS del documento. Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto";
 const PROMPT_REMISION_DOBLE = "Se te envían dos imágenes de la misma remisión de Cruz Azul. Identifica cuál es el FRENTE (tiene logo Cruz Azul, datos del cliente, número de OV) y cuál es el REVERSO (ticket de báscula con FOLIO, PESO BRUTO, PESO TARA, PESO NETO). Extrae el número de remisión que aparece en ambas. El peso neto viene del REVERSO (ticket de báscula). Para determinar el peso neto: (1) Remisiones de Puebla (PU): el peso neto aparece en el ticket de pesaje como 'NETO=XXXXX' (en kilogramos) — dividir entre 1000 para obtener toneladas. (2) Remisiones de Aguascalientes (AG): el peso neto aparece como 'PESO NETO: XX,XXX kg' en el reverso — dividir entre 1000. (3) SIEMPRE usar el peso neto real de báscula; NUNCA usar el peso nominal de 36.000 del campo TONELADAS. Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto, imagenFrente (1 o 2), imagenReverso (1 o 2). IMPORTANTE: Responde ÚNICAMENTE con el JSON, sin texto adicional, sin explicaciones, sin la palabra 'Analizando'";
-const PROMPT_TRANSFERENCIA = "Lee este comprobante de transferencia bancaria SPEI. Extrae: monto (solo número sin comas ni $), fecha (YYYY-MM-DD), referencia o clave de rastreo, nombre del ordenante. Responde SOLO en JSON: {\"monto\", \"fecha\", \"referencia\", \"ordenante\"}";
+const PROMPT_TRANSFERENCIA = "Lee este comprobante de transferencia bancaria SPEI. Extrae: monto (solo número sin comas ni $), fecha (YYYY-MM-DD), referencia o clave de rastreo, nombre del ordenante. Responde SOLO en JSON: {\"monto\", \"fecha\", \"referencia\", \"ordenante\"}. IMPORTANTE: Responde ÚNICAMENTE con JSON válido, sin texto adicional ni explicaciones.";
 const PROMPT_FACTURA_GD = "Lee esta factura electrónica (CFDI). Extrae: folio fiscal (UUID), folio, fecha (YYYY-MM-DD), monto total con IVA, RFC receptor, nombre receptor. Responde SOLO en JSON: {\"folioFiscal\", \"folio\", \"fecha\", \"monto\", \"rfcReceptor\", \"nombreReceptor\"}";
 const PRIORIDAD = {
   alta: {label:"Alta",  color:"#dc2626",bg:"#dc262622"},
@@ -1119,6 +1119,7 @@ function App() {
   const [gdFilesTab,setGdFilesTab]               = useState("remisiones"); // "remisiones"|"transferencias"|"facturas"
   const [gdTransfFiles,setGdTransfFiles]         = useState([]);
   const [gdFactFiles,setGdFactFiles]             = useState([]);
+  const [gdManualEdits,setGdManualEdits]         = useState({}); // {[fileId]: {monto,fecha,referencia,ordenante}}
   const [gdTransfSelected,setGdTransfSelected]   = useState(new Set());
   const [gdFactSelected,setGdFactSelected]       = useState(new Set());
   const [gdTransfResults,setGdTransfResults]     = useState([]);
@@ -1850,6 +1851,11 @@ function App() {
     for(let i=0;i<toProcess.length;i++){
       setGdProgress({cur:i+1,tot:toProcess.length});
       const file=toProcess[i];
+      const sizeMB=(parseInt(file.size)||0)/(1024*1024);
+      if(sizeMB>4){
+        const intentar=await askConfirm(`Este archivo es muy pesado (${sizeMB.toFixed(1)} MB).\nPuede fallar la lectura automática.\n¿Quieres intentarlo de todas formas o capturar manualmente?`,{confirmLabel:"Intentar con IA",cancelLabel:"Capturar manualmente"});
+        if(!intentar){results.push({file,originalFile:file,data:null,ok:false,manual:true,previewUrls:[],renameInfo:null,error:""});continue;}
+      }
       try{
         const token=gdToken||await gdGetToken(false);
         const block=await gdDownloadBlock(file,token);
@@ -1871,10 +1877,30 @@ function App() {
             finalFile=r.file; renameInfo={ok:true,name:r.file.name};
           }catch(e){renameInfo={ok:false,error:e.message};}
         }
-        results.push({file:finalFile,originalFile:file,data,ok:!!data,previewUrls,renameInfo});
-      }catch(e){results.push({file,originalFile:file,data:null,ok:false,error:e.message,previewUrls:[]});}
+        results.push({file:finalFile,originalFile:file,data,ok:!!data,manual:!data,previewUrls,renameInfo});
+      }catch(e){results.push({file,originalFile:file,data:null,ok:false,manual:true,previewUrls:[],renameInfo:null,error:e.message});}
     }
     setGdTransfResults(results); setGdFilesTab("transferencias"); setGdStep("confirm_transf");
+  };
+  const gdRegistrarManualTransf=async(res)=>{
+    const fileId=res.originalFile.id;
+    const manual=gdManualEdits[fileId]||{};
+    const monto=parseFloat(manual.monto)||0;
+    const fecha=manual.fecha||"";
+    if(!monto||!fecha){await notify("Ingresa al menos el monto y la fecha.");return;}
+    let finalFile=res.originalFile; let renameInfo=null;
+    try{
+      const token=gdToken||await gdGetToken(false);
+      const fechaStr=fecha.replace(/-/g,"");
+      const montoStr=String(Math.round(monto));
+      const ext=(res.originalFile.name.match(/\.[^/.]+$/)||[".pdf"])[0];
+      const newName=`TRF-${fechaStr}-${montoStr}${ext}`;
+      const r=await gdRenameFile(res.originalFile,newName,token);
+      finalFile=r.file; renameInfo={ok:true,name:r.file.name};
+    }catch(e){renameInfo={ok:false,error:e.message};}
+    const syntheticRes={...res,file:finalFile,data:{monto,fecha,referencia:manual.referencia||"",ordenante:manual.ordenante||""},ok:true,manual:false,renameInfo};
+    setGdTransfResults(prev=>prev.map(r=>r.originalFile.id===fileId?syntheticRes:r));
+    await gdConfirmarTransferencia(syntheticRes);
   };
   const gdConfirmarTransferencia=async(res)=>{
     const clienteId=gdSelectedFolder?.clienteId||"";
@@ -2118,7 +2144,7 @@ function App() {
     setGdResults([]); setGdFechaEntrega({}); setGdConfirmandoTodos(false); setGdLoading(false); setGdError(""); setGdProgress({cur:0,tot:0});
     setGdEditImages(null); setGdCleaningDups(false); setGdLightbox(null);
     setGdTransfFiles([]); setGdFactFiles([]); setGdTransfSelected(new Set()); setGdFactSelected(new Set());
-    setGdTransfResults([]); setGdFactResults([]); setGdFilesTab("remisiones"); setGdPendingFacturaFile(null);
+    setGdTransfResults([]); setGdFactResults([]); setGdFilesTab("remisiones"); setGdPendingFacturaFile(null); setGdManualEdits({});
   };
 
   const toggleDiaHabil = async (iso)=>{
@@ -5353,7 +5379,7 @@ function App() {
                   return(
                     <div key={res.originalFile.id||idx} style={{background:"var(--bg-card-alt)",borderRadius:10,padding:"14px",marginBottom:10,border:`1px solid ${done?"#0891b266":"var(--border)"}`}}>
                       <div style={{fontWeight:600,fontSize:11,color:"var(--text-tertiary)",marginBottom:8,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>💰 {res.file.name}</div>
-                      {res.ok&&res.data?(
+                      {res.ok&&res.data&&!res.manual?(
                         <>
                           {prev&&(
                             <div style={{marginBottom:10,textAlign:"center"}}>
@@ -5376,9 +5402,35 @@ function App() {
                             :<button onClick={()=>gdConfirmarTransferencia(res)} style={{width:"100%",background:"#0891b2",color:"white",border:"none",borderRadius:6,padding:"10px",fontWeight:700,cursor:"pointer",fontSize:13}}>💰 Registrar como anticipo</button>
                           }
                         </>
-                      ):(
-                        <div style={{color:"#dc2626",fontSize:12}}>⚠ {res.error||"No se pudo extraer"}</div>
-                      )}
+                      ):(()=>{
+                        const fid=res.originalFile.id;
+                        const ed=gdManualEdits[fid]||{monto:"",fecha:todayISO(),referencia:"",ordenante:""};
+                        const setEd=(patch)=>setGdManualEdits(prev=>({...prev,[fid]:{...ed,...patch}}));
+                        return(
+                          <>
+                            {res.error&&<div style={{color:"#dc2626",fontSize:11,marginBottom:8}}>⚠ {res.error}</div>}
+                            {prev&&(
+                              <div style={{marginBottom:10,textAlign:"center"}}>
+                                {prev.isPdf
+                                  ?<embed src={prev.url} type="application/pdf" style={{width:"100%",height:200,borderRadius:8,border:"1px solid var(--border)"}}/>
+                                  :<img src={prev.url} alt="Comprobante" style={{width:"100%",height:"auto",maxHeight:240,objectFit:"contain",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"zoom-in"}} onClick={()=>setGdLightbox(prev.url)}/>
+                                }
+                              </div>
+                            )}
+                            <div style={{fontSize:11,color:"#d97706",fontWeight:700,marginBottom:8}}>✏️ Captura manual</div>
+                            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
+                              <div><label style={{fontSize:10,color:"var(--text-tertiary)",display:"block",marginBottom:2}}>Monto ($)</label><input type="number" value={ed.monto} onChange={e=>setEd({monto:e.target.value})} style={{...inS,fontSize:13}} placeholder="0"/></div>
+                              <div><label style={{fontSize:10,color:"var(--text-tertiary)",display:"block",marginBottom:2}}>Fecha</label><input type="date" value={ed.fecha} onChange={e=>setEd({fecha:e.target.value})} style={inS}/></div>
+                              <div><label style={{fontSize:10,color:"var(--text-tertiary)",display:"block",marginBottom:2}}>Referencia / Clave</label><input value={ed.referencia} onChange={e=>setEd({referencia:e.target.value})} style={{...inS,fontSize:12}} placeholder="Opcional"/></div>
+                              <div><label style={{fontSize:10,color:"var(--text-tertiary)",display:"block",marginBottom:2}}>Ordenante</label><input value={ed.ordenante} onChange={e=>setEd({ordenante:e.target.value})} style={{...inS,fontSize:12}} placeholder="Opcional"/></div>
+                            </div>
+                            {done
+                              ?<div style={{fontSize:12,color:"var(--accent)",textAlign:"center",padding:"6px 0",fontWeight:700}}>✅ Registrado como anticipo</div>
+                              :<button onClick={()=>gdRegistrarManualTransf(res)} style={{width:"100%",background:"#0891b2",color:"white",border:"none",borderRadius:6,padding:"10px",fontWeight:700,cursor:"pointer",fontSize:13}}>💰 Registrar anticipo</button>
+                            }
+                          </>
+                        );
+                      })()}
                     </div>
                   );
                 })}
