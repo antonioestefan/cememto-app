@@ -1881,8 +1881,16 @@ function App() {
     if(!clienteId){await notify("Esta carpeta no tiene cliente asociado en el catálogo.");return;}
     const monto=parseFloat(res.data.monto)||0;
     const fecha=res.data.fecha||todayISO();
+    const c=clientes.find(x=>x.id===clienteId);
+    const historial=c?.historial_anticipos||[];
+    const duplicado=historial.find(a=>parseFloat(a.monto)===monto&&a.fecha===fecha);
+    const marcarProcesado=()=>runSave(()=>window.__setDoc(window.__doc(window.__db,"remisiones_gdrive",res.originalFile.id),{tipo:"transferencia",clienteId,fileName:res.file.name,fecha:todayISO(),monto,referencia:res.data.referencia||"",ordenante:res.data.ordenante||""}));
+    if(duplicado){
+      const esMismo=await askConfirm(`⚠️ Ya existe un anticipo de ${fmt(monto)} del ${diaLabel(fecha)}.\n¿Es el mismo pago o es uno diferente?`,{confirmLabel:"Es el mismo — no duplicar",cancelLabel:"Es diferente — registrar igual"});
+      if(esMismo){await marcarProcesado();return;}
+    }
     await addAnticipo(clienteId,monto,fecha);
-    await runSave(()=>window.__setDoc(window.__doc(window.__db,"remisiones_gdrive",res.originalFile.id),{tipo:"transferencia",clienteId,fileName:res.file.name,fecha:todayISO(),monto,referencia:res.data.referencia||"",ordenante:res.data.ordenante||""}));
+    await marcarProcesado();
   };
   const gdProcessFacturas=async()=>{
     const toProcess=gdFactFiles.filter(f=>gdFactSelected.has(f.id)&&!procesados[f.id]);
@@ -2149,6 +2157,26 @@ function App() {
     const prevClientes=clientes;
     setClientes(prev=>prev.map(x=>x.id===cliId?updated:x));
     await runSave(()=>updateDb("clientes",cliId,{anticipo,historial_anticipos:historial}), ()=>setClientes(prevClientes));
+  };
+  const limpiarAntiposDuplicados=async(cliId)=>{
+    const c=clientes.find(x=>x.id===cliId); if(!c) return;
+    const hist=c.historial_anticipos||[];
+    const grupos={};
+    hist.forEach((a,i)=>{const k=`${parseFloat(a.monto)||0}_${a.fecha||""}`;if(!grupos[k])grupos[k]=[];grupos[k].push(i);});
+    const dups=Object.entries(grupos).filter(([,idxs])=>idxs.length>1);
+    if(!dups.length){await notify("✅ No hay anticipos duplicados en este cliente.");return;}
+    const desc=dups.map(([,idxs])=>{const a=hist[idxs[0]];return `• ${fmt(parseFloat(a.monto)||0)} del ${a.fecha||"—"} (${idxs.length} veces)`;}).join("\n");
+    const ok=await askConfirm(`Anticipos duplicados encontrados:\n${desc}\n\nSe conservará el primero de cada par y se eliminarán las copias.`,{danger:true,confirmLabel:"Sí, eliminar duplicados"});
+    if(!ok) return;
+    const aEliminar=new Set();
+    dups.forEach(([,idxs])=>idxs.slice(1).forEach(i=>aEliminar.add(i)));
+    const nuevoHist=hist.filter((_,i)=>!aEliminar.has(i));
+    const anticipo=nuevoHist.reduce((s,a)=>s+(parseFloat(a.monto)||0),0);
+    const updated={...c,anticipo,historial_anticipos:nuevoHist};
+    const prevClientes=clientes;
+    setClientes(prev=>prev.map(x=>x.id===cliId?updated:x));
+    await runSave(()=>updateDb("clientes",cliId,{anticipo,historial_anticipos:nuevoHist}),()=>setClientes(prevClientes));
+    await notify(`✅ Se eliminaron ${aEliminar.size} anticipo${aEliminar.size!==1?"s":""} duplicado${aEliminar.size!==1?"s":""}.`);
   };
   const editAnticipo = async (cliId,realIdx,newFecha,newMonto)=>{
     const c=clientes.find(x=>x.id===cliId); if(!c) return;
@@ -3111,6 +3139,7 @@ function App() {
                             </div>
                           );
                         })}
+                        {(()=>{const hist=c.historial_anticipos||[];const keys=hist.map(a=>`${parseFloat(a.monto)||0}_${a.fecha||""}`);return keys.length!==new Set(keys).size?<button onClick={()=>limpiarAntiposDuplicados(c.id)} style={{marginTop:8,width:"100%",background:"#f59e0b22",color:"#d97706",border:"1px solid #f59e0b44",borderRadius:6,padding:"5px 12px",fontSize:11,cursor:"pointer",fontWeight:700}}>🔧 Limpiar anticipos duplicados</button>:null;})()}
                       </div>
                     )}
                   </div>
