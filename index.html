@@ -5319,17 +5319,18 @@ function App() {
                 <button onClick={()=>setGdStep("files")} style={{background:"none",border:"none",color:"var(--text-tertiary)",fontSize:12,cursor:"pointer",marginBottom:12,padding:0}}>← Volver a archivos</button>
                 <div style={{fontSize:13,color:"var(--text-sec)",marginBottom:14}}>Revisa y registra las transferencias:</div>
                 {gdTransfResults.map((res,idx)=>{
-                  const done=!!procesados[res.fileId];
+                  const done=!!procesados[res.originalFile.id];
+                  const prev=res.previewUrls?.[0];
                   return(
-                    <div key={res.fileId||idx} style={{background:"var(--bg-card-alt)",borderRadius:10,padding:"14px",marginBottom:10,border:`1px solid ${done?"#0891b266":"var(--border)"}`}}>
-                      <div style={{fontWeight:600,fontSize:11,color:"var(--text-tertiary)",marginBottom:8,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>💰 {res.fileName}</div>
+                    <div key={res.originalFile.id||idx} style={{background:"var(--bg-card-alt)",borderRadius:10,padding:"14px",marginBottom:10,border:`1px solid ${done?"#0891b266":"var(--border)"}`}}>
+                      <div style={{fontWeight:600,fontSize:11,color:"var(--text-tertiary)",marginBottom:8,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>💰 {res.file.name}</div>
                       {res.ok&&res.data?(
                         <>
-                          {res.previewUrl&&(
+                          {prev&&(
                             <div style={{marginBottom:10,textAlign:"center"}}>
-                              {res.previewUrl.isPdf
-                                ?<embed src={res.previewUrl.url} type="application/pdf" style={{width:"100%",height:220,borderRadius:8,border:"1px solid var(--border)"}}/>
-                                :<img src={res.previewUrl.url} alt="Comprobante" style={{width:"100%",height:"auto",maxHeight:300,objectFit:"contain",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"zoom-in"}} onClick={()=>setGdLightbox(res.previewUrl.url)}/>
+                              {prev.isPdf
+                                ?<embed src={prev.url} type="application/pdf" style={{width:"100%",height:220,borderRadius:8,border:"1px solid var(--border)"}}/>
+                                :<img src={prev.url} alt="Comprobante" style={{width:"100%",height:"auto",maxHeight:300,objectFit:"contain",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"zoom-in"}} onClick={()=>setGdLightbox(prev.url)}/>
                               }
                             </div>
                           )}
@@ -5362,17 +5363,18 @@ function App() {
                 <button onClick={()=>setGdStep("files")} style={{background:"none",border:"none",color:"var(--text-tertiary)",fontSize:12,cursor:"pointer",marginBottom:12,padding:0}}>← Volver a archivos</button>
                 <div style={{fontSize:13,color:"var(--text-sec)",marginBottom:14}}>Revisa y registra las facturas:</div>
                 {gdFactResults.map((res,idx)=>{
-                  const done=!!procesados[res.fileId];
+                  const done=!!procesados[res.originalFile.id];
+                  const prev=res.previewUrls?.[0];
                   return(
-                    <div key={res.fileId||idx} style={{background:"var(--bg-card-alt)",borderRadius:10,padding:"14px",marginBottom:10,border:`1px solid ${done?"#7c3aed66":"var(--border)"}`}}>
-                      <div style={{fontWeight:600,fontSize:11,color:"var(--text-tertiary)",marginBottom:8,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>🧾 {res.fileName}</div>
+                    <div key={res.originalFile.id||idx} style={{background:"var(--bg-card-alt)",borderRadius:10,padding:"14px",marginBottom:10,border:`1px solid ${done?"#7c3aed66":"var(--border)"}`}}>
+                      <div style={{fontWeight:600,fontSize:11,color:"var(--text-tertiary)",marginBottom:8,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>🧾 {res.file.name}</div>
                       {res.ok&&res.data?(
                         <>
-                          {res.previewUrl&&(
+                          {prev&&(
                             <div style={{marginBottom:10,textAlign:"center"}}>
-                              {res.previewUrl.isPdf
-                                ?<embed src={res.previewUrl.url} type="application/pdf" style={{width:"100%",height:220,borderRadius:8,border:"1px solid var(--border)"}}/>
-                                :<img src={res.previewUrl.url} alt="Factura" style={{width:"100%",height:"auto",maxHeight:300,objectFit:"contain",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"zoom-in"}} onClick={()=>setGdLightbox(res.previewUrl.url)}/>
+                              {prev.isPdf
+                                ?<embed src={prev.url} type="application/pdf" style={{width:"100%",height:220,borderRadius:8,border:"1px solid var(--border)"}}/>
+                                :<img src={prev.url} alt="Factura" style={{width:"100%",height:"auto",maxHeight:300,objectFit:"contain",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"zoom-in"}} onClick={()=>setGdLightbox(prev.url)}/>
                               }
                             </div>
                           )}
