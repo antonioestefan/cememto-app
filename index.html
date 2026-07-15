@@ -187,6 +187,8 @@ const MOTIVOS = ["Sin dotación en planta","Contratiempo del cliente","Contratie
 // Prompt único para leer remisiones con IA (usado por el lector de OV, la nueva OV desde remisión y Google Drive).
 const PROMPT_REMISION = "Extrae los siguientes datos de esta remisión de cemento Cruz Azul: Número de remisión (formato: AG-XXXXXX, PU-XXXXXX o BQ-XXXXXX), Número de OV (Orden de Venta) — el número de OV en la remisión puede aparecer en formato como 'SG-2292690-1.000'; extrae ÚNICAMENTE el número central (los dígitos entre el primer y segundo guión, ej. '2292690'), Fecha de remisión, Peso neto en toneladas. Para determinar el peso neto: (1) Remisiones de Puebla (PU): el peso neto aparece en el ticket de pesaje integrado como 'NETO=XXXXX' (en kilogramos) — dividir entre 1000 para obtener toneladas. (2) Remisiones de Aguascalientes (AG): el peso neto aparece como 'PESO NETO: XX,XXX kg' en el reverso — dividir entre 1000. (3) SIEMPRE usar el peso neto real de báscula; NUNCA usar el peso nominal de 36.000 que aparece en el campo TONELADAS del documento. Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto";
 const PROMPT_REMISION_DOBLE = "Se te envían dos imágenes de la misma remisión de Cruz Azul. Identifica cuál es el FRENTE (tiene logo Cruz Azul, datos del cliente, número de OV) y cuál es el REVERSO (ticket de báscula con FOLIO, PESO BRUTO, PESO TARA, PESO NETO). Extrae el número de remisión que aparece en ambas. El peso neto viene del REVERSO (ticket de báscula). Para determinar el peso neto: (1) Remisiones de Puebla (PU): el peso neto aparece en el ticket de pesaje como 'NETO=XXXXX' (en kilogramos) — dividir entre 1000 para obtener toneladas. (2) Remisiones de Aguascalientes (AG): el peso neto aparece como 'PESO NETO: XX,XXX kg' en el reverso — dividir entre 1000. (3) SIEMPRE usar el peso neto real de báscula; NUNCA usar el peso nominal de 36.000 del campo TONELADAS. Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto, imagenFrente (1 o 2), imagenReverso (1 o 2). IMPORTANTE: Responde ÚNICAMENTE con el JSON, sin texto adicional, sin explicaciones, sin la palabra 'Analizando'";
+const PROMPT_TRANSFERENCIA = "Lee este comprobante de transferencia bancaria SPEI. Extrae: monto (solo número sin comas ni $), fecha (YYYY-MM-DD), referencia o clave de rastreo, nombre del ordenante. Responde SOLO en JSON: {\"monto\", \"fecha\", \"referencia\", \"ordenante\"}";
+const PROMPT_FACTURA_GD = "Lee esta factura electrónica (CFDI). Extrae: folio fiscal (UUID), folio, fecha (YYYY-MM-DD), monto total con IVA, RFC receptor, nombre receptor. Responde SOLO en JSON: {\"folioFiscal\", \"folio\", \"fecha\", \"monto\", \"rfcReceptor\", \"nombreReceptor\"}";
 const PRIORIDAD = {
   alta: {label:"Alta",  color:"#dc2626",bg:"#dc262622"},
   media:{label:"Media", color:"#d97706",bg:"#d9770622"},
@@ -1114,6 +1116,14 @@ function App() {
   const [gdLightbox,setGdLightbox]               = useState(null); // url|null — lightbox de imagen en confirm
   const [remisionViewer,setRemisionViewer]       = useState(null); // null|{images:[{url,isPdf}],folio,ov}
   const [remisionViewerLoading,setRemisionViewerLoading] = useState(false);
+  const [gdFilesTab,setGdFilesTab]               = useState("remisiones"); // "remisiones"|"transferencias"|"facturas"
+  const [gdTransfFiles,setGdTransfFiles]         = useState([]);
+  const [gdFactFiles,setGdFactFiles]             = useState([]);
+  const [gdTransfSelected,setGdTransfSelected]   = useState(new Set());
+  const [gdFactSelected,setGdFactSelected]       = useState(new Set());
+  const [gdTransfResults,setGdTransfResults]     = useState([]);
+  const [gdFactResults,setGdFactResults]         = useState([]);
+  const [gdPendingFacturaFile,setGdPendingFacturaFile] = useState(null);
   const [chartStep,setChartStep]                 = useState("idle"); // idle|loading|confirm|creating|success|error
   const [chartPlanta,setChartPlanta]             = useState(""); // "" | "PU" | "AG"
   const [chartFile,setChartFile]                 = useState(null);
@@ -1149,6 +1159,14 @@ function App() {
   const [busquedaCliente,setBusquedaCliente]     = useState("");
   const [busquedaFactura,setBusquedaFactura]     = useState("");
   const gdGroups   = useMemo(()=>gdGroupFiles(gdFiles),[gdFiles]);
+  const gdPendingByClienteId = useMemo(()=>{
+    const m={};
+    gdFolders.forEach(f=>{
+      const match=clientes.find(c=>(c.nombre||"").trim().toLowerCase()===f.name.trim().toLowerCase());
+      if(match?.id&&gdPendingCounts[f.id]) m[match.id]=gdPendingCounts[f.id];
+    });
+    return m;
+  },[gdFolders,gdPendingCounts,clientes]);
   // Duplicados: mismo nombre exacto (Drive duplica el ID) o sufijo Windows "(1)", "(2)", etc.
   // Para mismo nombre: conservar el más antiguo (createdTime), marcar los más nuevos para borrar.
   const gdDupFiles = useMemo(()=>{
@@ -1650,6 +1668,17 @@ function App() {
     const fd=await gdApi("/files",{q:`'${targetId}' in parents and trashed=false and ${mimeQ}`,fields:"files(id,name,size,mimeType,modifiedTime,createdTime)",pageSize:"200",orderBy:"modifiedTime desc"},token);
     return fd.files||[];
   };
+  const gdListPagosSubfolder=async(folder,subNombre,token)=>{
+    const sub=await gdApi("/files",{q:`'${folder.id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'`,fields:"files(id,name)",pageSize:"50"},token);
+    const pagosSub=(sub.files||[]).find(f=>(f.name||"").toLowerCase()==="pagos");
+    if(!pagosSub) return [];
+    const sub2=await gdApi("/files",{q:`'${pagosSub.id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'`,fields:"files(id,name)",pageSize:"50"},token);
+    const targetSub=(sub2.files||[]).find(f=>(f.name||"").toLowerCase()===subNombre.toLowerCase());
+    if(!targetSub) return [];
+    const mimeQ="(mimeType='application/pdf' or mimeType='image/jpeg' or mimeType='image/png')";
+    const fd=await gdApi("/files",{q:`'${targetSub.id}' in parents and trashed=false and ${mimeQ}`,fields:"files(id,name,size,mimeType,modifiedTime,createdTime)",pageSize:"200",orderBy:"modifiedTime desc"},token);
+    return fd.files||[];
+  };
   const gdClienteCandidatas=(folder)=>{
     const match=clientes.find(c=>(c.nombre||"").trim().toLowerCase()===folder.name.trim().toLowerCase());
     if(!match?.id) return ovs;
@@ -1658,19 +1687,25 @@ function App() {
   const gdScanPendientes=async(folders,token)=>{
     setGdPendingCounts(prev=>{
       const next={...prev};
-      folders.forEach(f=>{ next[f.id]={loading:true,count:null}; });
+      folders.forEach(f=>{ next[f.id]={loading:true,remisiones:null,transferencias:null,facturas:null}; });
       return next;
     });
     for(const folder of folders){
       try{
-        const files=await gdListRemisionFiles(folder,token);
+        const [files,trfFiles,facFiles]=await Promise.all([
+          gdListRemisionFiles(folder,token),
+          gdListPagosSubfolder(folder,"Transferencias",token),
+          gdListPagosSubfolder(folder,"Facturas",token),
+        ]);
         const groups=gdGroupFiles(files);
         const candidatas=gdClienteCandidatas(folder);
-        const pendientes=groups.filter(g=>!gdProcesadoInfo(g,{candidatas,silent:true})).length;
-        setGdPendingCounts(prev=>({...prev,[folder.id]:{loading:false,count:pendientes}}));
+        const remPend=groups.filter(g=>!gdProcesadoInfo(g,{candidatas,silent:true})).length;
+        const trfPend=trfFiles.filter(f=>!procesados[f.id]).length;
+        const facPend=facFiles.filter(f=>!procesados[f.id]).length;
+        setGdPendingCounts(prev=>({...prev,[folder.id]:{loading:false,remisiones:remPend,transferencias:trfPend,facturas:facPend}}));
       }catch(e){
         console.warn("[GDrive] error contando pendientes de",folder.name,e);
-        setGdPendingCounts(prev=>({...prev,[folder.id]:{loading:false,count:null}}));
+        setGdPendingCounts(prev=>({...prev,[folder.id]:{loading:false,remisiones:null,transferencias:null,facturas:null}}));
       }
     }
   };
@@ -1715,11 +1750,15 @@ function App() {
       const match=clientes.find(c=>(c.nombre||"").trim().toLowerCase()===folder.name.trim().toLowerCase());
       setGdSelectedFolder({...folder,clienteId:match?.id||null,clienteNombre:match?.nombre||null});
       const ovsCliente=gdClienteCandidatas(folder);
-      console.log("[GDrive] clienteId usado:",match?.id||"(ninguno)");
-      console.log("[GDrive] OVs encontradas para este cliente:",ovsCliente.length);
       setGdOvsCliente(ovsCliente);
-      const files=await gdListRemisionFiles(folder,token);
-      setGdFiles(files); setGdSelected(new Set()); setGdFiltro("pendientes"); setGdStep("files");
+      const [files,trfFiles,facFiles]=await Promise.all([
+        gdListRemisionFiles(folder,token),
+        gdListPagosSubfolder(folder,"Transferencias",token),
+        gdListPagosSubfolder(folder,"Facturas",token),
+      ]);
+      setGdFiles(files); setGdTransfFiles(trfFiles); setGdFactFiles(facFiles);
+      setGdSelected(new Set()); setGdTransfSelected(new Set()); setGdFactSelected(new Set());
+      setGdFiltro("pendientes"); setGdFilesTab("remisiones"); setGdStep("files");
     }catch(e){setGdError(e.message);}
     setGdLoading(false);
   };
@@ -1802,6 +1841,88 @@ function App() {
       setRemisionViewer({images,folio:ov.folio,ov});
     }catch(e){await notify(`Error al cargar remisión: ${e.message}`);}
     finally{setRemisionViewerLoading(false);}
+  };
+  const gdProcessTransferencias=async()=>{
+    const toProcess=gdTransfFiles.filter(f=>gdTransfSelected.has(f.id)&&!procesados[f.id]);
+    if(!toProcess.length) return;
+    setGdStep("processing"); setGdProgress({cur:0,tot:toProcess.length});
+    const results=[];
+    for(let i=0;i<toProcess.length;i++){
+      setGdProgress({cur:i+1,tot:toProcess.length});
+      const file=toProcess[i];
+      try{
+        const token=gdToken||await gdGetToken(false);
+        const block=await gdDownloadBlock(file,token);
+        const previewUrls=[{url:`data:${block.source.media_type};base64,${block.source.data}`,isPdf:block.type==="document"}];
+        const resp=await fetch("/.netlify/functions/claude-proxy",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:512,messages:[{role:"user",content:[block,{type:"text",text:PROMPT_TRANSFERENCIA}]}]})});
+        if(!resp.ok){const err=await resp.json();throw new Error(err.error?.message||`Error ${resp.status}`);}
+        const apiData=await resp.json();
+        const raw=apiData.content[0].text;
+        let data=null;
+        try{data=JSON.parse(raw.replace(/```json\n?/g,"").replace(/```\n?/g,"").trim());}catch{}
+        let finalFile=file; let renameInfo=null;
+        if(data?.fecha&&data?.monto){
+          try{
+            const fechaStr=(data.fecha||"").replace(/-/g,"");
+            const montoStr=String(Math.round(parseFloat(data.monto)||0));
+            const ext=(file.name.match(/\.[^/.]+$/)||[".pdf"])[0];
+            const newName=`TRF-${fechaStr}-${montoStr}${ext}`;
+            const r=await gdRenameFile(file,newName,token);
+            finalFile=r.file; renameInfo={ok:true,name:r.file.name};
+          }catch(e){renameInfo={ok:false,error:e.message};}
+        }
+        results.push({file:finalFile,originalFile:file,data,ok:!!data,previewUrls,renameInfo});
+      }catch(e){results.push({file,originalFile:file,data:null,ok:false,error:e.message,previewUrls:[]});}
+    }
+    setGdTransfResults(results); setGdFilesTab("transferencias"); setGdStep("confirm_transf");
+  };
+  const gdConfirmarTransferencia=async(res)=>{
+    const clienteId=gdSelectedFolder?.clienteId||"";
+    if(!clienteId){await notify("Esta carpeta no tiene cliente asociado en el catálogo.");return;}
+    const monto=parseFloat(res.data.monto)||0;
+    const fecha=res.data.fecha||todayISO();
+    await addAnticipo(clienteId,monto,fecha);
+    await runSave(()=>window.__setDoc(window.__doc(window.__db,"remisiones_gdrive",res.originalFile.id),{tipo:"transferencia",clienteId,fileName:res.file.name,fecha:todayISO(),monto,referencia:res.data.referencia||"",ordenante:res.data.ordenante||""}));
+  };
+  const gdProcessFacturas=async()=>{
+    const toProcess=gdFactFiles.filter(f=>gdFactSelected.has(f.id)&&!procesados[f.id]);
+    if(!toProcess.length) return;
+    setGdStep("processing"); setGdProgress({cur:0,tot:toProcess.length});
+    const results=[];
+    for(let i=0;i<toProcess.length;i++){
+      setGdProgress({cur:i+1,tot:toProcess.length});
+      const file=toProcess[i];
+      try{
+        const token=gdToken||await gdGetToken(false);
+        const block=await gdDownloadBlock(file,token);
+        const previewUrls=[{url:`data:${block.source.media_type};base64,${block.source.data}`,isPdf:block.type==="document"}];
+        const resp=await fetch("/.netlify/functions/claude-proxy",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:512,messages:[{role:"user",content:[block,{type:"text",text:PROMPT_FACTURA_GD}]}]})});
+        if(!resp.ok){const err=await resp.json();throw new Error(err.error?.message||`Error ${resp.status}`);}
+        const apiData=await resp.json();
+        const raw=apiData.content[0].text;
+        let data=null;
+        try{data=JSON.parse(raw.replace(/```json\n?/g,"").replace(/```\n?/g,"").trim());}catch{}
+        let finalFile=file; let renameInfo=null;
+        if(data?.folioFiscal){
+          try{
+            const folioSafe=(data.folioFiscal||"").replace(/[^a-zA-Z0-9-]/g,"").slice(0,40);
+            const ext=(file.name.match(/\.[^/.]+$/)||[".pdf"])[0];
+            const newName=`FAC-${folioSafe}${ext}`;
+            const r=await gdRenameFile(file,newName,token);
+            finalFile=r.file; renameInfo={ok:true,name:r.file.name};
+          }catch(e){renameInfo={ok:false,error:e.message};}
+        }
+        results.push({file:finalFile,originalFile:file,data,ok:!!data,previewUrls,renameInfo});
+      }catch(e){results.push({file,originalFile:file,data:null,ok:false,error:e.message,previewUrls:[]});}
+    }
+    setGdFactResults(results); setGdFilesTab("facturas"); setGdStep("confirm_fact");
+  };
+  const gdConfirmarFactura=(res)=>{
+    const clienteId=gdSelectedFolder?.clienteId||"";
+    setFacturaForm({...emptyFactura,clienteId,folio_fiscal:res.data.folioFiscal||"",fecha:res.data.fecha||todayISO(),monto_total:String(parseFloat(res.data.monto)||0)});
+    setMontoEditadoManualmente(true);
+    setGdPendingFacturaFile(res.originalFile);
+    setShowFacturaForm(true);
   };
   const gdLimpiarDuplicados=async()=>{
     if(!gdDupFiles.length) return;
@@ -1988,6 +2109,8 @@ function App() {
     setGdSelectedFolder(null); setGdOvsCliente([]); setGdFiles([]); setGdSelected(new Set()); setGdFiltro("pendientes");
     setGdResults([]); setGdFechaEntrega({}); setGdConfirmandoTodos(false); setGdLoading(false); setGdError(""); setGdProgress({cur:0,tot:0});
     setGdEditImages(null); setGdCleaningDups(false); setGdLightbox(null);
+    setGdTransfFiles([]); setGdFactFiles([]); setGdTransfSelected(new Set()); setGdFactSelected(new Set());
+    setGdTransfResults([]); setGdFactResults([]); setGdFilesTab("remisiones"); setGdPendingFacturaFile(null);
   };
 
   const toggleDiaHabil = async (iso)=>{
@@ -2449,6 +2572,10 @@ function App() {
     setFacturas(prev=>prev.find(x=>x.id===id)?prev.map(x=>x.id===id?fac:x):[fac,...prev]);
     const ok=await runSave(()=>saveToDb("facturas",id,fac), ()=>setFacturas(prevFacturas));
     if(!ok) return;
+    if(gdPendingFacturaFile){
+      await runSave(()=>window.__setDoc(window.__doc(window.__db,"remisiones_gdrive",gdPendingFacturaFile.id),{tipo:"factura",clienteId:fac.clienteId,fileName:gdPendingFacturaFile.name,fecha:todayISO(),facturaId:id}));
+      setGdPendingFacturaFile(null);
+    }
     setShowFacturaForm(false); setFacturaForm(emptyFactura); setMontoEditadoManualmente(false);
   };
   const cancelarFactura = async (id)=>{
@@ -2901,6 +3028,7 @@ function App() {
                     <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                       <div>
                         <div style={{fontWeight:700,fontSize:16,color:"var(--text-main)"}}>{c.nombre}</div>
+                        {(()=>{const pg=gdPendingByClienteId[c.id];if(!pg||pg.loading) return null;const rem=pg.remisiones||0,trf=pg.transferencias||0,fac=pg.facturas||0;if(!rem&&!trf&&!fac) return null;return <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:3}}>{rem>0&&<span style={{fontSize:10,fontWeight:700,background:"#16a34a",color:"white",borderRadius:10,padding:"1px 7px",whiteSpace:"nowrap"}}>📄 {rem} rem</span>}{trf>0&&<span style={{fontSize:10,fontWeight:700,background:"#0891b2",color:"white",borderRadius:10,padding:"1px 7px",whiteSpace:"nowrap"}}>💰 {trf} transf</span>}{fac>0&&<span style={{fontSize:10,fontWeight:700,background:"#7c3aed",color:"white",borderRadius:10,padding:"1px 7px",whiteSpace:"nowrap"}}>🧾 {fac} fac</span>}</div>;})()}
                         {c.nombre_fiscal&&<div style={{fontSize:11,color:"var(--text-sec)",marginTop:1}}>{c.nombre_fiscal}</div>}
                         {c.ciudad&&<div style={{fontSize:12,color:"var(--text-sec)",marginTop:1}}>📍 {c.ciudad}</div>}
                         <div style={{fontSize:12,color:"var(--text-tertiary)",marginTop:1}}>Precio: {fmt(c.precio_ton)}/ton · {c.num_entregas} entregas{c.rfc?` · RFC: ${c.rfc}`:""}{c.telefono?` · 📞 ${c.telefono}`:""}</div>
@@ -4975,8 +5103,15 @@ function App() {
                         <div style={{fontSize:11,marginTop:2,color:match?"var(--accent)":"#d97706"}}>{match?`✓ Cliente: ${match.nombre}`:"⚠ Sin coincidencia en catálogo"}</div>
                       </div>
                       {pend?.loading&&<span style={{fontSize:11,color:"var(--text-tertiary)",flexShrink:0}}>⏳</span>}
-                      {!pend?.loading&&pend?.count>0&&<span style={{fontSize:11,fontWeight:700,color:"white",background:"var(--accent)",borderRadius:12,padding:"3px 9px",flexShrink:0}}>{pend.count} nueva{pend.count!==1?"s":""}</span>}
-                      {!pend?.loading&&pend?.count===0&&<span style={{fontSize:14,flexShrink:0}}>✅</span>}
+                      {!pend?.loading&&(()=>{
+                        const rem=pend?.remisiones||0,trf=pend?.transferencias||0,fac=pend?.facturas||0;
+                        if(!rem&&!trf&&!fac) return <span style={{fontSize:14,flexShrink:0}}>✅</span>;
+                        return <div style={{display:"flex",gap:3,flexShrink:0,flexWrap:"wrap"}}>
+                          {rem>0&&<span style={{fontSize:10,fontWeight:700,color:"white",background:"#16a34a",borderRadius:10,padding:"2px 7px",whiteSpace:"nowrap"}}>📄 {rem}</span>}
+                          {trf>0&&<span style={{fontSize:10,fontWeight:700,color:"white",background:"#0891b2",borderRadius:10,padding:"2px 7px",whiteSpace:"nowrap"}}>💰 {trf}</span>}
+                          {fac>0&&<span style={{fontSize:10,fontWeight:700,color:"white",background:"#7c3aed",borderRadius:10,padding:"2px 7px",whiteSpace:"nowrap"}}>🧾 {fac}</span>}
+                        </div>;
+                      })()}
                       <span style={{color:"var(--text-tertiary)",fontSize:18}}>›</span>
                     </button>
                   );
@@ -4989,65 +5124,103 @@ function App() {
               const groupsConEstado=gdGroups.map(g=>({g,info:gdProcesadoInfo(g)}));
               const pendientesCount=groupsConEstado.filter(x=>!x.info).length;
               const visibles=gdFiltro==="todas"?groupsConEstado:groupsConEstado.filter(x=>!x.info);
+              const trfPend=gdTransfFiles.filter(f=>!procesados[f.id]).length;
+              const facPend=gdFactFiles.filter(f=>!procesados[f.id]).length;
+              const tabSt=(active)=>({flex:1,background:active?"var(--accent)":"var(--bg-card-alt)",color:active?"white":"var(--text-sec)",border:`1px solid ${active?"var(--accent)":"var(--border)"}`,borderRadius:6,padding:"6px 6px",fontSize:11,fontWeight:700,cursor:"pointer"});
               return (
               <div>
-                <button onClick={()=>setGdStep("folders")} style={{background:"none",border:"none",color:"var(--text-tertiary)",fontSize:12,cursor:"pointer",marginBottom:12,padding:0}}>← Carpetas</button>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                  <div style={{fontSize:12,color:"var(--text-sec)"}}>
-                    {gdGroups.length} remisión{gdGroups.length!==1?"es":""} · <span style={{color:"#f59e0b"}}>{pendientesCount} pendiente{pendientesCount!==1?"s":""}</span>
-                  </div>
-                  {pendientesCount>0&&<button onClick={gdSelectAll} style={{background:"none",border:"1px solid var(--border)",color:"var(--text-sec)",fontSize:11,padding:"3px 10px",borderRadius:6,cursor:"pointer"}}>Sel. todos pendientes</button>}
+                <button onClick={()=>setGdStep("folders")} style={{background:"none",border:"none",color:"var(--text-tertiary)",fontSize:12,cursor:"pointer",marginBottom:10,padding:0}}>← Carpetas</button>
+                <div style={{display:"flex",gap:4,marginBottom:12}}>
+                  <button onClick={()=>setGdFilesTab("remisiones")} style={tabSt(gdFilesTab==="remisiones")}>📄 Rem{pendientesCount>0?` (${pendientesCount})`:""}</button>
+                  <button onClick={()=>setGdFilesTab("transferencias")} style={tabSt(gdFilesTab==="transferencias")}>💰 Transf{trfPend>0?` (${trfPend})`:""}</button>
+                  <button onClick={()=>setGdFilesTab("facturas")} style={tabSt(gdFilesTab==="facturas")}>🧾 Fact{facPend>0?` (${facPend})`:""}</button>
                 </div>
-                <div style={{display:"flex",gap:6,marginBottom:12}}>
-                  <button onClick={()=>setGdFiltro("pendientes")} style={{flex:1,background:gdFiltro==="pendientes"?"var(--accent)":"var(--bg-card-alt)",color:gdFiltro==="pendientes"?"white":"var(--text-sec)",border:`1px solid ${gdFiltro==="pendientes"?"var(--accent)":"var(--border)"}`,borderRadius:6,padding:"6px 10px",fontSize:12,fontWeight:700,cursor:"pointer"}}>🆕 Solo nuevas</button>
-                  <button onClick={()=>setGdFiltro("todas")} style={{flex:1,background:gdFiltro==="todas"?"var(--accent)":"var(--bg-card-alt)",color:gdFiltro==="todas"?"white":"var(--text-sec)",border:`1px solid ${gdFiltro==="todas"?"var(--accent)":"var(--border)"}`,borderRadius:6,padding:"6px 10px",fontSize:12,fontWeight:700,cursor:"pointer"}}>Todas</button>
-                </div>
-                {gdDupFiles.length>0&&(
-                  <div style={{background:"#ef444415",border:"1px solid #fecaca",borderRadius:8,padding:"10px 12px",marginBottom:12}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8}}>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:12,fontWeight:700,color:"#dc2626"}}>⚠ {gdDupFiles.length} archivo{gdDupFiles.length!==1?"s":""} duplicado{gdDupFiles.length!==1?"s":""} detectado{gdDupFiles.length!==1?"s":""} (mismo nombre, diferente versión)</div>
-                        <div style={{fontSize:10,color:"var(--text-sec)",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{gdDupFiles.map(f=>f.name).join(", ")}</div>
-                      </div>
-                      <button onClick={gdLimpiarDuplicados} disabled={gdCleaningDups}
-                        style={{background:"#dc2626",color:"white",border:"none",borderRadius:6,padding:"6px 11px",fontWeight:700,cursor:gdCleaningDups?"default":"pointer",fontSize:12,flexShrink:0,opacity:gdCleaningDups?0.7:1}}>
-                        {gdCleaningDups?"⏳ Limpiando...":"🗑 Limpiar duplicados"}
-                      </button>
-                    </div>
+                {gdFilesTab==="remisiones"&&(<div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                    <div style={{fontSize:12,color:"var(--text-sec)"}}>{gdGroups.length} remisión{gdGroups.length!==1?"es":""} · <span style={{color:"#f59e0b"}}>{pendientesCount} pendiente{pendientesCount!==1?"s":""}</span></div>
+                    {pendientesCount>0&&<button onClick={gdSelectAll} style={{background:"none",border:"1px solid var(--border)",color:"var(--text-sec)",fontSize:11,padding:"3px 10px",borderRadius:6,cursor:"pointer"}}>Sel. todos</button>}
                   </div>
-                )}
-                {gdGroups.length===0&&<div style={{color:"var(--text-tertiary)",fontSize:13,textAlign:"center",padding:"24px 0"}}>No hay archivos JPG/PNG/PDF en la carpeta Remisiones</div>}
-                {gdGroups.length>0&&visibles.length===0&&(
-                  <div style={{color:"var(--accent)",fontSize:13,textAlign:"center",padding:"24px 0"}}>✅ Todo al día — no hay remisiones nuevas para este cliente</div>
-                )}
-                {visibles.map(({g,info})=>{
-                  const done=!!info;
-                  const sel=gdSelected.has(g.key);
-                  const paginas=g.page2?2:1;
-                  const size=(parseInt(g.page1?.size)||0)+(parseInt(g.page2?.size)||0);
-                  return(
-                    <div key={g.key} onClick={()=>!done&&gdToggle(g.key)} style={{display:"flex",alignItems:"center",gap:10,background:sel?"#10B98118":"var(--bg-card-alt)",border:`1px solid ${sel?"var(--accent)":"var(--border)"}`,borderRadius:8,padding:"10px 12px",marginBottom:6,cursor:done?"default":"pointer"}}>
-                      <div style={{fontSize:16,flexShrink:0}}>{done?"✅":"🆕"}</div>
-                      {!done&&<div style={{width:18,height:18,borderRadius:4,border:`2px solid ${sel?"var(--accent)":"var(--text-muted)"}`,background:sel?"var(--accent)":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontSize:11}}>{sel?"✓":""}</div>}
-                      <div style={{flex:1,overflow:"hidden"}}>
-                        <div style={{fontSize:12,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{g.folioBase} <span style={{color:"var(--text-tertiary)",fontWeight:400}}>({paginas} página{paginas!==1?"s":""})</span></div>
-                        {done?<div style={{fontSize:10,color:"var(--accent)",marginTop:1}}>OV: {info.ovId||"—"} · {info.fecha||""}</div>
-                             :<div style={{fontSize:10,color:"var(--text-muted)",marginTop:1}}>{size?Math.round(size/1024)+"KB":"—"}</div>}
-                      </div>
-                      {done&&(
-                        <button onClick={e=>{e.stopPropagation();gdReprocesar(g);}}
-                          style={{background:"none",border:"1px solid var(--text-muted)",color:"var(--text-sec)",fontSize:10,padding:"3px 8px",borderRadius:5,cursor:"pointer",flexShrink:0,whiteSpace:"nowrap"}}>
-                          ↩ Reprocesar
+                  <div style={{display:"flex",gap:6,marginBottom:12}}>
+                    <button onClick={()=>setGdFiltro("pendientes")} style={{flex:1,background:gdFiltro==="pendientes"?"var(--accent)":"var(--bg-card-alt)",color:gdFiltro==="pendientes"?"white":"var(--text-sec)",border:`1px solid ${gdFiltro==="pendientes"?"var(--accent)":"var(--border)"}`,borderRadius:6,padding:"6px 10px",fontSize:12,fontWeight:700,cursor:"pointer"}}>🆕 Solo nuevas</button>
+                    <button onClick={()=>setGdFiltro("todas")} style={{flex:1,background:gdFiltro==="todas"?"var(--accent)":"var(--bg-card-alt)",color:gdFiltro==="todas"?"white":"var(--text-sec)",border:`1px solid ${gdFiltro==="todas"?"var(--accent)":"var(--border)"}`,borderRadius:6,padding:"6px 10px",fontSize:12,fontWeight:700,cursor:"pointer"}}>Todas</button>
+                  </div>
+                  {gdDupFiles.length>0&&(
+                    <div style={{background:"#ef444415",border:"1px solid #fecaca",borderRadius:8,padding:"10px 12px",marginBottom:12}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:12,fontWeight:700,color:"#dc2626"}}>⚠ {gdDupFiles.length} archivo{gdDupFiles.length!==1?"s":""} duplicado{gdDupFiles.length!==1?"s":""} detectado{gdDupFiles.length!==1?"s":""}</div>
+                          <div style={{fontSize:10,color:"var(--text-sec)",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{gdDupFiles.map(f=>f.name).join(", ")}</div>
+                        </div>
+                        <button onClick={gdLimpiarDuplicados} disabled={gdCleaningDups} style={{background:"#dc2626",color:"white",border:"none",borderRadius:6,padding:"6px 11px",fontWeight:700,cursor:gdCleaningDups?"default":"pointer",fontSize:12,flexShrink:0,opacity:gdCleaningDups?0.7:1}}>
+                          {gdCleaningDups?"⏳ Limpiando...":"🗑 Limpiar"}
                         </button>
-                      )}
+                      </div>
                     </div>
-                  );
-                })}
-                {gdSelected.size>0&&(
-                  <button onClick={gdProcess} style={{width:"100%",background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"12px",fontWeight:700,cursor:"pointer",fontSize:14,marginTop:8}}>
-                    🤖 Procesar {gdSelected.size} remisión{gdSelected.size!==1?"es":""} con IA
-                  </button>
-                )}
+                  )}
+                  {gdGroups.length===0&&<div style={{color:"var(--text-tertiary)",fontSize:13,textAlign:"center",padding:"24px 0"}}>No hay archivos en la carpeta Remisiones</div>}
+                  {gdGroups.length>0&&visibles.length===0&&<div style={{color:"var(--accent)",fontSize:13,textAlign:"center",padding:"24px 0"}}>✅ Todo al día — sin remisiones nuevas</div>}
+                  {visibles.map(({g,info})=>{
+                    const done=!!info; const sel=gdSelected.has(g.key);
+                    const paginas=g.page2?2:1;
+                    const size=(parseInt(g.page1?.size)||0)+(parseInt(g.page2?.size)||0);
+                    return(
+                      <div key={g.key} onClick={()=>!done&&gdToggle(g.key)} style={{display:"flex",alignItems:"center",gap:10,background:sel?"#10B98118":"var(--bg-card-alt)",border:`1px solid ${sel?"var(--accent)":"var(--border)"}`,borderRadius:8,padding:"10px 12px",marginBottom:6,cursor:done?"default":"pointer"}}>
+                        <div style={{fontSize:16,flexShrink:0}}>{done?"✅":"🆕"}</div>
+                        {!done&&<div style={{width:18,height:18,borderRadius:4,border:`2px solid ${sel?"var(--accent)":"var(--text-muted)"}`,background:sel?"var(--accent)":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontSize:11}}>{sel?"✓":""}</div>}
+                        <div style={{flex:1,overflow:"hidden"}}>
+                          <div style={{fontSize:12,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{g.folioBase} <span style={{color:"var(--text-tertiary)",fontWeight:400}}>({paginas} pág.)</span></div>
+                          {done?<div style={{fontSize:10,color:"var(--accent)",marginTop:1}}>OV: {info.ovId||"—"} · {info.fecha||""}</div>:<div style={{fontSize:10,color:"var(--text-muted)",marginTop:1}}>{size?Math.round(size/1024)+"KB":"—"}</div>}
+                        </div>
+                        {done&&<button onClick={e=>{e.stopPropagation();gdReprocesar(g);}} style={{background:"none",border:"1px solid var(--text-muted)",color:"var(--text-sec)",fontSize:10,padding:"3px 8px",borderRadius:5,cursor:"pointer",flexShrink:0,whiteSpace:"nowrap"}}>↩ Reprocesar</button>}
+                      </div>
+                    );
+                  })}
+                  {gdSelected.size>0&&<button onClick={gdProcess} style={{width:"100%",background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"12px",fontWeight:700,cursor:"pointer",fontSize:14,marginTop:8}}>🤖 Procesar {gdSelected.size} remisión{gdSelected.size!==1?"es":""} con IA</button>}
+                </div>)}
+                {gdFilesTab==="transferencias"&&(<div>
+                  {gdTransfFiles.length===0
+                    ?<div style={{color:"var(--text-tertiary)",fontSize:13,textAlign:"center",padding:"24px 0"}}>No hay archivos en Pagos/Transferencias</div>
+                    :<div>
+                      <div style={{fontSize:12,color:"var(--text-sec)",marginBottom:10}}>{gdTransfFiles.length} archivo{gdTransfFiles.length!==1?"s":""} · <span style={{color:"#f59e0b"}}>{trfPend} pendiente{trfPend!==1?"s":""}</span></div>
+                      {gdTransfFiles.map(f=>{
+                        const done=!!procesados[f.id]; const sel=gdTransfSelected.has(f.id); const reg=procesados[f.id];
+                        return(
+                          <div key={f.id} onClick={()=>{if(done)return;setGdTransfSelected(prev=>{const s=new Set(prev);s.has(f.id)?s.delete(f.id):s.add(f.id);return s;});}} style={{display:"flex",alignItems:"center",gap:10,background:sel?"#0891b218":"var(--bg-card-alt)",border:`1px solid ${sel?"#0891b2":"var(--border)"}`,borderRadius:8,padding:"10px 12px",marginBottom:6,cursor:done?"default":"pointer"}}>
+                            <div style={{fontSize:16,flexShrink:0}}>{done?"✅":"💰"}</div>
+                            {!done&&<div style={{width:18,height:18,borderRadius:4,border:`2px solid ${sel?"#0891b2":"var(--text-muted)"}`,background:sel?"#0891b2":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontSize:11}}>{sel?"✓":""}</div>}
+                            <div style={{flex:1,overflow:"hidden"}}>
+                              <div style={{fontSize:12,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name}</div>
+                              {done&&reg&&<div style={{fontSize:10,color:"var(--accent)",marginTop:1}}>Registrado · {reg.fecha||""}</div>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {gdTransfSelected.size>0&&<button onClick={gdProcessTransferencias} style={{width:"100%",background:"#0891b2",color:"white",border:"none",borderRadius:8,padding:"12px",fontWeight:700,cursor:"pointer",fontSize:14,marginTop:8}}>🤖 Procesar {gdTransfSelected.size} transferencia{gdTransfSelected.size!==1?"s":""} con IA</button>}
+                    </div>
+                  }
+                </div>)}
+                {gdFilesTab==="facturas"&&(<div>
+                  {gdFactFiles.length===0
+                    ?<div style={{color:"var(--text-tertiary)",fontSize:13,textAlign:"center",padding:"24px 0"}}>No hay archivos en Pagos/Facturas</div>
+                    :<div>
+                      <div style={{fontSize:12,color:"var(--text-sec)",marginBottom:10}}>{gdFactFiles.length} archivo{gdFactFiles.length!==1?"s":""} · <span style={{color:"#f59e0b"}}>{facPend} pendiente{facPend!==1?"s":""}</span></div>
+                      {gdFactFiles.map(f=>{
+                        const done=!!procesados[f.id]; const sel=gdFactSelected.has(f.id); const reg=procesados[f.id];
+                        return(
+                          <div key={f.id} onClick={()=>{if(done)return;setGdFactSelected(prev=>{const s=new Set(prev);s.has(f.id)?s.delete(f.id):s.add(f.id);return s;});}} style={{display:"flex",alignItems:"center",gap:10,background:sel?"#7c3aed18":"var(--bg-card-alt)",border:`1px solid ${sel?"#7c3aed":"var(--border)"}`,borderRadius:8,padding:"10px 12px",marginBottom:6,cursor:done?"default":"pointer"}}>
+                            <div style={{fontSize:16,flexShrink:0}}>{done?"✅":"🧾"}</div>
+                            {!done&&<div style={{width:18,height:18,borderRadius:4,border:`2px solid ${sel?"#7c3aed":"var(--text-muted)"}`,background:sel?"#7c3aed":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontSize:11}}>{sel?"✓":""}</div>}
+                            <div style={{flex:1,overflow:"hidden"}}>
+                              <div style={{fontSize:12,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name}</div>
+                              {done&&reg&&<div style={{fontSize:10,color:"var(--accent)",marginTop:1}}>Registrado · {reg.fecha||""}</div>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {gdFactSelected.size>0&&<button onClick={gdProcessFacturas} style={{width:"100%",background:"#7c3aed",color:"white",border:"none",borderRadius:8,padding:"12px",fontWeight:700,cursor:"pointer",fontSize:14,marginTop:8}}>🤖 Procesar {gdFactSelected.size} factura{gdFactSelected.size!==1?"s":""} con IA</button>}
+                    </div>
+                  }
+                </div>)}
               </div>
               );
             })()}
@@ -5136,6 +5309,93 @@ function App() {
                     </button>
                   </div>
                 )}
+              </div>
+              );
+            })()}
+
+            {gdStep==="confirm_transf"&&(()=>{
+              return (
+              <div>
+                <button onClick={()=>setGdStep("files")} style={{background:"none",border:"none",color:"var(--text-tertiary)",fontSize:12,cursor:"pointer",marginBottom:12,padding:0}}>← Volver a archivos</button>
+                <div style={{fontSize:13,color:"var(--text-sec)",marginBottom:14}}>Revisa y registra las transferencias:</div>
+                {gdTransfResults.map((res,idx)=>{
+                  const done=!!procesados[res.fileId];
+                  return(
+                    <div key={res.fileId||idx} style={{background:"var(--bg-card-alt)",borderRadius:10,padding:"14px",marginBottom:10,border:`1px solid ${done?"#0891b266":"var(--border)"}`}}>
+                      <div style={{fontWeight:600,fontSize:11,color:"var(--text-tertiary)",marginBottom:8,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>💰 {res.fileName}</div>
+                      {res.ok&&res.data?(
+                        <>
+                          {res.previewUrl&&(
+                            <div style={{marginBottom:10,textAlign:"center"}}>
+                              {res.previewUrl.isPdf
+                                ?<embed src={res.previewUrl.url} type="application/pdf" style={{width:"100%",height:220,borderRadius:8,border:"1px solid var(--border)"}}/>
+                                :<img src={res.previewUrl.url} alt="Comprobante" style={{width:"100%",height:"auto",maxHeight:300,objectFit:"contain",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"zoom-in"}} onClick={()=>setGdLightbox(res.previewUrl.url)}/>
+                              }
+                            </div>
+                          )}
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
+                            <div><div style={{fontSize:10,color:"var(--text-tertiary)"}}>Monto</div><div style={{fontWeight:700,color:"#16a34a",fontSize:14}}>${Number(res.data.monto||0).toLocaleString("es-MX",{minimumFractionDigits:2})}</div></div>
+                            <div><div style={{fontSize:10,color:"var(--text-tertiary)"}}>Fecha</div><div style={{fontWeight:600,fontSize:13}}>{res.data.fecha||"—"}</div></div>
+                            <div><div style={{fontSize:10,color:"var(--text-tertiary)"}}>Referencia</div><div style={{fontWeight:600,fontSize:12,wordBreak:"break-all"}}>{res.data.referencia||"—"}</div></div>
+                            <div><div style={{fontSize:10,color:"var(--text-tertiary)"}}>Ordenante</div><div style={{fontWeight:600,fontSize:12,wordBreak:"break-all"}}>{res.data.ordenante||"—"}</div></div>
+                          </div>
+                          {res.renameInfo?.ok&&<div style={{fontSize:11,color:"#0891b2",marginBottom:8}}>📝 Renombrado: {res.renameInfo.name}</div>}
+                          {res.renameInfo&&!res.renameInfo.ok&&<div style={{fontSize:11,color:"#d97706",marginBottom:8}}>⚠ No se pudo renombrar: {res.renameInfo.error}</div>}
+                          {done
+                            ?<div style={{fontSize:12,color:"var(--accent)",textAlign:"center",padding:"6px 0",fontWeight:700}}>✅ Registrado como anticipo</div>
+                            :<button onClick={()=>gdConfirmarTransferencia(res)} style={{width:"100%",background:"#0891b2",color:"white",border:"none",borderRadius:6,padding:"10px",fontWeight:700,cursor:"pointer",fontSize:13}}>💰 Registrar como anticipo</button>
+                          }
+                        </>
+                      ):(
+                        <div style={{color:"#dc2626",fontSize:12}}>⚠ {res.error||"No se pudo extraer"}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              );
+            })()}
+
+            {gdStep==="confirm_fact"&&(()=>{
+              return (
+              <div>
+                <button onClick={()=>setGdStep("files")} style={{background:"none",border:"none",color:"var(--text-tertiary)",fontSize:12,cursor:"pointer",marginBottom:12,padding:0}}>← Volver a archivos</button>
+                <div style={{fontSize:13,color:"var(--text-sec)",marginBottom:14}}>Revisa y registra las facturas:</div>
+                {gdFactResults.map((res,idx)=>{
+                  const done=!!procesados[res.fileId];
+                  return(
+                    <div key={res.fileId||idx} style={{background:"var(--bg-card-alt)",borderRadius:10,padding:"14px",marginBottom:10,border:`1px solid ${done?"#7c3aed66":"var(--border)"}`}}>
+                      <div style={{fontWeight:600,fontSize:11,color:"var(--text-tertiary)",marginBottom:8,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>🧾 {res.fileName}</div>
+                      {res.ok&&res.data?(
+                        <>
+                          {res.previewUrl&&(
+                            <div style={{marginBottom:10,textAlign:"center"}}>
+                              {res.previewUrl.isPdf
+                                ?<embed src={res.previewUrl.url} type="application/pdf" style={{width:"100%",height:220,borderRadius:8,border:"1px solid var(--border)"}}/>
+                                :<img src={res.previewUrl.url} alt="Factura" style={{width:"100%",height:"auto",maxHeight:300,objectFit:"contain",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"zoom-in"}} onClick={()=>setGdLightbox(res.previewUrl.url)}/>
+                              }
+                            </div>
+                          )}
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
+                            <div><div style={{fontSize:10,color:"var(--text-tertiary)"}}>Monto total</div><div style={{fontWeight:700,color:"#7c3aed",fontSize:14}}>${Number(res.data.monto||0).toLocaleString("es-MX",{minimumFractionDigits:2})}</div></div>
+                            <div><div style={{fontSize:10,color:"var(--text-tertiary)"}}>Fecha</div><div style={{fontWeight:600,fontSize:13}}>{res.data.fecha||"—"}</div></div>
+                            <div><div style={{fontSize:10,color:"var(--text-tertiary)"}}>Folio</div><div style={{fontWeight:600,fontSize:12}}>{res.data.folio||"—"}</div></div>
+                            <div><div style={{fontSize:10,color:"var(--text-tertiary)"}}>RFC receptor</div><div style={{fontWeight:600,fontSize:12}}>{res.data.rfcReceptor||"—"}</div></div>
+                            <div style={{gridColumn:"1/-1"}}><div style={{fontSize:10,color:"var(--text-tertiary)"}}>Folio fiscal (UUID)</div><div style={{fontWeight:600,fontSize:10,wordBreak:"break-all"}}>{res.data.folioFiscal||"—"}</div></div>
+                          </div>
+                          {res.renameInfo?.ok&&<div style={{fontSize:11,color:"#7c3aed",marginBottom:8}}>📝 Renombrado: {res.renameInfo.name}</div>}
+                          {res.renameInfo&&!res.renameInfo.ok&&<div style={{fontSize:11,color:"#d97706",marginBottom:8}}>⚠ No se pudo renombrar: {res.renameInfo.error}</div>}
+                          {done
+                            ?<div style={{fontSize:12,color:"var(--accent)",textAlign:"center",padding:"6px 0",fontWeight:700}}>✅ Factura registrada</div>
+                            :<button onClick={()=>gdConfirmarFactura(res)} style={{width:"100%",background:"#7c3aed",color:"white",border:"none",borderRadius:6,padding:"10px",fontWeight:700,cursor:"pointer",fontSize:13}}>🧾 Registrar factura en el sistema</button>
+                          }
+                        </>
+                      ):(
+                        <div style={{color:"#dc2626",fontSize:12}}>⚠ {res.error||"No se pudo extraer"}</div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               );
             })()}
