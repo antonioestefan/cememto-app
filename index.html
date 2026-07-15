@@ -2518,7 +2518,7 @@ function App() {
     const pStart=reportePeriodo==="mensual"?(reporteMes+"-01"):reportePeriodo==="rango"?(reporteRangoInicio||null):null;
     const pEnd=reportePeriodo==="mensual"?(reporteMes+"-31"):reportePeriodo==="rango"?(reporteRangoFin||null):null;
     const histAntes=pStart?historial.filter(a=>(a.fecha||"")<pStart):[];
-    const histPer=pStart?historial.filter(a=>{const f=a.fecha||"";return f>=pStart&&(!pEnd||f<=pEnd);}):historial;
+    const histPer=(pStart?historial.filter(a=>{const f=a.fecha||"";return f>=pStart&&(!pEnd||f<=pEnd);}):historial).sort((a,b)=>(a.fecha||"").localeCompare(b.fecha||""));
     const montoAntes=histAntes.reduce((s,a)=>s+(parseFloat(a.monto)||0),0);
     const entregadoAntes=pStart?ovs.filter(p=>p.clienteId===cuenta.id&&p.status==="entregado"&&(p.fecha_carga||"")<pStart).reduce((s,p)=>s+valorOV(p),0):0;
     const saldoAnt=montoAntes-entregadoAntes;
