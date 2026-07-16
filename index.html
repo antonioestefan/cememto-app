@@ -75,6 +75,7 @@
       var raw=localStorage.getItem("gd_token")||sessionStorage.getItem("gd_token");
       var tok=raw?JSON.parse(raw):null;
       if(tok&&tok.expires_at&&Date.now()>tok.expires_at){
+        // Solo limpiar el access token expirado — el refresh_token se mantiene para renovación automática
         ["gd_token","gd_granted"].forEach(function(k){
           try{localStorage.removeItem(k);}catch{}
           try{sessionStorage.removeItem(k);}catch{}
@@ -1600,25 +1601,29 @@ function App() {
     if(g){ try{localStorage.setItem("gd_granted",g);}catch{} }
     return g;
   };
-  const gdTrySilentRenew=()=>{
-    if(!window.__GOOGLE_CLIENT_ID||!window.google?.accounts?.oauth2) return Promise.resolve(null);
-    return new Promise((resolve)=>{
-      try{
-        const client=google.accounts.oauth2.initTokenClient({
-          client_id:window.__GOOGLE_CLIENT_ID,
-          scope:GD_SCOPE,
-          callback:(resp)=>{
-            if(resp.error){resolve(null);return;}
-            gdSaveGranted();
-            const tokenObj={access_token:resp.access_token,expires_at:Date.now()+((resp.expires_in||3600)*1000),scope:GD_SCOPE};
-            gdSaveToken(tokenObj);
-            resolve(resp.access_token);
-          },
-          error_callback:()=>resolve(null),
-        });
-        client.requestAccessToken({prompt:"none"});
-      }catch{ resolve(null); }
-    });
+  const gdSaveRefreshToken=(rt)=>{
+    try{localStorage.setItem("gd_refresh_token",rt);}catch{}
+  };
+  const gdReadRefreshToken=()=>{
+    try{return localStorage.getItem("gd_refresh_token")||null;}catch{return null;}
+  };
+  const gdTrySilentRenew=async()=>{
+    const rt=gdReadRefreshToken();
+    if(!rt) return null;
+    try{
+      const r=await fetch("/.netlify/functions/google-oauth",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"refresh",refresh_token:rt}),
+      });
+      if(!r.ok) return null;
+      const data=await r.json();
+      if(!data.access_token) return null;
+      const tokenObj={access_token:data.access_token,expires_at:Date.now()+((data.expires_in||3600)*1000),scope:GD_SCOPE};
+      gdSaveToken(tokenObj);
+      gdSaveGranted();
+      return data.access_token;
+    }catch{return null;}
   };
   const gdGetToken=async(forceConsent)=>{
     if(!window.__GOOGLE_CLIENT_ID) throw new Error("Falta configurar GOOGLE_CLIENT_ID");
@@ -1629,20 +1634,30 @@ function App() {
       const renewed=await gdTrySilentRenew();
       if(renewed) return renewed;
     }
-    const granted=gdReadGranted()===GD_SCOPE;
     return new Promise((resolve,reject)=>{
-      const client=google.accounts.oauth2.initTokenClient({
+      const client=google.accounts.oauth2.initCodeClient({
         client_id:window.__GOOGLE_CLIENT_ID,
         scope:GD_SCOPE,
-        callback:(resp)=>{
+        ux_mode:"popup",
+        callback:async(resp)=>{
           if(resp.error){reject(new Error(resp.error));return;}
-          gdSaveGranted();
-          gdSaveToken({access_token:resp.access_token,expires_at:Date.now()+((resp.expires_in||3600)*1000),scope:GD_SCOPE});
-          resolve(resp.access_token);
+          try{
+            const r=await fetch("/.netlify/functions/google-oauth",{
+              method:"POST",
+              headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({action:"exchange",code:resp.code}),
+            });
+            if(!r.ok){const err=await r.json().catch(()=>({}));reject(new Error(err.error||`Error del servidor: ${r.status}`));return;}
+            const data=await r.json();
+            gdSaveGranted();
+            gdSaveToken({access_token:data.access_token,expires_at:Date.now()+((data.expires_in||3600)*1000),scope:GD_SCOPE});
+            if(data.refresh_token) gdSaveRefreshToken(data.refresh_token);
+            resolve(data.access_token);
+          }catch(e){reject(e);}
         },
         error_callback:(err)=>reject(new Error(err?.message||"Error de autenticación")),
       });
-      client.requestAccessToken({prompt:forceConsent?"consent":(granted?"":"consent")});
+      client.requestCode();
     });
   };
   const GD_ROOT_FOLDER_NAME="Cruz Azul - Interno";
@@ -1719,7 +1734,7 @@ function App() {
       const cached=gdReadToken();
       if(cached&&cached.scope===GD_SCOPE&&cached.expires_at>Date.now()+60000){
         token=cached.access_token;
-      }else if(gdReadGranted()===GD_SCOPE){
+      }else if(gdReadRefreshToken()){
         setGdLoading(true);
         token=await gdTrySilentRenew();
       }
@@ -2538,8 +2553,8 @@ function App() {
       let ri=0;
       if(haySaldoAnt){
         r=ws.addRow([`Saldo anterior al ${pStart}`,saldoAnt]);
-        r.getCell(1).fill=fill("FEF9C3"); r.getCell(1).font=fw("92400E",10,true);
-        r.getCell(2).fill=fill("FEF9C3"); r.getCell(2).font=fw("92400E",10,true);
+        r.getCell(1).fill=fill("92D050"); r.getCell(1).font=fw("1A4D00",10,true);
+        r.getCell(2).fill=fill("92D050"); r.getCell(2).font=fw("1A4D00",10,true);
         r.getCell(2).numFmt='"$"#,##0'; r.getCell(2).alignment={horizontal:"right"};
         ri=1;
       }
