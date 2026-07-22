@@ -984,19 +984,30 @@ function getWeekRange(offset=0) {
 const gdGroupFiles = (files) => {
   const groups = {}; const order = [];
   (files||[]).forEach(f=>{
+    const ext=(f.name||"").split(".").pop().toLowerCase();
+    const isPdf=ext==="pdf";
+    const isImg=["jpg","jpeg","png"].includes(ext);
     const base=(f.name||"").replace(/\.[^/.]+$/,"");
-    const m=base.match(/^(.+)-([12])$/i);
-    const key=(m?m[1]:base).toLowerCase();
+    // PDFs siempre individuales; solo imágenes con sufijo -1/-2 se emparejan
+    const m=isImg ? base.match(/^(.+)-([12])$/i) : null;
+    const key=isPdf ? (f.id||f.name||base).toLowerCase() : (m?m[1]:base).toLowerCase();
     if(!groups[key]){ groups[key]={folioBase:m?m[1]:base,page1:null,page2:null}; order.push(key); }
     if(m){ if(m[2]==="1") groups[key].page1=f; else groups[key].page2=f; }
     else if(!groups[key].page1) groups[key].page1=f;
   });
   const result=order.map(key=>({key,...groups[key]}));
-  // Archivos sin folio Cruz Azul (ej. fotos de WhatsApp): se agrupan de a dos para enviarse
-  // juntos a Claude, que identifica cuál es frente y cuál reverso.
-  const sinFolio=(g)=>g.page1&&!g.page2&&!FOLIO_PREFIJO_RE.test(g.folioBase);
-  const huerfanos=result.filter(sinFolio);
-  const conFolio=result.filter(g=>!sinFolio(g));
+  // Imágenes sin folio Cruz Azul y sin par -2 (ej. fotos de WhatsApp): se agrupan de a dos
+  const sinFolioImg=(g)=>{
+    const ext=(g.page1?.name||"").split(".").pop().toLowerCase();
+    return ["jpg","jpeg","png"].includes(ext)&&g.page1&&!g.page2&&!FOLIO_PREFIJO_RE.test(g.folioBase);
+  };
+  // PDFs sin prefijo AG-/PU-/BQ-: noFolio individualmente, nunca se emparejan
+  const sinFolioPdf=(g)=>{
+    const ext=(g.page1?.name||"").split(".").pop().toLowerCase();
+    return ext==="pdf"&&!FOLIO_PREFIJO_RE.test(g.folioBase);
+  };
+  const huerfanos=result.filter(sinFolioImg);
+  const conFolio=result.filter(g=>!sinFolioImg(g)&&!sinFolioPdf(g));
   const pares=[];
   for(let i=0;i<huerfanos.length;i+=2){
     const a=huerfanos[i];
@@ -1007,7 +1018,8 @@ const gdGroupFiles = (files) => {
       pares.push({...a,noFolio:true});
     }
   }
-  return [...conFolio,...pares];
+  const pdfsNoFolio=result.filter(sinFolioPdf).map(g=>({...g,noFolio:true}));
+  return [...conFolio,...pares,...pdfsNoFolio];
 };
 
 const AUTH_KEY  = 'ca_auth_expires';
