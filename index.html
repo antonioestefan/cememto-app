@@ -988,20 +988,32 @@ const gdGroupFiles = (files) => {
     const isPdf=ext==="pdf";
     const isImg=["jpg","jpeg","png"].includes(ext);
     const base=(f.name||"").replace(/\.[^/.]+$/,"");
-    // PDFs siempre individuales; solo imágenes con sufijo -1/-2 se emparejan
-    const m=isImg ? base.match(/^(.+)-([12])$/i) : null;
-    const key=isPdf ? (f.id||f.name||base).toLowerCase() : (m?m[1]:base).toLowerCase();
-    if(!groups[key]){ groups[key]={folioBase:m?m[1]:base,page1:null,page2:null}; order.push(key); }
-    if(m){ if(m[2]==="1") groups[key].page1=f; else groups[key].page2=f; }
-    else if(!groups[key].page1) groups[key].page1=f;
+    const hasPrefix=FOLIO_PREFIJO_RE.test(base);
+    if(hasPrefix){
+      // Cualquier tipo con prefijo AG-/PU-/BQ-: agrupar por folio base, emparejando -1 y -2
+      const m=base.match(/^(.+)-([12])$/i);
+      const key=(m?m[1]:base).toLowerCase();
+      if(!groups[key]){ groups[key]={folioBase:m?m[1]:base,page1:null,page2:null}; order.push(key); }
+      if(m){ if(m[2]==="1") groups[key].page1=f; else groups[key].page2=f; }
+      else if(!groups[key].page1) groups[key].page1=f;
+    } else if(isPdf){
+      // PDF sin prefijo: siempre individual (se marcará noFolio:true)
+      const key=(f.id||f.name||base).toLowerCase();
+      if(!groups[key]){ groups[key]={folioBase:base,page1:f,page2:null}; order.push(key); }
+    } else if(isImg){
+      // Imagen sin prefijo: va al pool de huérfanos para emparejarse por adyacencia
+      const key=base.toLowerCase();
+      if(!groups[key]){ groups[key]={folioBase:base,page1:null,page2:null}; order.push(key); }
+      if(!groups[key].page1) groups[key].page1=f;
+    }
   });
   const result=order.map(key=>({key,...groups[key]}));
-  // Imágenes sin folio Cruz Azul y sin par -2 (ej. fotos de WhatsApp): se agrupan de a dos
+  // Imágenes sin prefijo de folio y sin par: se agrupan de a dos (fotos de WhatsApp, etc.)
   const sinFolioImg=(g)=>{
     const ext=(g.page1?.name||"").split(".").pop().toLowerCase();
     return ["jpg","jpeg","png"].includes(ext)&&g.page1&&!g.page2&&!FOLIO_PREFIJO_RE.test(g.folioBase);
   };
-  // PDFs sin prefijo AG-/PU-/BQ-: noFolio individualmente, nunca se emparejan
+  // PDFs sin prefijo: noFolio individualmente
   const sinFolioPdf=(g)=>{
     const ext=(g.page1?.name||"").split(".").pop().toLowerCase();
     return ext==="pdf"&&!FOLIO_PREFIJO_RE.test(g.folioBase);
