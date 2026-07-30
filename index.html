@@ -2061,7 +2061,8 @@ function App() {
   };
   const gdConfirmarFactura=(res)=>{
     const clienteId=gdSelectedFolder?.clienteId||"";
-    setFacturaForm({...emptyFactura,clienteId,folio_fiscal:res.data.folioFiscal||"",fecha:res.data.fecha||todayISO(),monto_total:String(parseFloat(res.data.monto)||0)});
+    const notaFolio=res.data.folio?`Folio: ${res.data.folio}`:"";
+    setFacturaForm({...emptyFactura,clienteId,folio_fiscal:res.data.folioFiscal||"",fecha:res.data.fecha||todayISO(),monto_total:String(parseFloat(res.data.monto)||0),notas:notaFolio});
     setMontoEditadoManualmente(true);
     setGdPendingFacturaFile(res.originalFile);
     setShowFacturaForm(true);
@@ -2200,6 +2201,8 @@ function App() {
     }
     const existente=numeroOV&&ovs.find(o=>String(o.num_ov||"").trim()===numeroOV);
     if(existente){
+      const confirmar=await askConfirm(`Ya existe la OV ${numeroOV}. ¿Quieres actualizarla con los datos de esta remisión?`,{confirmLabel:"Sí, actualizar",cancelLabel:"Cancelar"});
+      if(!confirmar) return;
       const patch={folio,toneladas:parseFloat(res.data.pesoNeto)||0,fecha_carga:res.data.fecha||todayISO(),fecha_entrega:fechaEntrega,status:"entregado",remision_firmada:true};
       if(clienteId){
         patch.clienteId=clienteId;
@@ -4631,7 +4634,7 @@ function App() {
         const ivaVal=totalConIVA-sinIVA;
         const formOk=facturaForm.clienteId&&facturaForm.folio_fiscal.trim()&&facturaForm.fecha&&totalConIVA>0;
         return(
-          <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:1200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
             <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:520,padding:"22px 20px",maxHeight:"92vh",overflowY:"auto"}}>
               <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>{facturaForm.id?"Editar factura":"Nueva factura"}</div>
               <div style={{marginBottom:12}}>
