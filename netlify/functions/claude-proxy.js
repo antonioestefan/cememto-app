@@ -48,15 +48,31 @@ exports.handler = async (event) => {
     };
   }
 
-  const upstream = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({ model, max_tokens: max_tokens || 1024, messages }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+  let upstream;
+  try {
+    upstream = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ model, max_tokens: max_tokens || 1024, messages }),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timeoutId);
+    const isTimeout = e.name === 'AbortError';
+    return {
+      statusCode: isTimeout ? 504 : 502,
+      headers: { ...CORS, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: isTimeout ? 'Timeout: la llamada a Claude tardó más de 25 segundos' : e.message }),
+    };
+  }
+  clearTimeout(timeoutId);
 
   const data = await upstream.json();
 

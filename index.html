@@ -1871,7 +1871,7 @@ function App() {
       img.src=objUrl;
     });
   };
-  const _pdfPageToJpeg=async blob=>{
+  const _pdfPageToJpeg=async(blob,dpi=100)=>{
     const lib=window.pdfjsLib;
     if(!lib) throw new Error("PDF.js no disponible");
     if(!lib.GlobalWorkerOptions.workerSrc)
@@ -1879,7 +1879,7 @@ function App() {
     const buf=await blob.arrayBuffer();
     const pdf=await lib.getDocument({data:new Uint8Array(buf)}).promise;
     const page=await pdf.getPage(1);
-    const viewport=page.getViewport({scale:150/72});
+    const viewport=page.getViewport({scale:dpi/72});
     const canvas=document.createElement("canvas");
     canvas.width=viewport.width; canvas.height=viewport.height;
     await page.render({canvasContext:canvas.getContext("2d"),viewport}).promise;
@@ -1900,7 +1900,8 @@ function App() {
     if(mediaType==="application/pdf"){
       if(blob.size>3*1024*1024&&window.pdfjsLib){
         onStatus?.("🗜️ Comprimiendo PDF...");
-        try{const b64=await _pdfPageToJpeg(blob);return{type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}};}
+        const dpi=blob.size>5*1024*1024?72:100;
+        try{const b64=await _pdfPageToJpeg(blob,dpi);return{type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}};}
         catch{}
       }
       const b64=await _blobToB64(blob);
