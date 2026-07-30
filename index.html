@@ -1139,6 +1139,7 @@ function App() {
   const [showLectorNuevo,setShowLectorNuevo]     = useState(false);
   const [showChartLector,setShowChartLector]     = useState(false);
   const [gdEditImages,setGdEditImages]           = useState(null); // [{url,isPdf}]|null — activa vista split de GDrive
+  const [gdEditingResKey,setGdEditingResKey]     = useState(null); // group.key del resultado que se está editando
   const [gdLightbox,setGdLightbox]               = useState(null); // url|null — lightbox de imagen en confirm
   const [remisionViewer,setRemisionViewer]       = useState(null); // null|{images:[{url,isPdf}],folio,ov}
   const [remisionViewerLoading,setRemisionViewerLoading] = useState(false);
@@ -1564,7 +1565,15 @@ function App() {
     setOVs(prev=>prev.find(p=>p.id===id)?prev.map(p=>p.id===id?n:p):[n,...prev]);
     const ok=await runSave(()=>saveToDb("ovs",id,n), ()=>setOVs(prevOVs));
     if(!ok) return;
-    setShowForm(false); setForm(emptyOV); setSelected(null); setGdEditImages(null);
+    if(gdEditImages!==null&&gdEditingResKey!==null){
+      setGdResults(prev=>prev.map(r=>r.group.key===gdEditingResKey
+        ?{...r,data:{...r.data,pesoNeto:String(parseFloat(form.toneladas)||0),numeroOV:form.num_ov||r.data.numeroOV,fecha:form.fecha_carga||r.data.fecha}}
+        :r));
+      if(form.fecha_entrega) setGdFechaEntrega(prev=>({...prev,[gdEditingResKey]:form.fecha_entrega}));
+      setShowForm(false); setForm(emptyOV); setGdEditImages(null); setGdEditingResKey(null);
+    }else{
+      setShowForm(false); setForm(emptyOV); setSelected(null); setGdEditImages(null);
+    }
   };
   const deleteOV = async (id)=>{
     if(!(await askConfirm("¿Eliminar esta OV?",{danger:true}))) return;
@@ -2228,6 +2237,7 @@ function App() {
       status:"entregado",
     });
     setGdEditImages(res.previewUrls||[]);
+    setGdEditingResKey(res.group.key);
     setShowForm(true);
   };
   const gdConfirmarTodos=async()=>{
@@ -2241,7 +2251,7 @@ function App() {
     setShowGDrive(false); setGdStep("auth"); setGdToken(null); setGdFolders([]); setGdPendingCounts({});
     setGdSelectedFolder(null); setGdOvsCliente([]); setGdFiles([]); setGdSelected(new Set()); setGdFiltro("pendientes");
     setGdResults([]); setGdFechaEntrega({}); setGdConfirmandoTodos(false); setGdLoading(false); setGdError(""); setGdProgress({cur:0,tot:0}); setGdStatusMsg("");
-    setGdEditImages(null); setGdCleaningDups(false); setGdLightbox(null);
+    setGdEditImages(null); setGdEditingResKey(null); setGdCleaningDups(false); setGdLightbox(null);
     setGdTransfFiles([]); setGdFactFiles([]); setGdTransfSelected(new Set()); setGdFactSelected(new Set());
     setGdTransfResults([]); setGdFactResults([]); setGdFilesTab("remisiones"); setGdPendingFacturaFile(null); setGdManualEdits({});
   };
@@ -5398,6 +5408,8 @@ function App() {
                 <div style={{fontSize:13,color:"var(--text-sec)",marginBottom:14}}>Revisa y confirma para crear las OVs:</div>
                 {gdResults.map((res)=>{
                   const info=gdProcesadoInfo(res.group);
+                  const faltaOV=res.ok&&res.data&&!res.data.numeroOV;
+                  const faltaTon=res.ok&&res.data&&!res.data.pesoNeto;
                   return(
                   <div key={res.group.key} style={{background:"var(--bg-card-alt)",borderRadius:10,padding:"14px",marginBottom:10,border:`1px solid ${info?"#10B98166":"var(--border)"}`}}>
                     <div style={{fontWeight:600,fontSize:11,color:"var(--text-tertiary)",marginBottom:8,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>📄 {res.group.folioBase} {res.group.page2?"(2 páginas)":""}</div>
@@ -5420,10 +5432,10 @@ function App() {
                           </div>
                         )}
                         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
-                          <div><div style={{fontSize:10,color:"var(--text-tertiary)"}}>No. OV</div><div style={{fontWeight:700,color:"#7c3aed",fontSize:13}}>{res.data.numeroOV||"—"}</div></div>
+                          <div><div style={{fontSize:10,color:"var(--text-tertiary)"}}>No. OV</div><div style={{fontWeight:700,color:faltaOV?"#d97706":"#7c3aed",fontSize:13}}>{res.data.numeroOV||"No detectado"}</div></div>
                           <div><div style={{fontSize:10,color:"var(--text-tertiary)"}}>Remisión</div><div style={{fontWeight:700,color:"#0891b2",fontSize:13}}>{res.group.folioBase||"—"}</div></div>
                           <div><div style={{fontSize:10,color:"var(--text-tertiary)"}}>Fecha</div><div style={{fontWeight:600,fontSize:13}}>{res.data.fecha||"—"}</div></div>
-                          <div><div style={{fontSize:10,color:"var(--text-tertiary)"}}>Toneladas</div><div style={{fontWeight:700,color:"#16a34a",fontSize:13}}>{res.data.pesoNeto||"—"} ton</div></div>
+                          <div><div style={{fontSize:10,color:"var(--text-tertiary)"}}>Toneladas</div><div style={{fontWeight:700,color:faltaTon?"#d97706":"#16a34a",fontSize:13}}>{res.data.pesoNeto?`${res.data.pesoNeto} ton`:"No detectado"}</div></div>
                           <div style={{gridColumn:"1/-1"}}><div style={{fontSize:10,color:"var(--text-tertiary)"}}>Cliente</div><div style={{fontWeight:600,fontSize:13,color:gdSelectedFolder?.clienteNombre?"var(--accent)":"#d97706"}}>{gdSelectedFolder?.clienteNombre||"⚠ Sin cliente — asigna en la OV después"}</div></div>
                         </div>
                         {res.renameInfo?.ok&&<div style={{fontSize:11,color:"#0891b2",marginBottom:8}}>📝 Archivo renombrado: {res.renameInfo.names.join(", ")}</div>}
@@ -5437,9 +5449,12 @@ function App() {
                         {!info&&<div style={{fontSize:11,color:"#16a34a",background:"#16a34a12",border:"1px solid #16a34a33",borderRadius:6,padding:"6px 10px",marginBottom:8,fontWeight:600,textAlign:"center"}}>✅ La OV quedará marcada como Remisión Firmada automáticamente</div>}
                         {info
                           ?<div style={{fontSize:12,color:"var(--accent)",textAlign:"center",padding:"6px 0",fontWeight:700}}>{info.actualizada?`✅ OV existente actualizada: ${info.ovId}`:`✅ OV creada: ${info.ovId}`}</div>
-                          :<div style={{display:"flex",gap:8}}>
-                            <button onClick={()=>gdAbrirEdicion(res)} style={{flex:1,background:"var(--bg-card)",color:"var(--text-main)",border:"1px solid var(--border)",borderRadius:6,padding:"9px",fontWeight:700,cursor:"pointer",fontSize:13}}>✏️ Editar OV</button>
-                            <button onClick={()=>gdConfirmar(res)} disabled={!gdFechaEntrega[res.group.key]} style={{flex:2,background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"9px",fontWeight:700,cursor:gdFechaEntrega[res.group.key]?"pointer":"not-allowed",fontSize:13,opacity:gdFechaEntrega[res.group.key]?1:0.5}}>✓ Confirmar y crear OV</button>
+                          :<div>
+                            {(faltaOV||faltaTon)&&<div style={{fontSize:11,color:"#d97706",background:"#d9770612",border:"1px solid #d9770633",borderRadius:6,padding:"6px 10px",marginBottom:8,fontWeight:600}}>⚠ Hay campos sin detectar — se recomienda completar antes de confirmar</div>}
+                            <div style={{display:"flex",gap:8}}>
+                              <button onClick={()=>gdAbrirEdicion(res)} style={{flex:1,background:(faltaOV||faltaTon)?"#d97706":"var(--bg-card)",color:(faltaOV||faltaTon)?"white":"var(--text-main)",border:(faltaOV||faltaTon)?"none":"1px solid var(--border)",borderRadius:6,padding:"9px",fontWeight:700,cursor:"pointer",fontSize:13}}>{(faltaOV||faltaTon)?"⚠️ Completar datos":"✏️ Editar OV"}</button>
+                              <button onClick={()=>gdConfirmar(res)} disabled={!gdFechaEntrega[res.group.key]} style={{flex:2,background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"9px",fontWeight:700,cursor:gdFechaEntrega[res.group.key]?"pointer":"not-allowed",fontSize:13,opacity:gdFechaEntrega[res.group.key]?1:0.5}}>✓ Confirmar y crear OV</button>
+                            </div>
                           </div>
                         }
                       </>
