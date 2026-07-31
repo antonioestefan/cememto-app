@@ -2988,7 +2988,7 @@ function App() {
       </div>
 
       {/* TABS — wrapper sticky sin overflow, scroll en div interno */}
-      <div style={{position:"sticky",top:headerH,zIndex:99,background:"var(--bg-main)",boxShadow:"0 2px 8px #00000045",borderBottom:"2px solid var(--border)"}}>
+      <div style={{position:"sticky",top:56,zIndex:98,background:"var(--bg-main)",boxShadow:"0 2px 4px rgba(0,0,0,0.2)",borderBottom:"2px solid var(--border)"}}>
         <div className="nav-tabs-scroll" style={{display:"flex",padding:"0 16px"}}>
           {[["confirmar",`📌 Hoy${(totales.porConf+notasBadge+prospBadge)>0?` (${totales.porConf+notasBadge+prospBadge})`:""}`],["ordenes","📋 Órdenes"],["clientes","👥 Clientes"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","📅 Calendario"],["prospectos",`🎯 Prospectos${prospBadge?` (${prospBadge})`:""}`],["facturas","🧾 Facturas"],["programacion","📋 Prog. Semanal"],["inteligencia","📈 Inteligencia"]].map(([k,l])=>(
             <button key={k} onClick={()=>setTab(k)} style={{background:"none",border:"none",borderBottom:tab===k?"3px solid var(--accent)":"3px solid transparent",padding:"12px 14px",cursor:"pointer",fontWeight:tab===k?700:500,color:tab===k?"var(--accent)":"var(--text-tertiary)",fontSize:13,whiteSpace:"nowrap",flexShrink:0}}>{l}</button>
@@ -3582,14 +3582,23 @@ function App() {
         {/* ---- REPORTE PLANTAS ---- */}
         {tab==="plantas"&&(
           <>
-            {/* SELECTOR PERÍODO */}
-            <SelectorPeriodo
-              value={reportePeriodo} onChange={setReportePeriodo}
-              mes={reporteMes} onMes={setReporteMes} meses={mesesDisponibles}
-              rangoInicio={reporteRangoInicio} onRangoInicio={setReporteRangoInicio}
-              rangoFin={reporteRangoFin} onRangoFin={setReporteRangoFin}
-              inS={inS}
-            />
+            {/* SELECTOR PERÍODO + BOTONES */}
+            <div style={{display:"flex",gap:12,alignItems:"flex-start",flexWrap:"wrap",marginBottom:14}}>
+              <div style={{flex:"1 1 220px",minWidth:180}}>
+                <SelectorPeriodo
+                  value={reportePeriodo} onChange={setReportePeriodo}
+                  mes={reporteMes} onMes={setReporteMes} meses={mesesDisponibles}
+                  rangoInicio={reporteRangoInicio} onRangoInicio={setReporteRangoInicio}
+                  rangoFin={reporteRangoFin} onRangoFin={setReporteRangoFin}
+                  inS={inS}
+                />
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",flexShrink:0,alignItems:"flex-start",paddingTop:2}}>
+                <button onClick={exportExcelPlanta} style={{background:"#16a34a",color:"white",border:"none",borderRadius:8,padding:"10px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>⬇ Excel por planta</button>
+                <button onClick={reporteWAPlanta} style={{background:"#25D366",color:"white",border:"none",borderRadius:8,padding:"10px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>💬 WhatsApp</button>
+                <button onClick={()=>setShowCalHabiles(true)} style={{background:"#7c3aed22",color:"#7c3aed",border:"1px solid #7c3aed44",borderRadius:8,padding:"10px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>📅 Días hábiles</button>
+              </div>
+            </div>
 
 
             {(()=>{
@@ -3748,12 +3757,6 @@ function App() {
             </div>
 
             <div style={{background:"#7c3aed22",borderRadius:12,padding:"12px 16px",marginBottom:14,fontSize:13,color:"#a78bfa"}}>🏭 <b>Reporte por planta</b> — cemento retirado a pagar a Cruz Azul. La planta se detecta automáticamente por la serie (PU = Puebla, AG = Aguascalientes, BQ = Bodega Querétaro).</div>
-
-            <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
-              <button onClick={exportExcelPlanta} style={{background:"#16a34a",color:"white",border:"none",borderRadius:8,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13}}>⬇ Excel por planta</button>
-              <button onClick={reporteWAPlanta} style={{background:"#25D366",color:"white",border:"none",borderRadius:8,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13}}>💬 WhatsApp</button>
-              <button onClick={()=>setShowCalHabiles(true)} style={{background:"#7c3aed22",color:"#7c3aed",border:"1px solid #7c3aed44",borderRadius:8,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13}}>📅 Días hábiles</button>
-            </div>
 
             {reportePlanta.length===0
               ?<EmptyState icon="🏭" msg={`Sin remisiones registradas para ${periodoLabel()}.`}/>
