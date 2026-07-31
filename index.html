@@ -62,6 +62,8 @@
     input,select,button { font-family:inherit; }
     input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
     body.light input[type="date"]::-webkit-calendar-picker-indicator { filter: none; }
+    .nav-tabs-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+    .nav-tabs-scroll::-webkit-scrollbar { display:none; }
   </style>
 </head>
 <body>
@@ -2985,11 +2987,13 @@ function App() {
         </div>
       </div>
 
-      {/* TABS */}
-      <div style={{background:"var(--bg-card)",borderBottom:"2px solid var(--border)",padding:"0 16px",display:"flex",overflowX:"auto",position:"sticky",top:headerH,zIndex:99,WebkitOverflowScrolling:"touch"}}>
-        {[["confirmar",`📌 Hoy${(totales.porConf+notasBadge+prospBadge)>0?` (${totales.porConf+notasBadge+prospBadge})`:""}`],["ordenes","📋 Órdenes"],["clientes","👥 Clientes"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","📅 Calendario"],["prospectos",`🎯 Prospectos${prospBadge?` (${prospBadge})`:""}`],["facturas","🧾 Facturas"],["programacion","📋 Prog. Semanal"],["inteligencia","📈 Inteligencia"]].map(([k,l])=>(
-          <button key={k} onClick={()=>setTab(k)} style={{background:"none",border:"none",borderBottom:tab===k?"3px solid var(--accent)":"3px solid transparent",padding:"12px 14px",cursor:"pointer",fontWeight:tab===k?700:500,color:tab===k?"var(--accent)":"var(--text-tertiary)",fontSize:13,whiteSpace:"nowrap"}}>{l}</button>
-        ))}
+      {/* TABS — wrapper sticky sin overflow, scroll en div interno */}
+      <div style={{position:"sticky",top:headerH,zIndex:99,background:"var(--bg-main)",boxShadow:"0 2px 8px #00000045",borderBottom:"2px solid var(--border)"}}>
+        <div className="nav-tabs-scroll" style={{display:"flex",padding:"0 16px"}}>
+          {[["confirmar",`📌 Hoy${(totales.porConf+notasBadge+prospBadge)>0?` (${totales.porConf+notasBadge+prospBadge})`:""}`],["ordenes","📋 Órdenes"],["clientes","👥 Clientes"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","📅 Calendario"],["prospectos",`🎯 Prospectos${prospBadge?` (${prospBadge})`:""}`],["facturas","🧾 Facturas"],["programacion","📋 Prog. Semanal"],["inteligencia","📈 Inteligencia"]].map(([k,l])=>(
+            <button key={k} onClick={()=>setTab(k)} style={{background:"none",border:"none",borderBottom:tab===k?"3px solid var(--accent)":"3px solid transparent",padding:"12px 14px",cursor:"pointer",fontWeight:tab===k?700:500,color:tab===k?"var(--accent)":"var(--text-tertiary)",fontSize:13,whiteSpace:"nowrap",flexShrink:0}}>{l}</button>
+          ))}
+        </div>
       </div>
 
       <div style={{padding:18,maxWidth:980,margin:"0 auto"}}>
