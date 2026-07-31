@@ -2667,6 +2667,78 @@ function App() {
     const brd={top:thin,bottom:thin,left:thin,right:thin};
     const NAVY="1E3A5F", ALTGRAY="F8FAFC";
     const plantaHeaderHex={"Puebla":"4C1D95","Aguascalientes":"0369A1","Bodega Querétaro":"15803D"};
+    const PU_HEX="7C3AED", AG_HEX="0891B2", TOT_HEX="059669", TIT_HEX="1E3A5F";
+
+    // ── HOJA RESUMEN GRANEL (primera hoja) ──
+    {
+      const puE=reportePlanta.find(r=>r.planta==="Puebla");
+      const agE=reportePlanta.find(r=>r.planta==="Aguascalientes");
+      const puTon=puE?.total_ton||0, agTon=agE?.total_ton||0;
+      const puRem=puE?.remisiones?.length||0, agRem=agE?.remisiones?.length||0;
+      const totalTon=puTon+agTon, totalRem=puRem+agRem;
+      const puAvg=puRem>0?puTon/puRem:0, agAvg=agRem>0?agTon/agRem:0, totalAvg=totalRem>0?totalTon/totalRem:0;
+      const puDia=diasHabilesEnPeriodo>0?puTon/diasHabilesEnPeriodo:0;
+      const agDia=diasHabilesEnPeriodo>0?agTon/diasHabilesEnPeriodo:0;
+      const totalDia=diasHabilesEnPeriodo>0?totalTon/diasHabilesEnPeriodo:0;
+      const puPct=totalTon>0?Math.round(puTon/totalTon*100):0;
+      const agPct=100-puPct;
+
+      const wsR=wb.addWorksheet("Resumen Granel");
+      wsR.columns=[{width:32},{width:20},{width:20},{width:20}];
+
+      // Título
+      let rr=wsR.addRow([`RESUMEN GRANEL  ·  ${periodoLabel().toUpperCase()}  ·  ${todayISO()}`]);
+      wsR.mergeCells(rr.number,1,rr.number,4); rr.height=36;
+      Object.assign(rr.getCell(1),{font:fw("FFFFFF",14,true),fill:fill(TIT_HEX),alignment:mid});
+
+      wsR.addRow([]).height=8;
+
+      // Cabeceras de columna
+      rr=wsR.addRow(["MÉTRICA","PUEBLA","AGUASCALIENTES","TOTAL PU + AG"]); rr.height=26;
+      [[1,"D1D5DB"],[2,PU_HEX],[3,AG_HEX],[4,TOT_HEX]].forEach(([c,hex])=>{
+        Object.assign(rr.getCell(c),{font:fw("FFFFFF",11,true),fill:fill(hex),alignment:{...mid,wrapText:false},border:brd});
+      });
+      rr.getCell(1).font={...fw("374151",11,true)};
+
+      // Filas de métricas
+      const metricRows=[
+        ["Toneladas totales",puTon,agTon,totalTon,"#,##0.00"],
+        ["Número de remisiones",puRem,agRem,totalRem,"0"],
+        ["Peso prom. por remisión (ton)",puAvg,agAvg,totalAvg,"#,##0.00"],
+      ];
+      if(diasHabilesEnPeriodo>0) metricRows.push(["Ton / día hábil",puDia,agDia,totalDia,"#,##0.00"]);
+
+      metricRows.forEach((row,i)=>{
+        const [label,v1,v2,v3,fmt2]=row;
+        rr=wsR.addRow([label,v1,v2,v3]); rr.height=22;
+        const bg=i%2===0?"FFFFFF":"F5F3FF";
+        rr.getCell(1).font={bold:true,color:{argb:"FF374151"},size:10};
+        rr.getCell(1).fill=fill(bg); rr.getCell(1).border=brd;
+        rr.getCell(1).alignment={vertical:"middle"};
+        for(let c=2;c<=4;c++){
+          rr.getCell(c).numFmt=fmt2; rr.getCell(c).border=brd;
+          rr.getCell(c).alignment={horizontal:"right",vertical:"middle"};
+          rr.getCell(c).fill=fill(bg);
+        }
+      });
+
+      // Separador y sección de proporción
+      wsR.addRow([]).height=10;
+      if(totalTon>0){
+        rr=wsR.addRow(["PROPORCIÓN ENTRE PLANTAS","","",""]); rr.height=22;
+        wsR.mergeCells(rr.number,1,rr.number,4);
+        Object.assign(rr.getCell(1),{font:fw("FFFFFF",10,true),fill:fill(TIT_HEX),alignment:mid,border:brd});
+
+        [[`Puebla`,puPct,puTon,PU_HEX],[`Aguascalientes`,agPct,agTon,AG_HEX]].forEach(([nombre,pct,ton,hex])=>{
+          rr=wsR.addRow([nombre,pct/100,`${fmtT(ton)} ton`,""]); rr.height=20;
+          wsR.mergeCells(rr.number,3,rr.number,4);
+          Object.assign(rr.getCell(1),{font:{bold:true,color:{argb:"FF"+hex},size:10},fill:fill("FFFFFF"),border:brd,alignment:{vertical:"middle"}});
+          Object.assign(rr.getCell(2),{numFmt:"0%",font:{bold:true,color:{argb:"FF"+hex},size:12},fill:fill("FFFFFF"),border:brd,alignment:{horizontal:"center",vertical:"middle"}});
+          Object.assign(rr.getCell(3),{font:{size:10,color:{argb:"FF374151"}},fill:fill("FFFFFF"),border:brd,alignment:{horizontal:"right",vertical:"middle"}});
+        });
+      }
+      wsR.addRow([]).height=6;
+    }
 
     for(const {planta,remisiones,total_ton} of reportePlanta){
       const headerColor=plantaHeaderHex[planta]||NAVY;
