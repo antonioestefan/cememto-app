@@ -3591,80 +3591,6 @@ function App() {
               inS={inS}
             />
 
-            {/* ─── RESUMEN GRANEL ─── */}
-            {(()=>{
-              const puE=reportePlanta.find(r=>r.planta==="Puebla");
-              const agE=reportePlanta.find(r=>r.planta==="Aguascalientes");
-              if(!puE&&!agE) return null;
-              const puTon=puE?.total_ton||0, agTon=agE?.total_ton||0;
-              const puRem=puE?.remisiones?.length||0, agRem=agE?.remisiones?.length||0;
-              const totalTon=puTon+agTon, totalRem=puRem+agRem;
-              const puAvg=puRem>0?puTon/puRem:0, agAvg=agRem>0?agTon/agRem:0, totalAvg=totalRem>0?totalTon/totalRem:0;
-              const puDia=diasHabilesEnPeriodo>0?puTon/diasHabilesEnPeriodo:0;
-              const agDia=diasHabilesEnPeriodo>0?agTon/diasHabilesEnPeriodo:0;
-              const totalDia=diasHabilesEnPeriodo>0?totalTon/diasHabilesEnPeriodo:0;
-              const puPct=totalTon>0?Math.round(puTon/totalTon*100):50;
-              const agPct=100-puPct;
-              const Stat=({label,value,unit})=>(
-                <div style={{marginBottom:10}}>
-                  <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:.8,opacity:.6,marginBottom:2}}>{label}</div>
-                  <div style={{fontSize:24,fontWeight:900,lineHeight:1,letterSpacing:-.5}}>{value}</div>
-                  {unit&&<div style={{fontSize:10,opacity:.5,marginTop:2}}>{unit}</div>}
-                </div>
-              );
-              return(
-                <div style={{marginBottom:16}}>
-                  <div style={{fontSize:11,fontWeight:700,color:"var(--text-sec)",textTransform:"uppercase",letterSpacing:.8,marginBottom:8}}>📊 Resumen Granel · {periodoLabel()}</div>
-                  {/* Tarjetas PU y AG */}
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-                    <div style={{background:"linear-gradient(135deg,#4c1d95,#7c3aed)",borderRadius:14,padding:"18px 16px",color:"white"}}>
-                      <div style={{fontSize:10,opacity:.65,marginBottom:10,fontWeight:700,textTransform:"uppercase",letterSpacing:.8}}>🏭 Puebla</div>
-                      <Stat label="Toneladas" value={fmtT(puTon)} unit="ton en período"/>
-                      <Stat label="Remisiones" value={puRem} unit="viajes"/>
-                      <Stat label="Prom/remisión" value={fmtT(puAvg)} unit="ton/viaje"/>
-                      {diasHabilesEnPeriodo>0&&<Stat label="Ton/día hábil" value={fmtT(puDia)} unit="ton/día"/>}
-                    </div>
-                    <div style={{background:"linear-gradient(135deg,#0369a1,#0891b2)",borderRadius:14,padding:"18px 16px",color:"white"}}>
-                      <div style={{fontSize:10,opacity:.65,marginBottom:10,fontWeight:700,textTransform:"uppercase",letterSpacing:.8}}>🏭 Aguascalientes</div>
-                      <Stat label="Toneladas" value={fmtT(agTon)} unit="ton en período"/>
-                      <Stat label="Remisiones" value={agRem} unit="viajes"/>
-                      <Stat label="Prom/remisión" value={fmtT(agAvg)} unit="ton/viaje"/>
-                      {diasHabilesEnPeriodo>0&&<Stat label="Ton/día hábil" value={fmtT(agDia)} unit="ton/día"/>}
-                    </div>
-                  </div>
-                  {/* Total combinado */}
-                  <div style={{background:"linear-gradient(135deg,#065f46,#059669)",borderRadius:14,padding:"18px 20px",color:"white",marginBottom:10}}>
-                    <div style={{fontSize:10,opacity:.65,marginBottom:10,fontWeight:700,textTransform:"uppercase",letterSpacing:.8}}>⚡ Total Combinado — Puebla + Aguascalientes</div>
-                    <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"4px 16px"}}>
-                      <Stat label="Toneladas" value={fmtT(totalTon)} unit="ton en período"/>
-                      <Stat label="Remisiones" value={totalRem} unit="viajes"/>
-                      <Stat label="Prom/remisión" value={fmtT(totalAvg)} unit="ton/viaje"/>
-                      {diasHabilesEnPeriodo>0&&<Stat label="Ton/día hábil" value={fmtT(totalDia)} unit="ton/día"/>}
-                    </div>
-                  </div>
-                  {/* Barras de proporción */}
-                  {totalTon>0&&(
-                    <div style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000030"}}>
-                      <div style={{fontSize:11,fontWeight:700,color:"var(--text-sec)",marginBottom:10,textTransform:"uppercase",letterSpacing:.6}}>Proporción entre plantas</div>
-                      <div style={{display:"flex",height:20,borderRadius:10,overflow:"hidden"}}>
-                        <div style={{width:`${puPct}%`,background:"linear-gradient(90deg,#4c1d95,#7c3aed)",transition:"width .4s"}}/>
-                        <div style={{width:`${agPct}%`,background:"linear-gradient(90deg,#0369a1,#0891b2)",transition:"width .4s"}}/>
-                      </div>
-                      <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:6,marginTop:10}}>
-                        <div style={{display:"flex",alignItems:"center",gap:6}}>
-                          <div style={{width:10,height:10,borderRadius:3,background:"#7c3aed",flexShrink:0}}/>
-                          <span style={{fontSize:12,color:"var(--text-main)"}}>Puebla <b>{puPct}%</b> · {fmtT(puTon)} ton</span>
-                        </div>
-                        <div style={{display:"flex",alignItems:"center",gap:6}}>
-                          <div style={{width:10,height:10,borderRadius:3,background:"#0891b2",flexShrink:0}}/>
-                          <span style={{fontSize:12,color:"var(--text-main)"}}>Aguascalientes <b>{agPct}%</b> · {fmtT(agTon)} ton</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
 
             {(()=>{
               const puE=reportePlanta.find(r=>r.planta==="Puebla");
@@ -3690,14 +3616,20 @@ function App() {
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
               {["Puebla","Aguascalientes"].map(planta=>{
                 const entry=reportePlanta.find(r=>r.planta===planta);
-                const ton=entry?entry.total_ton:0;
+                const ton=entry?.total_ton||0;
+                const nRem=entry?.remisiones?.length||0;
+                const avgRem=nRem>0?ton/nRem:0;
                 const grad=planta==="Puebla"?"linear-gradient(135deg,#4c1d95,#7c3aed)":"linear-gradient(135deg,#0369a1,#0891b2)";
                 return(
                   <div key={planta} style={{background:grad,borderRadius:14,padding:"20px 16px",color:"white"}}>
                     <div style={{fontSize:10,opacity:.7,marginBottom:6,fontWeight:700,textTransform:"uppercase",letterSpacing:.8}}>🏭 {planta}</div>
                     <div style={{fontSize:38,fontWeight:900,lineHeight:1,letterSpacing:-1}}>{fmtT(ton)}</div>
-                    <div style={{fontSize:11,opacity:.6,marginTop:6}}>{mesLabel(reporteMes)}</div>
-                    {diasHabilesEnPeriodo>0&&<div style={{fontSize:11,opacity:.8,marginTop:3,fontWeight:600}}>📊 {fmtT(ton/diasHabilesEnPeriodo)} ton/día hábil</div>}
+                    <div style={{fontSize:11,opacity:.6,marginTop:4}}>{periodoLabel()}</div>
+                    <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:3}}>
+                      <div style={{fontSize:11,opacity:.8,fontWeight:600}}>📦 {nRem} remisiones</div>
+                      <div style={{fontSize:11,opacity:.8,fontWeight:600}}>⚖️ {fmtT(avgRem)} ton/remisión</div>
+                      {diasHabilesEnPeriodo>0&&<div style={{fontSize:11,opacity:.8,fontWeight:600}}>📊 {fmtT(ton/diasHabilesEnPeriodo)} ton/día hábil</div>}
+                    </div>
                   </div>
                 );
               })}
@@ -3711,6 +3643,36 @@ function App() {
                   <div style={{fontSize:38,fontWeight:900,lineHeight:1,letterSpacing:-1}}>{fmtT(bqTon)}</div>
                   <div style={{fontSize:11,opacity:.6,marginTop:6}}>{mesLabel(reporteMes)}</div>
                   {diasHabilesEnPeriodo>0&&<div style={{fontSize:11,opacity:.8,marginTop:3,fontWeight:600}}>📊 {fmtT(bqTon/diasHabilesEnPeriodo)} ton/día hábil</div>}
+                </div>
+              );
+            })()}
+
+            {/* PROPORCIÓN ENTRE PLANTAS */}
+            {(()=>{
+              const puE=reportePlanta.find(r=>r.planta==="Puebla");
+              const agE=reportePlanta.find(r=>r.planta==="Aguascalientes");
+              if(!puE&&!agE) return null;
+              const puTon=puE?.total_ton||0, agTon=agE?.total_ton||0;
+              const totalTon=puTon+agTon;
+              if(!totalTon) return null;
+              const puPct=Math.round(puTon/totalTon*100), agPct=100-puPct;
+              return(
+                <div style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",marginBottom:12}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"var(--text-sec)",marginBottom:10,textTransform:"uppercase",letterSpacing:.6}}>Proporción entre plantas</div>
+                  <div style={{display:"flex",height:20,borderRadius:10,overflow:"hidden"}}>
+                    <div style={{width:`${puPct}%`,background:"linear-gradient(90deg,#4c1d95,#7c3aed)",transition:"width .4s"}}/>
+                    <div style={{width:`${agPct}%`,background:"linear-gradient(90deg,#0369a1,#0891b2)",transition:"width .4s"}}/>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:6,marginTop:10}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <div style={{width:10,height:10,borderRadius:3,background:"#7c3aed",flexShrink:0}}/>
+                      <span style={{fontSize:12,color:"var(--text-main)"}}>Puebla <b>{puPct}%</b> · {fmtT(puTon)} ton</span>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <div style={{width:10,height:10,borderRadius:3,background:"#0891b2",flexShrink:0}}/>
+                      <span style={{fontSize:12,color:"var(--text-main)"}}>Aguascalientes <b>{agPct}%</b> · {fmtT(agTon)} ton</span>
+                    </div>
+                  </div>
                 </div>
               );
             })()}
