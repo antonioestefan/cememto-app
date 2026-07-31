@@ -2059,10 +2059,20 @@ function App() {
     }
     setGdFactResults(results); setGdFilesTab("facturas"); setGdStep("confirm_fact");
   };
-  const gdConfirmarFactura=(res)=>{
+  const gdConfirmarFactura=async(res)=>{
     const clienteId=gdSelectedFolder?.clienteId||"";
+    const folioFiscal=res.data.folioFiscal||"";
+    const duplicada=folioFiscal&&facturas.find(f=>f.folio_fiscal===folioFiscal&&f.clienteId===clienteId);
+    if(duplicada){
+      const esMisma=await askConfirm(`⚠️ Ya existe una factura con este folio fiscal registrada.\n¿Es la misma o es una diferente?`,{confirmLabel:"Es la misma — solo marcar archivo como procesado",cancelLabel:"Es diferente — registrar igual"});
+      if(esMisma){
+        const file=res.originalFile;
+        await runSave(()=>window.__setDoc(window.__doc(window.__db,"remisiones_gdrive",file.id),{tipo:"factura",clienteId,fileName:file.name,fecha:todayISO(),facturaId:duplicada.id}));
+        return;
+      }
+    }
     const notaFolio=res.data.folio?`Folio: ${res.data.folio}`:"";
-    setFacturaForm({...emptyFactura,clienteId,folio_fiscal:res.data.folioFiscal||"",fecha:res.data.fecha||todayISO(),monto_total:String(parseFloat(res.data.monto)||0),notas:notaFolio});
+    setFacturaForm({...emptyFactura,clienteId,folio_fiscal:folioFiscal,fecha:res.data.fecha||todayISO(),monto_total:String(parseFloat(res.data.monto)||0),notas:notaFolio});
     setMontoEditadoManualmente(true);
     setGdPendingFacturaFile(res.originalFile);
     setShowFacturaForm(true);
@@ -2751,6 +2761,25 @@ function App() {
     const prevFacturas=facturas;
     setFacturas(prev=>prev.map(x=>x.id===id?updated:x));
     await runSave(()=>saveToDb("facturas",id,updated), ()=>setFacturas(prevFacturas));
+  };
+  const limpiarFacturasDuplicadas=async(clienteId)=>{
+    const facsCli=facturas.filter(f=>f.clienteId===clienteId&&f.folio_fiscal);
+    const porFolio={};
+    for(const f of facsCli){ const k=f.folio_fiscal.trim(); if(k){if(!porFolio[k])porFolio[k]=[];porFolio[k].push(f);} }
+    const grupos=Object.values(porFolio).filter(g=>g.length>1);
+    if(!grupos.length){await notify("No se encontraron facturas duplicadas.");return;}
+    const extras=grupos.reduce((s,g)=>s+g.length-1,0);
+    const lista=grupos.map(g=>`• ${g[0].folio_fiscal.slice(0,36)} (${g.length} copias)`).join("\n");
+    const ok=await askConfirm(`Se encontraron ${extras} factura${extras!==1?"s":""} extra${extras!==1?"s":""}:\n\n${lista}\n\nSe conservará la más antigua de cada folio fiscal y se eliminarán las demás.`,{danger:true,confirmLabel:"Eliminar duplicados",cancelLabel:"Cancelar"});
+    if(!ok) return;
+    for(const grupo of grupos){
+      const sorted=grupo.slice().sort((a,b)=>a.id<b.id?-1:1);
+      for(const f of sorted.slice(1)){
+        const prev=facturas;
+        setFacturas(p=>p.filter(x=>x.id!==f.id));
+        await runSave(()=>deleteFromDb("facturas",f.id),()=>setFacturas(prev));
+      }
+    }
   };
 
   const reporteWAPlanta = ()=>{
@@ -4744,6 +4773,16 @@ function App() {
                   ))}
                 </div>
               }
+              {(()=>{
+                const porFolioCount={};
+                facsCli.forEach(f=>{if(f.folio_fiscal){const k=f.folio_fiscal.trim();if(k)porFolioCount[k]=(porFolioCount[k]||0)+1;}});
+                const extras=Object.values(porFolioCount).filter(n=>n>1).reduce((s,n)=>s+n-1,0);
+                return extras>0?(
+                  <button onClick={()=>limpiarFacturasDuplicadas(verFacturasClienteId)} style={{width:"100%",background:"#d97706",color:"white",border:"none",borderRadius:8,padding:"10px",fontWeight:700,cursor:"pointer",fontSize:13,marginBottom:8}}>
+                    🔧 Limpiar facturas duplicadas ({extras} extra{extras!==1?"s":""})
+                  </button>
+                ):null;
+              })()}
               <button onClick={()=>setVerFacturasClienteId(null)} style={{width:"100%",background:"var(--bg-card-alt)",color:"var(--text-tertiary)",border:"none",borderRadius:8,padding:"11px",fontWeight:600,cursor:"pointer",fontSize:14}}>Cerrar</button>
             </div>
           </div>
