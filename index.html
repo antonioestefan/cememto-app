@@ -1186,7 +1186,7 @@ function App() {
   const [saveStatus,setSaveStatus]               = useState(null); // null | 'saving' | 'saved' | 'error'
   const saveStatusTimer                          = useRef(null);
   const headerRef                                = useRef(null);
-  const [headerH,setHeaderH]                    = useState(0);
+  const [headerH,setHeaderH]                    = useState(56);
   const [verOVsSinPrecio,setVerOVsSinPrecio]     = useState(false);
   const [dialog,setDialog]                       = useState(null); // {kind:'confirm'|'prompt'|'alert', ...}
   const [busquedaCliente,setBusquedaCliente]     = useState("");
@@ -2988,7 +2988,7 @@ function App() {
       </div>
 
       {/* TABS — wrapper sticky sin overflow, scroll en div interno */}
-      <div style={{position:"sticky",top:56,zIndex:98,background:"var(--bg-main)",boxShadow:"0 2px 4px rgba(0,0,0,0.2)",borderBottom:"2px solid var(--border)"}}>
+      <div style={{position:"sticky",top:headerH,zIndex:98,background:"var(--bg-main)",boxShadow:"0 2px 4px rgba(0,0,0,0.2)",borderBottom:"2px solid var(--border)"}}>
         <div className="nav-tabs-scroll" style={{display:"flex",padding:"0 16px"}}>
           {[["confirmar",`📌 Hoy${(totales.porConf+notasBadge+prospBadge)>0?` (${totales.porConf+notasBadge+prospBadge})`:""}`],["ordenes","📋 Órdenes"],["clientes","👥 Clientes"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","📅 Calendario"],["prospectos",`🎯 Prospectos${prospBadge?` (${prospBadge})`:""}`],["facturas","🧾 Facturas"],["programacion","📋 Prog. Semanal"],["inteligencia","📈 Inteligencia"]].map(([k,l])=>(
             <button key={k} onClick={()=>setTab(k)} style={{background:"none",border:"none",borderBottom:tab===k?"3px solid var(--accent)":"3px solid transparent",padding:"12px 14px",cursor:"pointer",fontWeight:tab===k?700:500,color:tab===k?"var(--accent)":"var(--text-tertiary)",fontSize:13,whiteSpace:"nowrap",flexShrink:0}}>{l}</button>
@@ -2996,7 +2996,7 @@ function App() {
         </div>
       </div>
 
-      <div style={{paddingTop:"calc(104px + env(safe-area-inset-top, 0px))",paddingRight:18,paddingBottom:18,paddingLeft:18,maxWidth:980,margin:"0 auto"}}>
+      <div style={{paddingTop:headerH+44,paddingRight:18,paddingBottom:18,paddingLeft:18,maxWidth:980,margin:"0 auto"}}>
 
         {/* KPIs */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:18}}>
@@ -5387,16 +5387,42 @@ function App() {
       {/* ONEDRIVE IMPORT */}
       {showGDrive&&(
         <div style={{position:"fixed",inset:0,background:"#00000090",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-          <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"92vh",overflowY:"auto"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-              <div>
-                <div style={{fontWeight:800,fontSize:17}}>📂 Importar desde Google Drive</div>
-                {gdSelectedFolder&&<div style={{fontSize:12,color:"var(--text-tertiary)",marginTop:2}}>📁 {gdSelectedFolder.name}{gdSelectedFolder.clienteNombre&&<span style={{color:"var(--accent)"}}> → {gdSelectedFolder.clienteNombre}</span>}</div>}
+          <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,maxHeight:"92vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+            <div style={{position:"sticky",top:0,zIndex:10,background:"var(--bg-card)",padding:"22px 20px 12px",borderRadius:"16px 16px 0 0",boxShadow:"0 2px 4px rgba(0,0,0,0.08)"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                <div>
+                  <div style={{fontWeight:800,fontSize:17}}>📂 Importar desde Google Drive</div>
+                  {gdSelectedFolder&&<div style={{fontSize:12,color:"var(--text-tertiary)",marginTop:2}}>📁 {gdSelectedFolder.name}{gdSelectedFolder.clienteNombre&&<span style={{color:"var(--accent)"}}> → {gdSelectedFolder.clienteNombre}</span>}</div>}
+                </div>
+                <button onClick={gdCerrar} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"var(--text-sec)"}}>✕</button>
               </div>
-              <button onClick={gdCerrar} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"var(--text-sec)"}}>✕</button>
+              {gdError&&<div style={{background:"#ef444422",color:"#dc2626",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:8,border:"1px solid #fecaca"}}>{gdError}</div>}
+              {gdStep==="folders"&&<div style={{fontSize:12,color:"var(--text-sec)"}}>Selecciona la carpeta del cliente:</div>}
+              {gdStep==="files"&&(()=>{
+                const _gce=gdGroups.map(g=>({g,info:gdProcesadoInfo(g)}));
+                const _pc=_gce.filter(x=>!x.info).length;
+                const _tp=gdTransfFiles.filter(f=>!procesados[f.id]).length;
+                const _fp=gdFactFiles.filter(f=>!procesados[f.id]).length;
+                const tabSt=(active)=>({flex:1,background:active?"var(--accent)":"var(--bg-card-alt)",color:active?"white":"var(--text-sec)",border:`1px solid ${active?"var(--accent)":"var(--border)"}`,borderRadius:6,padding:"6px 6px",fontSize:11,fontWeight:700,cursor:"pointer"});
+                return(<>
+                  <button onClick={()=>setGdStep("folders")} style={{background:"none",border:"none",color:"var(--text-tertiary)",fontSize:12,cursor:"pointer",marginBottom:8,padding:0}}>← Carpetas</button>
+                  <div style={{display:"flex",gap:4}}>
+                    <button onClick={()=>setGdFilesTab("remisiones")} style={tabSt(gdFilesTab==="remisiones")}>📄 Rem{_pc>0?` (${_pc})`:""}</button>
+                    <button onClick={()=>setGdFilesTab("transferencias")} style={tabSt(gdFilesTab==="transferencias")}>💰 Transf{_tp>0?` (${_tp})`:""}</button>
+                    <button onClick={()=>setGdFilesTab("facturas")} style={tabSt(gdFilesTab==="facturas")}>🧾 Fact{_fp>0?` (${_fp})`:""}</button>
+                  </div>
+                </>);
+              })()}
+              {(gdStep==="confirm"||gdStep==="confirm_transf"||gdStep==="confirm_fact")&&(
+                <>
+                  <button onClick={()=>setGdStep("files")} style={{background:"none",border:"none",color:"var(--text-tertiary)",fontSize:12,cursor:"pointer",marginBottom:6,padding:0}}>← Volver a archivos</button>
+                  <div style={{fontSize:13,color:"var(--text-sec)"}}>
+                    {gdStep==="confirm"?"Revisa y confirma para crear las OVs:":gdStep==="confirm_transf"?"Revisa y registra las transferencias:":"Revisa y registra las facturas:"}
+                  </div>
+                </>
+              )}
             </div>
-
-            {gdError&&<div style={{background:"#ef444422",color:"#dc2626",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:12,border:"1px solid #fecaca"}}>{gdError}</div>}
+            <div style={{overflowY:"auto",flex:1,padding:"12px 20px 22px"}}>
 
             {gdStep==="auth"&&(!window.__GOOGLE_CLIENT_ID?(
               <div style={{textAlign:"center",padding:"20px 0"}}>
@@ -5424,7 +5450,6 @@ function App() {
 
             {gdStep==="folders"&&(
               <div>
-                <div style={{fontSize:12,color:"var(--text-sec)",marginBottom:12}}>Selecciona la carpeta del cliente:</div>
                 {gdFolders.length===0&&<div style={{color:"var(--text-tertiary)",fontSize:13,textAlign:"center",padding:"24px 0"}}>No se encontraron subcarpetas en "{GD_ROOT_FOLDER_NAME}"</div>}
                 {gdFolders.map(f=>{
                   const match=clientes.find(c=>(c.nombre||"").trim().toLowerCase()===f.name.trim().toLowerCase());
@@ -5460,15 +5485,8 @@ function App() {
               const visibles=gdFiltro==="todas"?groupsConEstado:groupsConEstado.filter(x=>!x.info);
               const trfPend=gdTransfFiles.filter(f=>!procesados[f.id]).length;
               const facPend=gdFactFiles.filter(f=>!procesados[f.id]).length;
-              const tabSt=(active)=>({flex:1,background:active?"var(--accent)":"var(--bg-card-alt)",color:active?"white":"var(--text-sec)",border:`1px solid ${active?"var(--accent)":"var(--border)"}`,borderRadius:6,padding:"6px 6px",fontSize:11,fontWeight:700,cursor:"pointer"});
               return (
               <div>
-                <button onClick={()=>setGdStep("folders")} style={{background:"none",border:"none",color:"var(--text-tertiary)",fontSize:12,cursor:"pointer",marginBottom:10,padding:0}}>← Carpetas</button>
-                <div style={{display:"flex",gap:4,marginBottom:12}}>
-                  <button onClick={()=>setGdFilesTab("remisiones")} style={tabSt(gdFilesTab==="remisiones")}>📄 Rem{pendientesCount>0?` (${pendientesCount})`:""}</button>
-                  <button onClick={()=>setGdFilesTab("transferencias")} style={tabSt(gdFilesTab==="transferencias")}>💰 Transf{trfPend>0?` (${trfPend})`:""}</button>
-                  <button onClick={()=>setGdFilesTab("facturas")} style={tabSt(gdFilesTab==="facturas")}>🧾 Fact{facPend>0?` (${facPend})`:""}</button>
-                </div>
                 {gdFilesTab==="remisiones"&&(<div>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                     <div style={{fontSize:12,color:"var(--text-sec)"}}>{gdGroups.length} remisión{gdGroups.length!==1?"es":""} · <span style={{color:"#f59e0b"}}>{pendientesCount} pendiente{pendientesCount!==1?"s":""}</span></div>
@@ -5575,7 +5593,6 @@ function App() {
               const pendientesConfirmar=gdResults.filter(res=>res.ok&&res.data&&!gdProcesadoInfo(res.group));
               return (
               <div>
-                <div style={{fontSize:13,color:"var(--text-sec)",marginBottom:14}}>Revisa y confirma para crear las OVs:</div>
                 {gdResults.map((res)=>{
                   const info=gdProcesadoInfo(res.group);
                   const faltaOV=res.ok&&res.data&&!res.data.numeroOV;
@@ -5641,7 +5658,6 @@ function App() {
                   </div>
                   );
                 })}
-                <button onClick={()=>setGdStep("files")} style={{width:"100%",background:"var(--bg-card-alt)",color:"var(--text-tertiary)",border:"none",borderRadius:8,padding:"10px",fontWeight:600,cursor:"pointer",fontSize:13,marginTop:4}}>← Volver a archivos</button>
                 {pendientesConfirmar.length>0&&(
                   <div style={{position:"sticky",bottom:0,margin:"14px -20px -22px -20px",padding:"12px 20px 22px",background:"var(--bg-card)",borderTop:"1px solid var(--border)"}}>
                     <button onClick={gdConfirmarTodos} disabled={gdConfirmandoTodos} style={{width:"100%",background:"#16a34a",color:"white",border:"none",borderRadius:8,padding:"13px",fontWeight:800,cursor:gdConfirmandoTodos?"default":"pointer",fontSize:14,opacity:gdConfirmandoTodos?0.7:1}}>
@@ -5656,8 +5672,6 @@ function App() {
             {gdStep==="confirm_transf"&&(()=>{
               return (
               <div>
-                <button onClick={()=>setGdStep("files")} style={{background:"none",border:"none",color:"var(--text-tertiary)",fontSize:12,cursor:"pointer",marginBottom:12,padding:0}}>← Volver a archivos</button>
-                <div style={{fontSize:13,color:"var(--text-sec)",marginBottom:14}}>Revisa y registra las transferencias:</div>
                 {gdTransfResults.map((res,idx)=>{
                   const done=!!procesados[res.originalFile.id];
                   const prev=res.previewUrls?.[0];
@@ -5726,8 +5740,6 @@ function App() {
             {gdStep==="confirm_fact"&&(()=>{
               return (
               <div>
-                <button onClick={()=>setGdStep("files")} style={{background:"none",border:"none",color:"var(--text-tertiary)",fontSize:12,cursor:"pointer",marginBottom:12,padding:0}}>← Volver a archivos</button>
-                <div style={{fontSize:13,color:"var(--text-sec)",marginBottom:14}}>Revisa y registra las facturas:</div>
                 {gdFactResults.map((res,idx)=>{
                   const done=!!procesados[res.originalFile.id];
                   const prev=res.previewUrls?.[0];
@@ -5768,6 +5780,7 @@ function App() {
               );
             })()}
 
+            </div>
           </div>
         </div>
       )}
