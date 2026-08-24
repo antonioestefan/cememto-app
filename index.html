@@ -4827,25 +4827,29 @@ function App() {
                   <span>Sin IVA: <b>{fmt(sinIVA)}</b></span><span>IVA 16%: <b>{fmt(ivaVal)}</b></span>
                 </div>}
               </div>
-              {facturaForm.clienteId&&hist.length>0&&(
+              {facturaForm.clienteId&&(()=>{
+                const pendientes=hist.map((a,idx)=>({a,idx,ep:facEstatuses[idx]||{estatus:"pendiente"}})).filter(({ep})=>ep.estatus!=="facturado");
+                if(pendientes.length===0) return null;
+                return (
                 <div style={{marginBottom:12}}>
                   <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:6}}>Pagos ligados (opcional)</label>
                   <div style={{border:"1px solid var(--border)",borderRadius:8,overflow:"hidden"}}>
-                    {hist.map((a,idx)=>{
+                    {pendientes.map(({a,idx,ep},i)=>{
                       const key=anticipoKey(a,idx);
                       const ligado=facturaForm.pagos_ligados.includes(key);
                       return (
-                      <label key={key} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:ligado?"var(--accent-soft)":"var(--bg-card)",borderTop:idx>0?"1px solid var(--border-soft)":"none",cursor:"pointer"}}>
+                      <label key={key} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:ligado?"var(--accent-soft)":"var(--bg-card)",borderTop:i>0?"1px solid var(--border-soft)":"none",cursor:"pointer"}}>
                         <input type="checkbox" checked={ligado} onChange={e=>{const newLigados=e.target.checked?[...facturaForm.pagos_ligados,key]:facturaForm.pagos_ligados.filter(l=>l!==key);const suma=sumaLigados(hist,newLigados);setFacturaForm(f=>({...f,pagos_ligados:newLigados,...(!montoEditadoManualmente&&{monto_total:String(suma)})}));}}/>
                         <span style={{flex:"0 0 86px",fontSize:12,color:"var(--text-tertiary)"}}>{a.fecha}</span>
                         <span style={{flex:1,fontSize:12,fontWeight:600}}>{fmt(a.monto)}</span>
-                        {(()=>{const ep=facEstatuses[idx]||{estatus:"pendiente"};return<span style={{fontSize:10,fontWeight:700,color:ep.estatus==="facturado"?"#15803d":ep.estatus==="parcial"?"#b45309":"#c2410c",background:ep.estatus==="facturado"?"#dcfce7":ep.estatus==="parcial"?"#fefce8":"#fff7ed",borderRadius:4,padding:"2px 5px",whiteSpace:"nowrap"}}>{ep.estatus==="facturado"?"✅ Facturado":ep.estatus==="parcial"?"🟡 Parcial":"🟠 Pendiente"}</span>;})()}
+                        <span style={{fontSize:10,fontWeight:700,color:ep.estatus==="parcial"?"#b45309":"#c2410c",background:ep.estatus==="parcial"?"#fefce8":"#fff7ed",borderRadius:4,padding:"2px 5px",whiteSpace:"nowrap"}}>{ep.estatus==="parcial"?"🟡 Parcial":"🟠 Pendiente"}</span>
                       </label>
                       );
                     })}
                   </div>
                 </div>
-              )}
+                );
+              })()}
               <div style={{marginBottom:16}}>
                 <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Notas (opcional)</label>
                 <textarea value={facturaForm.notas} onChange={e=>setFacturaForm(f=>({...f,notas:e.target.value}))} style={{...inS,minHeight:56,resize:"vertical"}} placeholder="Observaciones..."/>
