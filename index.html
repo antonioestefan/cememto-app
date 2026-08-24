@@ -1010,7 +1010,7 @@ const gdGroupFiles = (files) => {
     }
   });
   const result=order.map(key=>({key,...groups[key]}));
-  // Imágenes sin prefijo de folio y sin par: se agrupan de a dos (fotos de WhatsApp, etc.)
+  // Imágenes sin prefijo de folio reconocible: siempre individuales (no se emparejan)
   const sinFolioImg=(g)=>{
     const ext=(g.page1?.name||"").split(".").pop().toLowerCase();
     return ["jpg","jpeg","png"].includes(ext)&&g.page1&&!g.page2&&!FOLIO_PREFIJO_RE.test(g.folioBase);
@@ -1020,20 +1020,10 @@ const gdGroupFiles = (files) => {
     const ext=(g.page1?.name||"").split(".").pop().toLowerCase();
     return ext==="pdf"&&!FOLIO_PREFIJO_RE.test(g.folioBase);
   };
-  const huerfanos=result.filter(sinFolioImg);
   const conFolio=result.filter(g=>!sinFolioImg(g)&&!sinFolioPdf(g));
-  const pares=[];
-  for(let i=0;i<huerfanos.length;i+=2){
-    const a=huerfanos[i];
-    if(i+1<huerfanos.length){
-      const b=huerfanos[i+1];
-      pares.push({key:`${a.key}__${b.key}`,folioBase:a.folioBase,page1:a.page1,page2:b.page1,noFolio:true});
-    } else {
-      pares.push({...a,noFolio:true});
-    }
-  }
+  const imgsNoFolio=result.filter(sinFolioImg).map(g=>({...g,noFolio:true}));
   const pdfsNoFolio=result.filter(sinFolioPdf).map(g=>({...g,noFolio:true}));
-  return [...conFolio,...pares,...pdfsNoFolio];
+  return [...conFolio,...imgsNoFolio,...pdfsNoFolio];
 };
 
 const AUTH_KEY  = 'ca_auth_expires';
