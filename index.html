@@ -2144,7 +2144,7 @@ function App() {
               const reverso=frenteEs2?group.page1:group.page2;
               const extF=(frente.name.match(/\.[^/.]+$/)||[""])[0];
               const extR=(reverso.name.match(/\.[^/.]+$/)||[""])[0];
-              const r1=await gdRenameFile(frente,`${numeroRemision}-1${extF}`,token);
+              const r1=await gdRenameFile(frente,`${numeroRemision}${extF}`,token);
               const r2=await gdRenameFile(reverso,`${numeroRemision}-2${extR}`,token);
               finalGroup={...group,folioBase:numeroRemision,page1:r1.file,page2:r2.file};
               renameInfo={ok:true,names:[r1.file.name,r2.file.name]};
