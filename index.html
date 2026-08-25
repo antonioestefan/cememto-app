@@ -998,6 +998,7 @@ const gdGroupFiles = (files) => {
       const mParen=base.match(/^(.+) \(([12])\)$/);
       const folioBase=mDash?mDash[1]:(mParen?mParen[1]:base);
       const key=folioBase.toLowerCase();
+      console.log('[GDrive] archivo:', f.name, '→ folioBase:', folioBase, 'key:', key, 'mDash:', !!mDash, 'mParen:', !!mParen);
       if(!groups[key]){ groups[key]={folioBase,page1:null,page2:null}; order.push(key); }
       if(mDash){ if(mDash[2]==="1") groups[key].page1=f; else groups[key].page2=f; }
       else if(mParen){ if(!groups[key].page2) groups[key].page2=f; }
