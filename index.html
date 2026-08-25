@@ -1804,6 +1804,11 @@ function App() {
   const gdSelectFolder=async(folder)=>{
     setGdLoading(true); setGdError("");
     try{
+      // DEBUG TEMPORAL — diagnóstico de matching carpeta↔cliente (Misericordia)
+      console.log('[DEBUG] folder.name:', JSON.stringify(folder.name));
+      const _stripAcc=s=>(s||"").normalize('NFD').replace(/[̀-ͯ]/g,'');
+      clientes.filter(c=>_stripAcc(c.nombre||"").toLowerCase().includes('misericordia'))
+        .forEach(c=>console.log('[DEBUG] cliente candidato:', c.id, JSON.stringify(c.nombre)));
       const token=gdToken||await gdGetToken(false);
       const match=clientes.find(c=>(c.nombre||"").trim().toLowerCase()===folder.name.trim().toLowerCase());
       setGdSelectedFolder({...folder,clienteId:match?.id||null,clienteNombre:match?.nombre||null});
