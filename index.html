@@ -189,7 +189,7 @@ const CONFIRM = {
 };
 const MOTIVOS = ["Sin dotación en planta","Contratiempo del cliente","Contratiempo de la fletera","Otro"];
 // Prompt único para leer remisiones con IA (usado por el lector de OV, la nueva OV desde remisión y Google Drive).
-const PROMPT_REMISION = "Extrae los siguientes datos de esta remisión de cemento Cruz Azul: Número de remisión (formato: AG-XXXXXX, PU-XXXXXX o BQ-XXXXXX), Número de OV (Orden de Venta) — el número de OV en la remisión puede aparecer en formato como 'SG-2292690-1.000'; extrae ÚNICAMENTE el número central (los dígitos entre el primer y segundo guión, ej. '2292690'), Fecha de remisión, Peso neto en toneladas. Para determinar el peso neto: (1) Remisiones de Puebla (PU): el peso neto aparece en el ticket de pesaje integrado como 'NETO=XXXXX' (en kilogramos) — dividir entre 1000 para obtener toneladas. (2) Remisiones de Aguascalientes (AG): el peso neto aparece como 'PESO NETO: XX,XXX kg' en el reverso — dividir entre 1000. (3) SIEMPRE usar el peso neto real de báscula; NUNCA usar el peso nominal de 36.000 que aparece en el campo TONELADAS del documento. Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto";
+const PROMPT_REMISION = "Extrae los siguientes datos de esta remisión de cemento Cruz Azul: Número de remisión (formato: AG-XXXXXX, PU-XXXXXX o BQ-XXXXXX), Número de OV (Orden de Venta) — el número de OV en la remisión puede aparecer en formato como 'SG-2292690-1.000' o con espacios como 'SG - 2366941 - 1.000'; extrae ÚNICAMENTE el número central (los dígitos entre el primer y segundo guión, ignorando espacios), SIN el prefijo 'SG' ni el sufijo '- 1.000' (ej. de 'SG - 2366941 - 1.000' extraer '2366941'), Fecha de remisión, Peso neto en toneladas. Para determinar el peso neto: (1) Remisiones de Puebla (PU): el peso neto aparece en el ticket de pesaje integrado como 'NETO=XXXXX' (en kilogramos) — dividir entre 1000 para obtener toneladas. (2) Remisiones de Aguascalientes (AG): el peso neto aparece como 'PESO NETO: XX,XXX kg' en el reverso — dividir entre 1000. (3) SIEMPRE usar el peso neto real de báscula; NUNCA usar el peso nominal de 36.000 que aparece en el campo TONELADAS del documento. Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto";
 const PROMPT_REMISION_DOBLE = "Se te envían dos imágenes de la misma remisión de Cruz Azul. Identifica cuál es el FRENTE (tiene logo Cruz Azul, datos del cliente, número de OV) y cuál es el REVERSO (ticket de báscula con FOLIO, PESO BRUTO, PESO TARA, PESO NETO). Extrae el número de remisión que aparece en ambas. El peso neto viene del REVERSO (ticket de báscula). Para determinar el peso neto: (1) Remisiones de Puebla (PU): el peso neto aparece en el ticket de pesaje como 'NETO=XXXXX' (en kilogramos) — dividir entre 1000 para obtener toneladas. (2) Remisiones de Aguascalientes (AG): el peso neto aparece como 'PESO NETO: XX,XXX kg' en el reverso — dividir entre 1000. (3) SIEMPRE usar el peso neto real de báscula; NUNCA usar el peso nominal de 36.000 del campo TONELADAS. Responde SOLO en JSON con los campos: numeroRemision, numeroOV, fecha, pesoNeto, imagenFrente (1 o 2), imagenReverso (1 o 2). IMPORTANTE: Responde ÚNICAMENTE con el JSON, sin texto adicional, sin explicaciones, sin la palabra 'Analizando'";
 const PROMPT_TRANSFERENCIA = "Lee este comprobante de transferencia bancaria SPEI. Extrae: monto (solo número sin comas ni $), fecha (YYYY-MM-DD), referencia o clave de rastreo, nombre del ordenante. Responde SOLO en JSON: {\"monto\", \"fecha\", \"referencia\", \"ordenante\"}. IMPORTANTE: Responde ÚNICAMENTE con JSON válido, sin texto adicional ni explicaciones.";
 const PROMPT_FACTURA_GD = "Lee esta factura electrónica (CFDI). Extrae: folio fiscal (UUID), folio, fecha (YYYY-MM-DD), monto total con IVA, RFC receptor, nombre receptor. Responde SOLO en JSON: {\"folioFiscal\", \"folio\", \"fecha\", \"monto\", \"rfcReceptor\", \"nombreReceptor\"}";
@@ -992,11 +992,15 @@ const gdGroupFiles = (files) => {
     const base=(f.name||"").replace(/\.[^/.]+$/,"");
     const hasPrefix=FOLIO_PREFIJO_RE.test(base);
     if(hasPrefix){
-      // Cualquier tipo con prefijo AG-/PU-/BQ-: agrupar por folio base, emparejando -1 y -2
-      const m=base.match(/^(.+)-([12])$/i);
-      const key=(m?m[1]:base).toLowerCase();
-      if(!groups[key]){ groups[key]={folioBase:m?m[1]:base,page1:null,page2:null}; order.push(key); }
-      if(m){ if(m[2]==="1") groups[key].page1=f; else groups[key].page2=f; }
+      // Cualquier tipo con prefijo AG-/PU-/BQ-: agrupar por folio base, emparejando -1/-2
+      // o el sufijo " (1)"/" (2)" que Google Drive agrega a nombres duplicados (ej. "PU-866096 (1).jpeg").
+      const mDash=base.match(/^(.+)-([12])$/i);
+      const mParen=base.match(/^(.+) \(([12])\)$/);
+      const folioBase=mDash?mDash[1]:(mParen?mParen[1]:base);
+      const key=folioBase.toLowerCase();
+      if(!groups[key]){ groups[key]={folioBase,page1:null,page2:null}; order.push(key); }
+      if(mDash){ if(mDash[2]==="1") groups[key].page1=f; else groups[key].page2=f; }
+      else if(mParen){ if(!groups[key].page2) groups[key].page2=f; }
       else if(!groups[key].page1) groups[key].page1=f;
     } else if(isPdf){
       // PDF sin prefijo: siempre individual (se marcará noFolio:true)
