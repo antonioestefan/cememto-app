@@ -654,10 +654,26 @@ function GraficaDashboardCliente({antYM,prevYM,curYM,tonAnte,tonPrev,tonActual,a
 }
 
 function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV,onClose,tema}){
-  const curYM=todayISO().slice(0,7);
-  const ec=estadoCuenta.find(c=>c.id===cliente.id)||{saldo:0,ton_entregadas:0,valor_entregado:0};
+  const hoyYM=todayISO().slice(0,7);
+  const mkYM=(base,offset)=>{const [y,m]=base.split("-").map(Number);const d=new Date(y,m-1+offset,1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;};
+  const ultimoDiaMes=(ym)=>{const [y,m]=ym.split("-").map(Number);return `${ym}-${String(new Date(y,m,0).getDate()).padStart(2,"0")}`;};
 
   const cliOVs=ovs.filter(p=>p.clienteId===cliente.id);
+  const mesMasAntiguo=useMemo(()=>{
+    const metas=cliOVs.map(p=>(p.fecha_carga||"").slice(0,7)).filter(Boolean).sort();
+    return metas[0]||hoyYM;
+  },[cliOVs,hoyYM]);
+
+  const [mesSel,setMesSel]=useState(hoyYM);
+  const curYM=mesSel;
+  const esMesActual=curYM===hoyYM;
+  const puedeRetroceder=curYM>mesMasAntiguo;
+  const puedeAvanzar=curYM<hoyYM;
+  const irMesAnterior=()=>{ if(puedeRetroceder) setMesSel(m=>mkYM(m,-1)); };
+  const irMesSiguiente=()=>{ if(puedeAvanzar) setMesSel(m=>mkYM(m,1)); };
+
+  const ec=estadoCuenta.find(c=>c.id===cliente.id)||{saldo:0,ton_entregadas:0,valor_entregado:0};
+
   const tieneGranel=cliOVs.some(p=>(p.tipo||"granel")==="granel");
   const tieneSaco=cliOVs.some(p=>p.tipo==="saco");
 
@@ -676,18 +692,26 @@ function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV
   const saldoMes=saldoAnt+totalAnticiposMes-valMes;
 
   const today=todayISO();
-  const [cy,cm]=curYM.split("-").map(Number);
-  const mkYM=(offset)=>{const d=new Date(cy,cm-1+offset,1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;};
-  const prevYM=mkYM(-1);
-  const antYM=mkYM(-2);
-  const diasActual=contarDiasHabiles(`${curYM}-01`,today,diasHabiles);
-  const prevCutoff=findCutoffHabil(prevYM,diasActual,diasHabiles);
-  const antCutoff=findCutoffHabil(antYM,diasActual,diasHabiles);
+  const prevYM=mkYM(curYM,-1);
+  const antYM=mkYM(curYM,-2);
+  let diasActual,prevCutoff,antCutoff,tonActual,tonPrev,tonAnte;
+  if(esMesActual){
+    diasActual=contarDiasHabiles(`${curYM}-01`,today,diasHabiles);
+    prevCutoff=findCutoffHabil(prevYM,diasActual,diasHabiles);
+    antCutoff=findCutoffHabil(antYM,diasActual,diasHabiles);
+    tonActual=ovsEntMes.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+    tonPrev=ovs.filter(p=>p.clienteId===cliente.id&&p.status==="entregado"&&(p.fecha_carga||"").startsWith(prevYM)&&(p.fecha_carga||"")<=prevCutoff).reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+    tonAnte=ovs.filter(p=>p.clienteId===cliente.id&&p.status==="entregado"&&(p.fecha_carga||"").startsWith(antYM)&&(p.fecha_carga||"")<=antCutoff).reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+  }else{
+    diasActual=contarDiasHabiles(`${curYM}-01`,ultimoDiaMes(curYM),diasHabiles);
+    prevCutoff=ultimoDiaMes(prevYM);
+    antCutoff=ultimoDiaMes(antYM);
+    tonActual=ovsEntMes.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+    tonPrev=ovs.filter(p=>p.clienteId===cliente.id&&p.status==="entregado"&&(p.fecha_carga||"").startsWith(prevYM)).reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+    tonAnte=ovs.filter(p=>p.clienteId===cliente.id&&p.status==="entregado"&&(p.fecha_carga||"").startsWith(antYM)).reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
+  }
   const prevDay=parseInt(prevCutoff.slice(8)||"0");
   const antDay=parseInt(antCutoff.slice(8)||"0");
-  const tonActual=ovsEntMes.reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
-  const tonPrev=ovs.filter(p=>p.clienteId===cliente.id&&p.status==="entregado"&&(p.fecha_carga||"").startsWith(prevYM)&&(p.fecha_carga||"")<=prevCutoff).reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
-  const tonAnte=ovs.filter(p=>p.clienteId===cliente.id&&p.status==="entregado"&&(p.fecha_carga||"").startsWith(antYM)&&(p.fecha_carga||"")<=antCutoff).reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
 
   const facturasCliente=facturas.filter(f=>f.clienteId===cliente.id).sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
   const saldo=ec.saldo!=null?ec.saldo:(parseFloat(cliente.anticipo)||0)-(ec.valor_entregado||0);
@@ -708,7 +732,7 @@ function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV
           </div>
         </div>
         <div style={{textAlign:"right",flexShrink:0}}>
-          <div style={{fontSize:10,opacity:0.7}}>Saldo total</div>
+          <div style={{fontSize:10,opacity:0.7}}>Saldo total (histórico)</div>
           <div style={{fontWeight:900,fontSize:19,color:saldo>=0?"#4ade80":"#f87171"}}>{saldo>=0?fmt(saldo):"-"+fmt(-saldo)}</div>
         </div>
       </div>
@@ -731,11 +755,21 @@ function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV
               </div>
             </div>
             <div style={{background:saldo>=0?"#f0fdf4":"#fef2f2",borderRadius:12,padding:"12px 16px",textAlign:"center",minWidth:120,flexShrink:0}}>
-              <div style={{fontSize:10,color:"var(--text-tertiary)",fontWeight:700,marginBottom:2}}>{saldo>=0?"Saldo a favor":"Adeudo"}</div>
+              <div style={{fontSize:10,color:"var(--text-tertiary)",fontWeight:700,marginBottom:2}}>{saldo>=0?"Saldo a favor":"Adeudo"} (histórico)</div>
               <div style={{fontWeight:900,fontSize:22,color:saldo>=0?"#16a34a":"#ef4444"}}>{fmt(Math.abs(saldo))}</div>
               <div style={{fontSize:10,color:"var(--text-sec)",marginTop:2}}>acumulado total</div>
             </div>
           </div>
+        </div>
+
+        {/* SELECTOR DE MES */}
+        <div style={{background:"var(--bg-card)",borderRadius:12,padding:"10px 14px",boxShadow:"0 1px 4px #00000040",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <button onClick={irMesAnterior} disabled={!puedeRetroceder} style={{background:"var(--bg-card-alt)",border:"none",borderRadius:8,padding:"6px 14px",fontWeight:700,fontSize:17,cursor:puedeRetroceder?"pointer":"default",opacity:puedeRetroceder?1:0.35,lineHeight:1}}>‹</button>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontWeight:800,fontSize:14,color:"var(--text-main)"}}>{mesLabel(curYM)}</div>
+            {!esMesActual&&<div style={{fontSize:10,color:"var(--text-tertiary)",marginTop:1}}>mes cerrado</div>}
+          </div>
+          <button onClick={irMesSiguiente} disabled={!puedeAvanzar} style={{background:"var(--bg-card-alt)",border:"none",borderRadius:8,padding:"6px 14px",fontWeight:700,fontSize:17,cursor:puedeAvanzar?"pointer":"default",opacity:puedeAvanzar?1:0.35,lineHeight:1}}>›</button>
         </div>
 
         {/* 2 — RESUMEN MES ACTUAL */}
@@ -760,7 +794,7 @@ function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV
         {/* 3 — GRÁFICA TENDENCIA */}
         <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
           {secH("📊 Volumen — últimos 3 meses")}
-          <div style={{fontSize:11,color:"var(--text-tertiary)",marginBottom:12}}>Al mismo día hábil ({diasActual} días hábiles transcurridos en el mes)</div>
+          <div style={{fontSize:11,color:"var(--text-tertiary)",marginBottom:12}}>{esMesActual?`Al mismo día hábil (${diasActual} días hábiles transcurridos en el mes)`:`Mes completo (${diasActual} días hábiles en el mes)`}</div>
           <GraficaDashboardCliente antYM={antYM} prevYM={prevYM} curYM={curYM} tonAnte={tonAnte} tonPrev={tonPrev} tonActual={tonActual} antDay={antDay} prevDay={prevDay} tema={tema}/>
           {diasActual>0&&(
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginTop:12}}>
@@ -862,7 +896,7 @@ function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV
 
         {/* 6 — FACTURAS */}
         <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:28}}>
-          {secH("🧾 Facturas emitidas")}
+          {secH("🧾 Facturas emitidas (histórico total)")}
           {facturasCliente.length===0
             ?<div style={{fontSize:13,color:"var(--text-sec)",textAlign:"center",padding:"20px 0"}}>Sin facturas registradas</div>
             :(
@@ -998,7 +1032,6 @@ const gdGroupFiles = (files) => {
       const mParen=base.match(/^(.+) \(([12])\)$/);
       const folioBase=mDash?mDash[1]:(mParen?mParen[1]:base);
       const key=folioBase.toLowerCase();
-      console.log('[GDrive] archivo:', f.name, '→ folioBase:', folioBase, 'key:', key, 'mDash:', !!mDash, 'mParen:', !!mParen);
       if(!groups[key]){ groups[key]={folioBase,page1:null,page2:null}; order.push(key); }
       if(mDash){ if(mDash[2]==="1") groups[key].page1=f; else groups[key].page2=f; }
       else if(mParen){ if(!groups[key].page2) groups[key].page2=f; }
@@ -1177,6 +1210,8 @@ function App() {
   const [gdError,setGdError]                     = useState("");
   const [gdProgress,setGdProgress]               = useState({cur:0,tot:0});
   const [gdStatusMsg,setGdStatusMsg]             = useState("");
+  const [gdFoliosSueltos,setGdFoliosSueltos]     = useState({}); // fileId -> folio leído por IA de una imagen huérfana, o null si no se pudo leer
+  const [gdEmparejarManual,setGdEmparejarManual] = useState(null); // grupo huérfano sin folio legible que el usuario está emparejando a mano
   const [procesados,setProcesados]               = useState({});
   const [saveStatus,setSaveStatus]               = useState(null); // null | 'saving' | 'saved' | 'error'
   const saveStatusTimer                          = useRef(null);
@@ -1186,7 +1221,32 @@ function App() {
   const [dialog,setDialog]                       = useState(null); // {kind:'confirm'|'prompt'|'alert', ...}
   const [busquedaCliente,setBusquedaCliente]     = useState("");
   const [busquedaFactura,setBusquedaFactura]     = useState("");
-  const gdGroups   = useMemo(()=>gdGroupFiles(gdFiles),[gdFiles]);
+  // Reagrupa las imágenes huérfanas (sin folio en el nombre) usando el folio que la IA
+  // logró leer del contenido de cada una (gdFoliosSueltos), sin tocar el camino rápido
+  // de gdGroupFiles (archivos que ya traen AG-/PU-/BQ- en el nombre siguen igual).
+  const gdGroups   = useMemo(()=>{
+    const base=gdGroupFiles(gdFiles);
+    const huboLecturas=Object.keys(gdFoliosSueltos).length>0;
+    if(!huboLecturas) return base;
+    const porFolio={}; const resto=[];
+    base.forEach(g=>{
+      if(!g.noFolio){ porFolio[g.key]=g; return; }
+      const isImgFile=["jpg","jpeg","png"].includes((g.page1?.name||"").split(".").pop().toLowerCase());
+      const fid=g.page1?.id;
+      if(!isImgFile||!fid||!(fid in gdFoliosSueltos)){ resto.push(g); return; }
+      const folio=gdFoliosSueltos[fid];
+      if(!folio){ resto.push({...g,sinFolioLegible:true}); return; }
+      const key=folio.toLowerCase();
+      if(porFolio[key]){
+        if(!porFolio[key].page1) porFolio[key]={...porFolio[key],page1:g.page1};
+        else if(!porFolio[key].page2) porFolio[key]={...porFolio[key],page2:g.page1};
+        else resto.push({...g,sinFolioLegible:false,conflictoFolio:true});
+      } else {
+        porFolio[key]={key,folioBase:folio,page1:g.page1,page2:null,noFolio:true,folioDetectadoPorIA:true};
+      }
+    });
+    return [...Object.values(porFolio),...resto];
+  },[gdFiles,gdFoliosSueltos]);
   const gdPendingByClienteId = useMemo(()=>{
     const m={};
     gdFolders.forEach(f=>{
@@ -1802,13 +1862,8 @@ function App() {
     setGdLoading(false);
   };
   const gdSelectFolder=async(folder)=>{
-    setGdLoading(true); setGdError("");
+    setGdLoading(true); setGdError(""); setGdEmparejarManual(null);
     try{
-      // DEBUG TEMPORAL — diagnóstico de matching carpeta↔cliente (Misericordia)
-      console.log('[DEBUG] folder.name:', JSON.stringify(folder.name));
-      const _stripAcc=s=>(s||"").normalize('NFD').replace(/[̀-ͯ]/g,'');
-      clientes.filter(c=>_stripAcc(c.nombre||"").toLowerCase().includes('misericordia'))
-        .forEach(c=>console.log('[DEBUG] cliente candidato:', c.id, JSON.stringify(c.nombre)));
       const token=gdToken||await gdGetToken(false);
       const match=clientes.find(c=>(c.nombre||"").trim().toLowerCase()===folder.name.trim().toLowerCase());
       setGdSelectedFolder({...folder,clienteId:match?.id||null,clienteNombre:match?.nombre||null});
@@ -1821,7 +1876,9 @@ function App() {
       ]);
       setGdFiles(files); setGdTransfFiles(trfFiles); setGdFactFiles(facFiles);
       setGdSelected(new Set()); setGdTransfSelected(new Set()); setGdFactSelected(new Set());
-      setGdFiltro("pendientes"); setGdFilesTab("remisiones"); setGdStep("files");
+      setGdFiltro("pendientes"); setGdFilesTab("remisiones");
+      await gdDetectarFoliosSueltos(files,token);
+      setGdStep("files");
     }catch(e){setGdError(e.message);}
     setGdLoading(false);
   };
@@ -1861,6 +1918,23 @@ function App() {
     return null;
   };
   const gdSelectAll=()=>setGdSelected(new Set(gdGroups.filter(g=>!gdProcesadoInfo(g)).map(g=>g.key)));
+  // Remisiones con folio (real o detectado por IA) a las que aún les falta una página —
+  // candidatas para que el usuario le asigne a mano una imagen sin folio legible.
+  const gdCandidatosEmparejar=(grupo)=>gdGroups.filter(g=>g.key!==grupo.key&&g.folioBase&&(!g.page1||!g.page2)&&!gdProcesadoInfo(g));
+  const gdEmparejarConFolio=async(grupoHuerfano,grupoDestino)=>{
+    setGdLoading(true); setGdError("");
+    try{
+      const token=gdToken||await gdGetToken(false);
+      const file=grupoHuerfano.page1;
+      const ext=(file.name.match(/\.[^/.]+$/)||[""])[0];
+      const newName=!grupoDestino.page1?`${grupoDestino.folioBase}${ext}`:`${grupoDestino.folioBase}-2${ext}`;
+      const r=await gdRenameFile(file,newName,token);
+      setGdFiles(prev=>prev.map(f=>f.id===r.file.id?r.file:f));
+      setGdFoliosSueltos(prev=>{const n={...prev}; delete n[file.id]; return n;});
+      setGdEmparejarManual(null);
+    }catch(e){ setGdError(e.message||"No se pudo emparejar el archivo"); }
+    setGdLoading(false);
+  };
   const _blobToB64=blob=>new Promise((res,rej)=>{const rd=new FileReader();rd.onload=e=>res(e.target.result.split(",")[1]);rd.onerror=rej;rd.readAsDataURL(blob);});
   const _compressImage=async blob=>{
     return new Promise((res,rej)=>{
@@ -1939,6 +2013,48 @@ function App() {
     if(!r.ok) throw new Error(`Error al renombrar ${r.status}`);
     const updated=await r.json();
     return {renamed:true,file:{...file,name:updated.name||newName}};
+  };
+  // Intenta leer el folio (AG-/PU-/BQ-XXXXXX) del contenido de una imagen suelta sin
+  // prefijo en el nombre. Se usa antes de agrupar, para poder emparejar por folio real
+  // en vez de por adyacencia de nombre (que nunca funcionaba para fotos con nombre genérico).
+  const gdLeerFolioSuelto=async(file,token)=>{
+    try{
+      const block=await gdDownloadBlock(file,token);
+      const resp=await fetch("/.netlify/functions/claude-proxy",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1024,messages:[{role:"user",content:[block,{type:"text",text:PROMPT_REMISION}]}]})});
+      if(!resp.ok) return null;
+      const apiData=await resp.json();
+      const raw=apiData.content[0].text;
+      const cleaned=raw.replace(/```json\n?/g,"").replace(/```\n?/g,"").trim();
+      let data=null;
+      try{ data=JSON.parse(cleaned); }catch{
+        const m=raw.match(/[AP][GU]-\d+/i);
+        if(m) data={numeroRemision:m[0]};
+      }
+      const folio=(data?.numeroRemision||"").trim();
+      return (folio&&FOLIO_PREFIJO_RE.test(folio))?folio:null;
+    }catch(e){
+      console.warn("[GDrive] no se pudo leer folio de imagen suelta:",file.name,e);
+      return null;
+    }
+  };
+  // Corre gdLeerFolioSuelto sobre las imágenes huérfanas (sin prefijo de folio) de la
+  // carpeta recién abierta que todavía no estén en el caché gdFoliosSueltos, y fusiona el
+  // resultado (folio o null) en ese mapa para que el useMemo de gdGroups las reagrupe por
+  // folio real. Cachea por fileId durante toda la sesión: si la carpeta se vuelve a abrir,
+  // las imágenes ya leídas (con folio o confirmadas ilegibles) no se vuelven a mandar a la IA.
+  const gdDetectarFoliosSueltos=async(files,token)=>{
+    const isImgFile=(f)=>["jpg","jpeg","png"].includes((f.name||"").split(".").pop().toLowerCase());
+    const baseName=(f)=>(f.name||"").replace(/\.[^/.]+$/,"");
+    const huerfanas=(files||[]).filter(f=>isImgFile(f)&&!FOLIO_PREFIJO_RE.test(baseName(f))&&!(f.id in gdFoliosSueltos));
+    if(!huerfanas.length) return;
+    const detectados={};
+    for(let i=0;i<huerfanas.length;i++){
+      const f=huerfanas[i];
+      setGdStatusMsg(`Leyendo folio de imagen suelta ${i+1}/${huerfanas.length}...`);
+      detectados[f.id]=await gdLeerFolioSuelto(f,token);
+    }
+    setGdStatusMsg("");
+    setGdFoliosSueltos(prev=>({...prev,...detectados}));
   };
   const gdDeleteFile=async(fileId,token)=>{
     const sp=new URLSearchParams();
@@ -2278,6 +2394,7 @@ function App() {
     setGdSelectedFolder(null); setGdOvsCliente([]); setGdFiles([]); setGdSelected(new Set()); setGdFiltro("pendientes");
     setGdResults([]); setGdFechaEntrega({}); setGdConfirmandoTodos(false); setGdLoading(false); setGdError(""); setGdProgress({cur:0,tot:0}); setGdStatusMsg("");
     setGdEditImages(null); setGdEditingResKey(null); setGdCleaningDups(false); setGdLightbox(null);
+    setGdEmparejarManual(null);
     setGdTransfFiles([]); setGdFactFiles([]); setGdTransfSelected(new Set()); setGdFactSelected(new Set());
     setGdTransfResults([]); setGdFactResults([]); setGdFilesTab("remisiones"); setGdPendingFacturaFile(null); setGdManualEdits({});
   };
@@ -5479,7 +5596,7 @@ function App() {
                     </button>
                   );
                 })}
-                {gdLoading&&<div style={{textAlign:"center",color:"var(--text-tertiary)",padding:"12px 0",fontSize:13}}>Cargando...</div>}
+                {gdLoading&&<div style={{textAlign:"center",color:"var(--text-tertiary)",padding:"12px 0",fontSize:13}}>{gdStatusMsg||"Cargando..."}</div>}
               </div>
             )}
 
@@ -5526,8 +5643,10 @@ function App() {
                         <div style={{flex:1,overflow:"hidden"}}>
                           <div style={{fontSize:12,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{g.folioBase} <span style={{color:"var(--text-tertiary)",fontWeight:400}}>({paginas} pág.)</span></div>
                           {done?<div style={{fontSize:10,color:"var(--accent)",marginTop:1}}>OV: {info.ovId||"—"} · {info.fecha||""}</div>:<div style={{fontSize:10,color:"var(--text-muted)",marginTop:1}}>{size?Math.round(size/1024)+"KB":"—"}</div>}
+                          {g.sinFolioLegible&&!done&&<div style={{fontSize:10,color:"#d97706",marginTop:1}}>⚠ No se pudo leer el folio de esta imagen suelta</div>}
                         </div>
                         {done&&<button onClick={e=>{e.stopPropagation();gdReprocesar(g);}} style={{background:"none",border:"1px solid var(--text-muted)",color:"var(--text-sec)",fontSize:10,padding:"3px 8px",borderRadius:5,cursor:"pointer",flexShrink:0,whiteSpace:"nowrap"}}>↩ Reprocesar</button>}
+                        {g.sinFolioLegible&&!done&&<button onClick={e=>{e.stopPropagation();setGdEmparejarManual(g);}} style={{background:"none",border:"1px solid #d97706",color:"#d97706",fontSize:10,padding:"3px 8px",borderRadius:5,cursor:"pointer",flexShrink:0,whiteSpace:"nowrap"}}>🔗 Emparejar</button>}
                       </div>
                     );
                   })}
@@ -5788,6 +5907,31 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* EMPAREJAR MANUALMENTE — imagen huérfana cuyo folio no pudo leer la IA */}
+      {gdEmparejarManual&&(()=>{
+        const candidatos=gdCandidatosEmparejar(gdEmparejarManual);
+        return (
+        <div style={{position:"fixed",inset:0,background:"#00000090",zIndex:350,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setGdEmparejarManual(null);}}>
+          <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,maxHeight:"80vh",display:"flex",flexDirection:"column",overflow:"hidden",padding:"20px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div style={{fontWeight:800,fontSize:16}}>🔗 Emparejar imagen suelta</div>
+              <button onClick={()=>setGdEmparejarManual(null)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"var(--text-sec)"}}>✕</button>
+            </div>
+            <div style={{fontSize:12,color:"var(--text-sec)",marginBottom:14}}>No se pudo leer el folio de <b>{gdEmparejarManual.page1?.name}</b>. Elige a qué remisión pertenece (frente o reverso):</div>
+            <div style={{overflowY:"auto",flex:1}}>
+              {candidatos.length===0&&<div style={{color:"var(--text-tertiary)",fontSize:13,textAlign:"center",padding:"20px 0"}}>No hay remisiones incompletas en esta carpeta para emparejar.</div>}
+              {candidatos.map(c=>(
+                <button key={c.key} onClick={()=>gdEmparejarConFolio(gdEmparejarManual,c)} disabled={gdLoading} style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%",background:"var(--bg-card-alt)",border:"1px solid var(--border)",borderRadius:8,padding:"10px 12px",marginBottom:6,cursor:gdLoading?"default":"pointer",color:"var(--text-main)",textAlign:"left"}}>
+                  <span style={{fontSize:13,fontWeight:600}}>{c.folioBase}</span>
+                  <span style={{fontSize:11,color:"#d97706"}}>{!c.page1?"Falta frente":"Falta reverso"}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        );
+      })()}
 
       {/* LIGHTBOX DE IMAGEN — GDrive confirm */}
       {gdLightbox&&(
