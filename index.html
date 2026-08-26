@@ -12,6 +12,8 @@
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <script>
@@ -2602,6 +2604,36 @@ function App() {
     setComisionesCortes(prev=>({...prev,[mes]:updated}));
     await runSave(()=>saveToDb("comisiones_cortes",mes,updated), ()=>setComisionesCortes(prevCortes));
   };
+  const exportComisionSocioPDF = async (mes,socioId) => { try {
+    const entry=comisionData.porSocio[socioId];
+    if(!entry) return;
+    const {socio,total}=entry;
+    const filas=comisionData.rows.filter(r=>r.socio?.id===socioId);
+    const mesLbl=mesLabel(mes); const mesLblCap=mesLbl.charAt(0).toUpperCase()+mesLbl.slice(1);
+
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF();
+    doc.setFontSize(16); doc.setTextColor(30,41,59);
+    doc.text(`Comisión — ${socio.nombre}`,14,18);
+    doc.setFontSize(11); doc.setTextColor(100,116,139);
+    doc.text(`Corte: ${mesLblCap}`,14,26);
+    doc.text(`Generado: ${diaLabel(todayISO())}`,14,32);
+
+    doc.autoTable({
+      startY:40,
+      head:[["Cliente","Ton. comisionables","Comisión total","Monto socio"]],
+      body:filas.map(r=>[r.cliente.nombre,fmtT(r.tonComisionables),fmt(r.comisionTotal),fmt(r.pagoSocio)]),
+      foot:[["","","Total a cobrar",fmt(total)]],
+      styles:{fontSize:10,cellPadding:4},
+      headStyles:{fillColor:[16,185,129],textColor:[255,255,255]},
+      footStyles:{fillColor:[241,245,249],textColor:[30,41,59],fontStyle:"bold"},
+      columnStyles:{1:{halign:"right"},2:{halign:"right"},3:{halign:"right"}},
+      theme:"grid",
+    });
+
+    const nombreSafe=socio.nombre.replace(/[/\\*?:<>|"]/g,"-").replace(/ /g,"_");
+    doc.save(`Comision_${nombreSafe}_${mes}.pdf`);
+  } catch(e){ await notify(`Error al generar PDF: ${e.message}`); } };
 
   const saveNota = async ()=>{
     const id=notaForm.id||`NOTA-${Date.now()}`;
@@ -4674,9 +4706,12 @@ function App() {
                           <div style={{fontWeight:700,fontSize:13,color:"var(--text-main)"}}>{socio.nombre}</div>
                           <div style={{fontWeight:800,fontSize:16,color:"#16a34a"}}>{fmt(total)}</div>
                         </div>
-                        <button onClick={()=>togglePagoSocio(comisionMes,sid)} style={{background:pagado?"var(--bg-card-alt)":"#16a34a",color:pagado?"var(--text-tertiary)":"white",border:"none",borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:12}}>
-                          {pagado?`✓ Pagado — ${diaLabel(pago.fecha_pago)}`:"Marcar pagado"}
-                        </button>
+                        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                          <button onClick={()=>exportComisionSocioPDF(comisionMes,sid)} style={{background:"var(--bg-card-alt)",color:"var(--accent)",border:"1px solid var(--border)",borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:12}}>📄 Generar reporte PDF</button>
+                          <button onClick={()=>togglePagoSocio(comisionMes,sid)} style={{background:pagado?"var(--bg-card-alt)":"#16a34a",color:pagado?"var(--text-tertiary)":"white",border:"none",borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:12}}>
+                            {pagado?`✓ Pagado — ${diaLabel(pago.fecha_pago)}`:"Marcar pagado"}
+                          </button>
+                        </div>
                       </div>
                     );
                   })
