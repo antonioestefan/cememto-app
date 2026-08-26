@@ -105,6 +105,8 @@ const driveDateToISO = (modifiedTime) => {
 const diaLabel   = (iso) => iso ? new Date(iso+"T12:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"short"}) : "—";
 const mesLabel   = (ym)  => { const [y,m]=ym.split("-"); return new Date(+y,+m-1,1).toLocaleDateString("es-MX",{month:"long",year:"numeric"}); };
 const currentYM  = () => todayISO().slice(0,7);
+const addMonthsYM = (ym,offset) => { const [y,m]=ym.split("-").map(Number); const d=new Date(y,m-1+offset,1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
+const COMISION_CRUZAZUL_TON = 200;
 // Canvas (Chart.js) no puede resolver var(--x); hay que leer el valor calculado.
 const cssVar = (name) => getComputedStyle(document.body).getPropertyValue(name).trim();
 const limpiarFolio = (f) => {
@@ -989,10 +991,11 @@ function CalendarioHabiles({diasHabiles, onToggle}){
 }
 
 const emptyOV ={id:"",num_ov:"",clienteId:"",serie:"",folio:"",toneladas:0,precio_ton:"",fecha_carga:todayISO(),fecha_entrega:"",status:"ov_asignada",confirm:"por_confirmar",motivo:"",remision_firmada:false,notas:"",tipo:"granel"};
-const emptyCliente = {id:"",nombre:"",nombre_fiscal:"",rfc:"",ciudad:"",precio_ton:"",anticipo:0,telefono:""};
+const emptyCliente = {id:"",nombre:"",nombre_fiscal:"",rfc:"",ciudad:"",precio_ton:"",anticipo:0,telefono:"",socioId:"",comision_socio_ton:0};
 const emptyNota    = {id:"",texto:"",fecha_vencimiento:todayISO(),prioridad:"media",clienteId:"",num_ov:"",completada:false};
 const emptyProsp   = {id:"",nombre:"",telefono:"",contacto:"",vol_mensual:0,etapa:"contacto",notas:"",fecha_seguimiento:todayISO()};
 const emptyFactura = {id:"",clienteId:"",folio_fiscal:"",fecha:todayISO(),monto_total:"",tipo:"Normal",estatus:"Emitida",pagos_ligados:[],notas:""};
+const emptySocio   = {id:"",nombre:"",telefono:""};
 
 // P0-4: cada anticipo tiene un `id` estable y las facturas guardan esos ids en pagos_ligados.
 // Compatibilidad con datos viejos: pagos_ligados podía ser un índice posicional (número) → se acepta como respaldo.
@@ -1162,6 +1165,11 @@ function App() {
   const [reportePeriodo,setReportePeriodo]     = useState("mensual");
   const [reporteRangoInicio,setReporteRangoInicio] = useState("");
   const [reporteRangoFin,setReporteRangoFin]   = useState("");
+  const [socios,setSocios]                     = useState([]);
+  const [showSocioForm,setShowSocioForm]       = useState(false);
+  const [socioForm,setSocioForm]               = useState(emptySocio);
+  const [comisionesCortes,setComisionesCortes] = useState({});
+  const [comisionMes,setComisionMes]           = useState(currentYM());
   const [historialExpandido,setHistorialExpandido] = useState({});
   const [showLector,setShowLector]               = useState(false);
   const [lectorOV,setLectorOV]                   = useState(null);
@@ -1292,7 +1300,9 @@ function App() {
     const u5=window.__onSnapshot(window.__col(db,"facturas"),snap=>{setFacturas(snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||"")));});
     const u6=window.__onSnapshot(window.__col(db,"diasHabiles"),snap=>{const ov={};snap.docs.forEach(d=>{ov[d.id]=d.data().trabajado;});setDiasHabiles(ov);});
     const u7=window.__onSnapshot(window.__col(db,"remisiones_gdrive"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data();});setProcesados(m);});
-    return ()=>{u1();u2();u3();u4();u5();u6();u7();};
+    const u8=window.__onSnapshot(window.__col(db,"socios"),snap=>{setSocios(snap.docs.map(d=>({id:d.id,...d.data()})));});
+    const u9=window.__onSnapshot(window.__col(db,"comisiones_cortes"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data();});setComisionesCortes(m);});
+    return ()=>{u1();u2();u3();u4();u5();u6();u7();u8();u9();};
   },[dbReady,authUser]);
 
   useEffect(()=>{
@@ -1463,6 +1473,34 @@ function App() {
     });
     return result;
   },[clientes,facturas]);
+
+  // Comisión: $200/ton "comisionable", donde las toneladas comisionables se derivan del DINERO
+  // que el cliente pagó ese mes (historial_anticipos) entre su precio_ton — no de toneladas entregadas.
+  const comisionData = useMemo(()=>{
+    const rows = clientes
+      .map(c=>{
+        const totalAnticipos=(c.historial_anticipos||[])
+          .filter(a=>(a.fecha||"").startsWith(comisionMes))
+          .reduce((s,a)=>s+(parseFloat(a.monto)||0),0);
+        const precioTon=parseFloat(c.precio_ton)||0;
+        const tonComisionables=precioTon>0?totalAnticipos/precioTon:0;
+        const comisionTotal=tonComisionables*COMISION_CRUZAZUL_TON;
+        const socio=c.socioId?(socios.find(s=>s.id===c.socioId)||null):null;
+        const pagoSocio=socio?tonComisionables*(parseFloat(c.comision_socio_ton)||0):0;
+        return {cliente:c,totalAnticipos,tonComisionables,comisionTotal,socio,pagoSocio,neto:comisionTotal-pagoSocio};
+      })
+      .filter(r=>r.totalAnticipos>0)
+      .sort((a,b)=>a.cliente.nombre.localeCompare(b.cliente.nombre,"es"));
+    const totalComision=rows.reduce((s,r)=>s+r.comisionTotal,0);
+    const totalNeto=rows.reduce((s,r)=>s+r.neto,0);
+    const porSocio={};
+    rows.forEach(r=>{
+      if(!r.socio) return;
+      if(!porSocio[r.socio.id]) porSocio[r.socio.id]={socio:r.socio,total:0};
+      porSocio[r.socio.id].total+=r.pagoSocio;
+    });
+    return {rows,totalComision,totalNeto,porSocio};
+  },[clientes,socios,comisionMes]);
 
   const totales = useMemo(()=>{
     const ton      =ovs.filter(p=>p.status==="entregado").reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
@@ -2412,7 +2450,7 @@ function App() {
   };
   const saveCliente = async ()=>{
     const id=cliForm.id||`CLI-${Date.now()}`;
-    const nc={...cliForm,id,precio_ton:parseFloat(cliForm.precio_ton)||0,anticipo:parseFloat(cliForm.anticipo)||0};
+    const nc={...cliForm,id,precio_ton:parseFloat(cliForm.precio_ton)||0,anticipo:parseFloat(cliForm.anticipo)||0,socioId:cliForm.socioId||"",comision_socio_ton:parseFloat(cliForm.comision_socio_ton)||0};
     const prevClientes=clientes;
     setClientes(prev=>prev.find(c=>c.id===id)?prev.map(c=>c.id===id?nc:c):[...prev,nc]);
     const ok=await runSave(()=>saveToDb("clientes",id,nc), ()=>setClientes(prevClientes));
@@ -2526,6 +2564,43 @@ function App() {
     }
     const fail=clientesFail+facFail;
     await notify(`✅ Migración completa.\nClientes actualizados: ${clientesOk}\nFacturas convertidas: ${facOk}${fail>0?`\n⚠ ${fail} escritura(s) fallaron — revisa tu conexión y vuelve a ejecutar.`:""}`);
+  };
+
+  // SOCIOS Y COMISIONES
+  const saveSocio = async ()=>{
+    const id=socioForm.id||`SOCIO-${Date.now()}`;
+    const ns={...socioForm,id};
+    const prevSocios=socios;
+    setSocios(prev=>prev.find(s=>s.id===id)?prev.map(s=>s.id===id?ns:s):[...prev,ns]);
+    const ok=await runSave(()=>saveToDb("socios",id,ns), ()=>setSocios(prevSocios));
+    if(!ok) return;
+    setShowSocioForm(false); setSocioForm(emptySocio);
+  };
+  const deleteSocio = async (id)=>{
+    if(clientes.some(c=>c.socioId===id)){ await notify("No puedes eliminar este socio: hay clientes con este socio asignado. Quítaselo primero desde el formulario de cada cliente."); return; }
+    if(!(await askConfirm("¿Eliminar este socio?",{danger:true}))) return;
+    const prevSocios=socios;
+    setSocios(prev=>prev.filter(s=>s.id!==id));
+    await runSave(()=>deleteFromDb("socios",id), ()=>setSocios(prevSocios));
+  };
+  const toggleCobroComision = async (mes)=>{
+    const corte=comisionesCortes[mes]||{};
+    const nuevoEstatus=corte.estatus_cobro==="cobrado"?"pendiente":"cobrado";
+    const updated={...corte,estatus_cobro:nuevoEstatus,fecha_cobro:nuevoEstatus==="cobrado"?todayISO():""};
+    const prevCortes=comisionesCortes;
+    setComisionesCortes(prev=>({...prev,[mes]:updated}));
+    await runSave(()=>saveToDb("comisiones_cortes",mes,updated), ()=>setComisionesCortes(prevCortes));
+  };
+  const togglePagoSocio = async (mes,socioId)=>{
+    const corte=comisionesCortes[mes]||{};
+    const pagosSocios={...(corte.pagos_socios||{})};
+    const actual=pagosSocios[socioId]||{};
+    const nuevoEstatus=actual.estatus_pago==="pagado"?"pendiente":"pagado";
+    pagosSocios[socioId]={...actual,estatus_pago:nuevoEstatus,fecha_pago:nuevoEstatus==="pagado"?todayISO():""};
+    const updated={...corte,pagos_socios:pagosSocios};
+    const prevCortes=comisionesCortes;
+    setComisionesCortes(prev=>({...prev,[mes]:updated}));
+    await runSave(()=>saveToDb("comisiones_cortes",mes,updated), ()=>setComisionesCortes(prevCortes));
   };
 
   const saveNota = async ()=>{
@@ -3107,7 +3182,7 @@ function App() {
       {/* TABS — wrapper sticky sin overflow, scroll en div interno */}
       <div style={{position:"sticky",top:headerH,zIndex:98,background:"var(--bg-main)",boxShadow:"0 2px 4px rgba(0,0,0,0.2)",borderBottom:"2px solid var(--border)"}}>
         <div className="nav-tabs-scroll" style={{display:"flex",padding:"0 16px"}}>
-          {[["confirmar",`📌 Hoy${(totales.porConf+notasBadge+prospBadge)>0?` (${totales.porConf+notasBadge+prospBadge})`:""}`],["ordenes","📋 Órdenes"],["clientes","👥 Clientes"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","📅 Calendario"],["prospectos",`🎯 Prospectos${prospBadge?` (${prospBadge})`:""}`],["facturas","🧾 Facturas"],["programacion","📋 Prog. Semanal"],["inteligencia","📈 Inteligencia"]].map(([k,l])=>(
+          {[["confirmar",`📌 Hoy${(totales.porConf+notasBadge+prospBadge)>0?` (${totales.porConf+notasBadge+prospBadge})`:""}`],["ordenes","📋 Órdenes"],["clientes","👥 Clientes"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","📅 Calendario"],["prospectos",`🎯 Prospectos${prospBadge?` (${prospBadge})`:""}`],["facturas","🧾 Facturas"],["comisiones","💵 Comisiones"],["programacion","📋 Prog. Semanal"],["inteligencia","📈 Inteligencia"]].map(([k,l])=>(
             <button key={k} onClick={()=>setTab(k)} style={{background:"none",border:"none",borderBottom:tab===k?"3px solid var(--accent)":"3px solid transparent",padding:"12px 14px",cursor:"pointer",fontWeight:tab===k?700:500,color:tab===k?"var(--accent)":"var(--text-tertiary)",fontSize:13,whiteSpace:"nowrap",flexShrink:0}}>{l}</button>
           ))}
         </div>
@@ -4559,6 +4634,127 @@ function App() {
             </>
           );
         })()}
+
+        {tab==="comisiones"&&(()=>{
+          const corte=comisionesCortes[comisionMes]||{};
+          const estatusCobro=corte.estatus_cobro||"pendiente";
+          const pagosSocios=corte.pagos_socios||{};
+          const puedeAvanzarCom=comisionMes<currentYM();
+          const sociosConPago=Object.entries(comisionData.porSocio);
+          return(
+            <>
+              {/* SELECTOR DE MES */}
+              <div style={{background:"var(--bg-card)",borderRadius:12,padding:"10px 14px",boxShadow:"0 1px 4px #00000040",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <button onClick={()=>setComisionMes(m=>addMonthsYM(m,-1))} style={{background:"var(--bg-card-alt)",border:"none",borderRadius:8,padding:"6px 14px",fontWeight:700,fontSize:17,cursor:"pointer",lineHeight:1}}>‹</button>
+                <div style={{fontWeight:800,fontSize:14,color:"var(--text-main)"}}>{mesLabel(comisionMes)}</div>
+                <button onClick={()=>{ if(puedeAvanzarCom) setComisionMes(m=>addMonthsYM(m,1)); }} disabled={!puedeAvanzarCom} style={{background:"var(--bg-card-alt)",border:"none",borderRadius:8,padding:"6px 14px",fontWeight:700,fontSize:17,cursor:puedeAvanzarCom?"pointer":"default",opacity:puedeAvanzarCom?1:0.35,lineHeight:1}}>›</button>
+              </div>
+
+              {/* CUENTA 1 — COBRO A CRUZ AZUL */}
+              <div style={{background:"linear-gradient(135deg,var(--accent),#059669)",borderRadius:14,padding:"18px 20px",color:"white",marginBottom:14}}>
+                <div style={{fontSize:10,opacity:.7,fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:4}}>💰 Cobro a Cruz Azul — {mesLabel(comisionMes)}</div>
+                <div style={{fontSize:36,fontWeight:900,letterSpacing:-1}}>{fmt(comisionData.totalComision)}</div>
+                <div style={{fontSize:11,opacity:.6,marginTop:4}}>{comisionData.rows.length} cliente{comisionData.rows.length!==1?"s":""} con anticipos este mes</div>
+                <button onClick={()=>toggleCobroComision(comisionMes)} style={{marginTop:12,background:estatusCobro==="cobrado"?"rgba(255,255,255,0.25)":"white",color:estatusCobro==="cobrado"?"white":"var(--accent)",border:"none",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>
+                  {estatusCobro==="cobrado"?`✓ Cobrado — ${diaLabel(corte.fecha_cobro)}`:"Marcar como cobrado"}
+                </button>
+              </div>
+
+              {/* CUENTA 2 — PAGO A SOCIOS */}
+              <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
+                <div style={{fontWeight:700,fontSize:13,color:"var(--text-main)",marginBottom:10}}>🤝 Pago a socios — {mesLabel(comisionMes)}</div>
+                {sociosConPago.length===0
+                  ?<div style={{fontSize:13,color:"var(--text-sec)",textAlign:"center",padding:"14px 0"}}>Ningún cliente con socio asignado tuvo anticipos este mes</div>
+                  :sociosConPago.map(([sid,{socio,total}])=>{
+                    const pago=pagosSocios[sid]||{};
+                    const pagado=pago.estatus_pago==="pagado";
+                    return(
+                      <div key={sid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid var(--border-soft)",gap:10,flexWrap:"wrap"}}>
+                        <div>
+                          <div style={{fontWeight:700,fontSize:13,color:"var(--text-main)"}}>{socio.nombre}</div>
+                          <div style={{fontWeight:800,fontSize:16,color:"#16a34a"}}>{fmt(total)}</div>
+                        </div>
+                        <button onClick={()=>togglePagoSocio(comisionMes,sid)} style={{background:pagado?"var(--bg-card-alt)":"#16a34a",color:pagado?"var(--text-tertiary)":"white",border:"none",borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:12}}>
+                          {pagado?`✓ Pagado — ${diaLabel(pago.fecha_pago)}`:"Marcar pagado"}
+                        </button>
+                      </div>
+                    );
+                  })
+                }
+              </div>
+
+              {/* DETALLE POR CLIENTE */}
+              <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
+                <div style={{fontWeight:700,fontSize:13,color:"var(--text-main)",marginBottom:10}}>📋 Detalle por cliente — {mesLabel(comisionMes)}</div>
+                {comisionData.rows.length===0
+                  ?<EmptyState icon="💵" msg="Ningún cliente registró anticipos este mes."/>
+                  :(
+                    <div style={{overflowX:"auto"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                        <thead>
+                          <tr style={{background:"var(--bg-card-alt)",color:"var(--text-tertiary)",fontSize:10,fontWeight:700}}>
+                            <th style={{padding:"6px 8px",textAlign:"left"}}>Cliente</th>
+                            <th style={{padding:"6px 8px",textAlign:"right"}}>Anticipos mes</th>
+                            <th style={{padding:"6px 8px",textAlign:"right"}}>Ton comisionables</th>
+                            <th style={{padding:"6px 8px",textAlign:"right"}}>Comisión total</th>
+                            <th style={{padding:"6px 8px",textAlign:"left"}}>Socio</th>
+                            <th style={{padding:"6px 8px",textAlign:"right"}}>Pago socio</th>
+                            <th style={{padding:"6px 8px",textAlign:"right"}}>Neto Antonio</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {comisionData.rows.map((r,i)=>(
+                            <tr key={r.cliente.id} style={{borderTop:"1px solid var(--border-soft)",background:i%2?"var(--bg-zebra)":"var(--bg-card)"}}>
+                              <td style={{padding:"7px 8px",fontWeight:700}}>{r.cliente.nombre}</td>
+                              <td style={{padding:"7px 8px",textAlign:"right"}}>{fmt(r.totalAnticipos)}</td>
+                              <td style={{padding:"7px 8px",textAlign:"right"}}>{fmtT(r.tonComisionables)}</td>
+                              <td style={{padding:"7px 8px",textAlign:"right",fontWeight:700,color:"var(--accent)"}}>{fmt(r.comisionTotal)}</td>
+                              <td style={{padding:"7px 8px",color:"var(--text-sec)"}}>{r.socio?r.socio.nombre:"—"}</td>
+                              <td style={{padding:"7px 8px",textAlign:"right",color:"#dc2626"}}>{r.socio?fmt(r.pagoSocio):"—"}</td>
+                              <td style={{padding:"7px 8px",textAlign:"right",fontWeight:800,color:"#16a34a"}}>{fmt(r.neto)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr style={{background:"var(--accent-soft)",borderTop:"2px solid #10B98133",fontWeight:700,fontSize:12}}>
+                            <td colSpan={3} style={{padding:"8px",color:"var(--accent)"}}>Total del mes</td>
+                            <td style={{padding:"8px",textAlign:"right",color:"var(--accent)"}}>{fmt(comisionData.totalComision)}</td>
+                            <td/>
+                            <td style={{padding:"8px",textAlign:"right",color:"#dc2626"}}>{fmt(comisionData.totalComision-comisionData.totalNeto)}</td>
+                            <td style={{padding:"8px",textAlign:"right",color:"#16a34a"}}>{fmt(comisionData.totalNeto)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )
+                }
+              </div>
+
+              {/* CATÁLOGO DE SOCIOS */}
+              <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{fontWeight:700,fontSize:13,color:"var(--text-main)"}}>👥 Socios</div>
+                  <button onClick={()=>{setSocioForm(emptySocio);setShowSocioForm(true);}} style={{background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"6px 14px",fontWeight:700,cursor:"pointer",fontSize:12}}>+ Nuevo socio</button>
+                </div>
+                {socios.length===0
+                  ?<div style={{fontSize:13,color:"var(--text-sec)",textAlign:"center",padding:"14px 0"}}>Sin socios registrados</div>
+                  :socios.map(s=>(
+                    <div key={s.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid var(--border-soft)"}}>
+                      <div>
+                        <div style={{fontWeight:700,fontSize:13,color:"var(--text-main)"}}>{s.nombre}</div>
+                        {s.telefono&&<div style={{fontSize:11,color:"var(--text-tertiary)"}}>📞 {s.telefono}</div>}
+                      </div>
+                      <div style={{display:"flex",gap:4}}>
+                        <button onClick={()=>{setSocioForm(s);setShowSocioForm(true);}} title="Editar" style={{background:"none",border:"none",cursor:"pointer",fontSize:15,color:"var(--text-sec)",padding:"2px"}}>✏️</button>
+                        <button onClick={()=>deleteSocio(s.id)} title="Eliminar" style={{background:"none",border:"none",cursor:"pointer",fontSize:15,color:"var(--text-sec)",padding:"2px"}}>🗑</button>
+                      </div>
+                    </div>
+                  ))
+                }
+              </div>
+            </>
+          );
+        })()}
       </div>
 
       {/* PROSP DETAIL PANEL */}
@@ -4801,9 +4997,41 @@ function App() {
                 <input type={t} value={cliForm[k]} onChange={e=>setCliForm(f=>({...f,[k]:e.target.value}))} style={inS}/>
               </div>
             ))}
+            <div style={{marginBottom:12}}>
+              <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Socio (reparto de comisión, opcional)</label>
+              <select value={cliForm.socioId||""} onChange={e=>setCliForm(f=>({...f,socioId:e.target.value,...(!e.target.value&&{comision_socio_ton:0})}))} style={{...inS,background:"var(--bg-card)"}}>
+                <option value="">— Sin socio (100% Antonio) —</option>
+                {socios.map(s=><option key={s.id} value={s.id}>{s.nombre}</option>)}
+              </select>
+            </div>
+            {cliForm.socioId&&(
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Comisión del socio ($/ton)</label>
+                <input type="number" step="1" value={cliForm.comision_socio_ton} onChange={e=>setCliForm(f=>({...f,comision_socio_ton:e.target.value}))} style={inS} placeholder="0"/>
+              </div>
+            )}
             <div style={{display:"flex",gap:10,marginTop:6}}>
               <button onClick={saveCliente} disabled={!cliForm.nombre} style={{flex:1,background:cliForm.nombre?"var(--accent)":"var(--border)",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:cliForm.nombre?"pointer":"default",fontSize:14}}>Guardar</button>
               <button onClick={()=>setShowCliForm(false)} style={{flex:1,background:"var(--bg-card-alt)",color:"var(--text-tertiary)",border:"none",borderRadius:8,padding:"11px",fontWeight:600,cursor:"pointer",fontSize:14}}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SOCIO FORM */}
+      {showSocioForm&&(
+        <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:500,padding:"22px 20px"}}>
+            <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>{socioForm.id?"Editar socio":"Nuevo socio"}</div>
+            {[["nombre","Nombre","text"],["telefono","Teléfono (opcional)","tel"]].map(([k,l,t])=>(
+              <div key={k} style={{marginBottom:12}}>
+                <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>{l}</label>
+                <input type={t} value={socioForm[k]} onChange={e=>setSocioForm(f=>({...f,[k]:e.target.value}))} style={inS}/>
+              </div>
+            ))}
+            <div style={{display:"flex",gap:10,marginTop:6}}>
+              <button onClick={saveSocio} disabled={!socioForm.nombre} style={{flex:1,background:socioForm.nombre?"var(--accent)":"var(--border)",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:socioForm.nombre?"pointer":"default",fontSize:14}}>Guardar</button>
+              <button onClick={()=>setShowSocioForm(false)} style={{flex:1,background:"var(--bg-card-alt)",color:"var(--text-tertiary)",border:"none",borderRadius:8,padding:"11px",fontWeight:600,cursor:"pointer",fontSize:14}}>Cancelar</button>
             </div>
           </div>
         </div>
