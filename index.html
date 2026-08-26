@@ -2609,6 +2609,7 @@ function App() {
     if(!entry) return;
     const {socio,total}=entry;
     const filas=comisionData.rows.filter(r=>r.socio?.id===socioId);
+    const totalTon=filas.reduce((s,r)=>s+r.tonComisionables,0);
     const mesLbl=mesLabel(mes); const mesLblCap=mesLbl.charAt(0).toUpperCase()+mesLbl.slice(1);
 
     const {jsPDF}=window.jspdf;
@@ -2619,17 +2620,43 @@ function App() {
     doc.text(`Corte: ${mesLblCap}`,14,26);
     doc.text(`Generado: ${diaLabel(todayISO())}`,14,32);
 
+    // Detalle: un bloque por cliente con cada anticipo/pago del mes por separado —
+    // nunca se muestran las toneladas ni la comisión total (de $200/ton) de Antonio.
+    const body=[];
+    filas.forEach(r=>{
+      body.push([{content:r.cliente.nombre,colSpan:3,styles:{fontStyle:"bold",fillColor:[226,232,240],textColor:[30,41,59]}}]);
+      const precioTon=parseFloat(r.cliente.precio_ton)||0;
+      const comisionTon=parseFloat(r.cliente.comision_socio_ton)||0;
+      const pagosMes=(r.cliente.historial_anticipos||[])
+        .filter(a=>(a.fecha||"").startsWith(mes))
+        .sort((a,b)=>(a.fecha||"").localeCompare(b.fecha||""));
+      pagosMes.forEach(a=>{
+        const monto=parseFloat(a.monto)||0;
+        const comisionPago=precioTon>0?(monto/precioTon)*comisionTon:0;
+        body.push([a.fecha||"—",fmt(monto),fmt(comisionPago)]);
+      });
+      body.push([
+        {content:"Subtotal",colSpan:2,styles:{halign:"right",fontStyle:"bold"}},
+        {content:fmt(r.pagoSocio),styles:{fontStyle:"bold"}},
+      ]);
+    });
+
     doc.autoTable({
       startY:40,
-      head:[["Cliente","Ton. comisionables","Comisión total","Monto socio"]],
-      body:filas.map(r=>[r.cliente.nombre,fmtT(r.tonComisionables),fmt(r.comisionTotal),fmt(r.pagoSocio)]),
-      foot:[["","","Total a cobrar",fmt(total)]],
+      head:[["Fecha","Monto del pago","Comisión del socio"]],
+      body,
       styles:{fontSize:10,cellPadding:4},
       headStyles:{fillColor:[16,185,129],textColor:[255,255,255]},
-      footStyles:{fillColor:[241,245,249],textColor:[30,41,59],fontStyle:"bold"},
-      columnStyles:{1:{halign:"right"},2:{halign:"right"},3:{halign:"right"}},
+      columnStyles:{1:{halign:"right"},2:{halign:"right"}},
       theme:"grid",
     });
+
+    const finalY=(doc.lastAutoTable?.finalY||40)+10;
+    doc.setFontSize(11); doc.setTextColor(30,41,59);
+    doc.text(`Total de toneladas comisionables del mes: ${fmtT(totalTon)} ton`,14,finalY);
+    doc.setFontSize(13); doc.setFont(undefined,"bold");
+    doc.text(`Total a cobrar: ${fmt(total)}`,14,finalY+9);
+    doc.setFont(undefined,"normal");
 
     const nombreSafe=socio.nombre.replace(/[/\\*?:<>|"]/g,"-").replace(/ /g,"_");
     doc.save(`Comision_${nombreSafe}_${mes}.pdf`);
