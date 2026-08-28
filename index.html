@@ -2673,49 +2673,62 @@ function App() {
 
   const exportReporteCruzAzul = async (mes) => { try {
     const filas=comisionDataCruzAzul.rows;
+    if(filas.length===0){ await notify("Ningún cliente registró anticipos este mes."); return; }
     const totalTon=filas.reduce((s,r)=>s+r.tonComisionables,0);
     const mesLbl=mesLabel(mes); const mesLblCap=mesLbl.charAt(0).toUpperCase()+mesLbl.slice(1);
 
-    const {jsPDF}=window.jspdf;
-    const doc=new jsPDF();
-    doc.setFontSize(16); doc.setTextColor(30,41,59);
-    doc.text(`Comisión — Cruz Azul`,14,18);
-    doc.setFontSize(11); doc.setTextColor(100,116,139);
-    doc.text(`Corte: ${mesLblCap}`,14,26);
-    doc.text(`Generado: ${diaLabel(todayISO())}`,14,32);
-
-    // Detalle: un bloque por cliente con cada anticipo/pago del mes por separado.
-    // A diferencia del reporte de socios, aquí SÍ se muestra la comisión completa
-    // de $200/ton (este es el documento de cobro a Cruz Azul).
-    const body=[];
-    filas.forEach(r=>{
-      body.push([{content:r.cliente.nombre,colSpan:3,styles:{fontStyle:"bold",fillColor:[226,232,240],textColor:[30,41,59]}}]);
-      const precioTon=parseFloat(r.cliente.precio_ton)||0;
-      const pagosMes=(r.cliente.historial_anticipos||[])
+    // Pagos del mes por cliente (solo el monto, ordenados por fecha) — una columna por cliente.
+    const pagosPorCliente=filas.map(r=>
+      (r.cliente.historial_anticipos||[])
         .filter(a=>(a.fecha||"").startsWith(mes))
-        .sort((a,b)=>(a.fecha||"").localeCompare(b.fecha||""));
-      pagosMes.forEach(a=>{
-        const monto=parseFloat(a.monto)||0;
-        const comisionPago=precioTon>0?(monto/precioTon)*COMISION_CRUZAZUL_TON:0;
-        body.push([a.fecha||"—",fmt(monto),fmt(comisionPago)]);
-      });
-      body.push([
-        {content:"Subtotal",colSpan:2,styles:{halign:"right",fontStyle:"bold"}},
-        {content:fmt(r.comisionTotal),styles:{fontStyle:"bold"}},
-      ]);
-    });
+        .sort((a,b)=>(a.fecha||"").localeCompare(b.fecha||""))
+        .map(a=>parseFloat(a.monto)||0)
+    );
+    const maxPagos=pagosPorCliente.reduce((m,p)=>Math.max(m,p.length),0);
+
+    // Tamaño de fuente compacto según el número de clientes, para que la tabla
+    // quepa completa en una sola hoja landscape sin partirse en varias páginas.
+    const nCols=filas.length;
+    const fontSize = nCols<=6?10 : nCols<=10?9 : nCols<=14?8 : nCols<=18?7 : 6;
+
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"});
+    doc.setFontSize(16); doc.setTextColor(30,41,59);
+    doc.text(`Comisión — Cruz Azul`,14,15);
+    doc.setFontSize(11); doc.setTextColor(100,116,139);
+    doc.text(`Corte: ${mesLblCap}`,14,22);
+    doc.text(`Generado: ${diaLabel(todayISO())}`,14,27);
+
+    const head=[["", ...filas.map(r=>r.cliente.nombre)]];
+    const body=[];
+    for(let i=0;i<maxPagos;i++){
+      body.push(["", ...pagosPorCliente.map(p=>p[i]!==undefined?fmt(p[i]):"")]);
+    }
+    const separador={lineWidth:{top:0.75,left:0.1,right:0.1,bottom:0.1},lineColor:[30,41,59]};
+    body.push([
+      {content:"TOTAL",styles:{fontStyle:"bold",...separador}},
+      ...filas.map(r=>({content:fmt(r.totalAnticipos),styles:{fontStyle:"bold",...separador}})),
+    ]);
+    body.push(["TONELADAS", ...filas.map(r=>fmtT(r.tonComisionables))]);
+    body.push(["PRECIO/TON", ...filas.map(r=>fmt(parseFloat(r.cliente.precio_ton)||0))]);
+    body.push([
+      {content:"COMISIÓN",styles:{fontStyle:"bold",textColor:[16,150,105]}},
+      ...filas.map(r=>({content:fmt(r.comisionTotal),styles:{fontStyle:"bold",textColor:[16,150,105]}})),
+    ]);
 
     doc.autoTable({
-      startY:40,
-      head:[["Fecha","Monto del pago","Comisión"]],
+      startY:33,
+      head,
       body,
-      styles:{fontSize:10,cellPadding:4},
-      headStyles:{fillColor:[16,185,129],textColor:[255,255,255]},
-      columnStyles:{1:{halign:"right"},2:{halign:"right"}},
+      styles:{fontSize,cellPadding:2,halign:"right",overflow:"linebreak"},
+      headStyles:{fillColor:[16,185,129],textColor:[255,255,255],halign:"center",fontSize},
+      columnStyles:{0:{halign:"left",fontStyle:"bold",cellWidth:24}},
       theme:"grid",
+      margin:{left:8,right:8},
+      tableWidth:"auto",
     });
 
-    const finalY=(doc.lastAutoTable?.finalY||40)+10;
+    const finalY=(doc.lastAutoTable?.finalY||33)+10;
     doc.setFontSize(11); doc.setTextColor(30,41,59);
     doc.text(`Total de toneladas comisionables del mes: ${fmtT(totalTon)} ton`,14,finalY);
     doc.setFontSize(13); doc.setFont(undefined,"bold");
