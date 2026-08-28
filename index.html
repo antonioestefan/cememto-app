@@ -993,7 +993,7 @@ function CalendarioHabiles({diasHabiles, onToggle}){
 }
 
 const emptyOV ={id:"",num_ov:"",clienteId:"",serie:"",folio:"",toneladas:0,precio_ton:"",fecha_carga:todayISO(),fecha_entrega:"",status:"ov_asignada",confirm:"por_confirmar",motivo:"",remision_firmada:false,notas:"",tipo:"granel"};
-const emptyCliente = {id:"",nombre:"",nombre_fiscal:"",rfc:"",ciudad:"",precio_ton:"",anticipo:0,telefono:"",socioId:"",comision_socio_ton:0};
+const emptyCliente = {id:"",nombre:"",nombre_fiscal:"",rfc:"",ciudad:"",precio_ton:"",anticipo:0,telefono:"",socioId:"",comision_socio_ton:0,comisionCruzAzulAparte:false};
 const emptyNota    = {id:"",texto:"",fecha_vencimiento:todayISO(),prioridad:"media",clienteId:"",num_ov:"",completada:false};
 const emptyProsp   = {id:"",nombre:"",telefono:"",contacto:"",vol_mensual:0,etapa:"contacto",notas:"",fecha_seguimiento:todayISO()};
 const emptyFactura = {id:"",clienteId:"",folio_fiscal:"",fecha:todayISO(),monto_total:"",tipo:"Normal",estatus:"Emitida",pagos_ligados:[],notas:""};
@@ -1503,6 +1503,15 @@ function App() {
     });
     return {rows,totalComision,totalNeto,porSocio};
   },[clientes,socios,comisionMes]);
+
+  // Igual que comisionData pero excluyendo clientes con comisionCruzAzulAparte=true
+  // (su comisión se cobra a Cruz Azul por otro canal). Solo se usa para el lado
+  // Cruz Azul (tarjeta Cuenta 1 y exportReporteCruzAzul); el lado de socios usa comisionData tal cual.
+  const comisionDataCruzAzul = useMemo(()=>{
+    const rows=comisionData.rows.filter(r=>!r.cliente.comisionCruzAzulAparte);
+    const totalComision=rows.reduce((s,r)=>s+r.comisionTotal,0);
+    return {rows,totalComision};
+  },[comisionData]);
 
   const totales = useMemo(()=>{
     const ton      =ovs.filter(p=>p.status==="entregado").reduce((s,p)=>s+(parseFloat(p.toneladas)||0),0);
@@ -2452,7 +2461,7 @@ function App() {
   };
   const saveCliente = async ()=>{
     const id=cliForm.id||`CLI-${Date.now()}`;
-    const nc={...cliForm,id,precio_ton:parseFloat(cliForm.precio_ton)||0,anticipo:parseFloat(cliForm.anticipo)||0,socioId:cliForm.socioId||"",comision_socio_ton:parseFloat(cliForm.comision_socio_ton)||0};
+    const nc={...cliForm,id,precio_ton:parseFloat(cliForm.precio_ton)||0,anticipo:parseFloat(cliForm.anticipo)||0,socioId:cliForm.socioId||"",comision_socio_ton:parseFloat(cliForm.comision_socio_ton)||0,comisionCruzAzulAparte:!!cliForm.comisionCruzAzulAparte};
     const prevClientes=clientes;
     setClientes(prev=>prev.find(c=>c.id===id)?prev.map(c=>c.id===id?nc:c):[...prev,nc]);
     const ok=await runSave(()=>saveToDb("clientes",id,nc), ()=>setClientes(prevClientes));
@@ -2663,7 +2672,7 @@ function App() {
   } catch(e){ await notify(`Error al generar PDF: ${e.message}`); } };
 
   const exportReporteCruzAzul = async (mes) => { try {
-    const filas=comisionData.rows;
+    const filas=comisionDataCruzAzul.rows;
     const totalTon=filas.reduce((s,r)=>s+r.tonComisionables,0);
     const mesLbl=mesLabel(mes); const mesLblCap=mesLbl.charAt(0).toUpperCase()+mesLbl.slice(1);
 
@@ -2710,7 +2719,7 @@ function App() {
     doc.setFontSize(11); doc.setTextColor(30,41,59);
     doc.text(`Total de toneladas comisionables del mes: ${fmtT(totalTon)} ton`,14,finalY);
     doc.setFontSize(13); doc.setFont(undefined,"bold");
-    doc.text(`Total a cobrar: ${fmt(comisionData.totalComision)}`,14,finalY+9);
+    doc.text(`Total a cobrar: ${fmt(comisionDataCruzAzul.totalComision)}`,14,finalY+9);
     doc.setFont(undefined,"normal");
 
     doc.save(`Comision_CruzAzul_${mes}.pdf`);
@@ -4766,8 +4775,8 @@ function App() {
               {/* CUENTA 1 — COBRO A CRUZ AZUL */}
               <div style={{background:"linear-gradient(135deg,var(--accent),#059669)",borderRadius:14,padding:"18px 20px",color:"white",marginBottom:14}}>
                 <div style={{fontSize:10,opacity:.7,fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:4}}>💰 Cobro a Cruz Azul — {mesLabel(comisionMes)}</div>
-                <div style={{fontSize:36,fontWeight:900,letterSpacing:-1}}>{fmt(comisionData.totalComision)}</div>
-                <div style={{fontSize:11,opacity:.6,marginTop:4}}>{comisionData.rows.length} cliente{comisionData.rows.length!==1?"s":""} con anticipos este mes</div>
+                <div style={{fontSize:36,fontWeight:900,letterSpacing:-1}}>{fmt(comisionDataCruzAzul.totalComision)}</div>
+                <div style={{fontSize:11,opacity:.6,marginTop:4}}>{comisionDataCruzAzul.rows.length} cliente{comisionDataCruzAzul.rows.length!==1?"s":""} con anticipos este mes</div>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12}}>
                   <button onClick={()=>toggleCobroComision(comisionMes)} style={{background:estatusCobro==="cobrado"?"rgba(255,255,255,0.25)":"white",color:estatusCobro==="cobrado"?"white":"var(--accent)",border:"none",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>
                     {estatusCobro==="cobrado"?`✓ Cobrado — ${diaLabel(corte.fecha_cobro)}`:"Marcar como cobrado"}
@@ -5129,6 +5138,13 @@ function App() {
                 <input type="number" step="1" value={cliForm.comision_socio_ton} onChange={e=>setCliForm(f=>({...f,comision_socio_ton:e.target.value}))} style={inS} placeholder="0"/>
               </div>
             )}
+            <div style={{marginBottom:12}}>
+              <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Comisión Cruz Azul aparte (se cobra por otro canal)</label>
+              <select value={cliForm.comisionCruzAzulAparte?"si":"no"} onChange={e=>setCliForm(f=>({...f,comisionCruzAzulAparte:e.target.value==="si"}))} style={{...inS,background:"var(--bg-card)"}}>
+                <option value="no">No — incluir en el cobro a Cruz Azul</option>
+                <option value="si">Sí — excluir del cobro a Cruz Azul</option>
+              </select>
+            </div>
             <div style={{display:"flex",gap:10,marginTop:6}}>
               <button onClick={saveCliente} disabled={!cliForm.nombre} style={{flex:1,background:cliForm.nombre?"var(--accent)":"var(--border)",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:cliForm.nombre?"pointer":"default",fontSize:14}}>Guardar</button>
               <button onClick={()=>setShowCliForm(false)} style={{flex:1,background:"var(--bg-card-alt)",color:"var(--text-tertiary)",border:"none",borderRadius:8,padding:"11px",fontWeight:600,cursor:"pointer",fontSize:14}}>Cancelar</button>
