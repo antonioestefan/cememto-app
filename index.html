@@ -2662,6 +2662,60 @@ function App() {
     doc.save(`Comision_${nombreSafe}_${mes}.pdf`);
   } catch(e){ await notify(`Error al generar PDF: ${e.message}`); } };
 
+  const exportReporteCruzAzul = async (mes) => { try {
+    const filas=comisionData.rows;
+    const totalTon=filas.reduce((s,r)=>s+r.tonComisionables,0);
+    const mesLbl=mesLabel(mes); const mesLblCap=mesLbl.charAt(0).toUpperCase()+mesLbl.slice(1);
+
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF();
+    doc.setFontSize(16); doc.setTextColor(30,41,59);
+    doc.text(`Comisión — Cruz Azul`,14,18);
+    doc.setFontSize(11); doc.setTextColor(100,116,139);
+    doc.text(`Corte: ${mesLblCap}`,14,26);
+    doc.text(`Generado: ${diaLabel(todayISO())}`,14,32);
+
+    // Detalle: un bloque por cliente con cada anticipo/pago del mes por separado.
+    // A diferencia del reporte de socios, aquí SÍ se muestra la comisión completa
+    // de $200/ton (este es el documento de cobro a Cruz Azul).
+    const body=[];
+    filas.forEach(r=>{
+      body.push([{content:r.cliente.nombre,colSpan:3,styles:{fontStyle:"bold",fillColor:[226,232,240],textColor:[30,41,59]}}]);
+      const precioTon=parseFloat(r.cliente.precio_ton)||0;
+      const pagosMes=(r.cliente.historial_anticipos||[])
+        .filter(a=>(a.fecha||"").startsWith(mes))
+        .sort((a,b)=>(a.fecha||"").localeCompare(b.fecha||""));
+      pagosMes.forEach(a=>{
+        const monto=parseFloat(a.monto)||0;
+        const comisionPago=precioTon>0?(monto/precioTon)*COMISION_CRUZAZUL_TON:0;
+        body.push([a.fecha||"—",fmt(monto),fmt(comisionPago)]);
+      });
+      body.push([
+        {content:"Subtotal",colSpan:2,styles:{halign:"right",fontStyle:"bold"}},
+        {content:fmt(r.comisionTotal),styles:{fontStyle:"bold"}},
+      ]);
+    });
+
+    doc.autoTable({
+      startY:40,
+      head:[["Fecha","Monto del pago","Comisión"]],
+      body,
+      styles:{fontSize:10,cellPadding:4},
+      headStyles:{fillColor:[16,185,129],textColor:[255,255,255]},
+      columnStyles:{1:{halign:"right"},2:{halign:"right"}},
+      theme:"grid",
+    });
+
+    const finalY=(doc.lastAutoTable?.finalY||40)+10;
+    doc.setFontSize(11); doc.setTextColor(30,41,59);
+    doc.text(`Total de toneladas comisionables del mes: ${fmtT(totalTon)} ton`,14,finalY);
+    doc.setFontSize(13); doc.setFont(undefined,"bold");
+    doc.text(`Total a cobrar: ${fmt(comisionData.totalComision)}`,14,finalY+9);
+    doc.setFont(undefined,"normal");
+
+    doc.save(`Comision_CruzAzul_${mes}.pdf`);
+  } catch(e){ await notify(`Error al generar PDF: ${e.message}`); } };
+
   const saveNota = async ()=>{
     const id=notaForm.id||`NOTA-${Date.now()}`;
     const n={...notaForm,id};
@@ -4714,9 +4768,12 @@ function App() {
                 <div style={{fontSize:10,opacity:.7,fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:4}}>💰 Cobro a Cruz Azul — {mesLabel(comisionMes)}</div>
                 <div style={{fontSize:36,fontWeight:900,letterSpacing:-1}}>{fmt(comisionData.totalComision)}</div>
                 <div style={{fontSize:11,opacity:.6,marginTop:4}}>{comisionData.rows.length} cliente{comisionData.rows.length!==1?"s":""} con anticipos este mes</div>
-                <button onClick={()=>toggleCobroComision(comisionMes)} style={{marginTop:12,background:estatusCobro==="cobrado"?"rgba(255,255,255,0.25)":"white",color:estatusCobro==="cobrado"?"white":"var(--accent)",border:"none",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>
-                  {estatusCobro==="cobrado"?`✓ Cobrado — ${diaLabel(corte.fecha_cobro)}`:"Marcar como cobrado"}
-                </button>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12}}>
+                  <button onClick={()=>toggleCobroComision(comisionMes)} style={{background:estatusCobro==="cobrado"?"rgba(255,255,255,0.25)":"white",color:estatusCobro==="cobrado"?"white":"var(--accent)",border:"none",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>
+                    {estatusCobro==="cobrado"?`✓ Cobrado — ${diaLabel(corte.fecha_cobro)}`:"Marcar como cobrado"}
+                  </button>
+                  <button onClick={()=>exportReporteCruzAzul(comisionMes)} style={{background:"rgba(255,255,255,0.2)",color:"white",border:"1px solid rgba(255,255,255,0.4)",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>📄 Generar reporte PDF</button>
+                </div>
               </div>
 
               {/* CUENTA 2 — PAGO A SOCIOS */}
