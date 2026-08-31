@@ -22,6 +22,14 @@ exports.handler = async (event) => {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
 
+  if (!clientId) {
+    return {
+      statusCode: 500,
+      headers: { ...CORS, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: 'GOOGLE_CLIENT_ID no configurado en Netlify environment variables' }),
+    };
+  }
+
   if (!clientSecret) {
     return {
       statusCode: 500,

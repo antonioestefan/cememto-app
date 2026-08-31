@@ -1756,6 +1756,9 @@ function App() {
   const gdReadRefreshToken=()=>{
     try{return localStorage.getItem("gd_refresh_token")||null;}catch{return null;}
   };
+  const gdClearRefreshToken=()=>{
+    try{localStorage.removeItem("gd_refresh_token");}catch{}
+  };
   const gdTrySilentRenew=async()=>{
     const rt=gdReadRefreshToken();
     if(!rt) return null;
@@ -1765,9 +1768,11 @@ function App() {
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({action:"refresh",refresh_token:rt}),
       });
-      if(!r.ok) return null;
+      // Un 400/error aquí significa que Google rechazó este refresh_token (invalid_grant, revocado, etc.)
+      // Se borra para no seguir reintentando con un token que ya sabemos inválido.
+      if(!r.ok){ gdClearRefreshToken(); return null; }
       const data=await r.json();
-      if(!data.access_token) return null;
+      if(!data.access_token){ gdClearRefreshToken(); return null; }
       const tokenObj={access_token:data.access_token,expires_at:Date.now()+((data.expires_in||3600)*1000),scope:GD_SCOPE};
       gdSaveToken(tokenObj);
       gdSaveGranted();
@@ -3303,7 +3308,7 @@ function App() {
                   <button onClick={()=>{setShowOVMenu(false);setForm({...emptyOV,fecha_carga:todayISO()});setShowForm(true);}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"var(--text-main)",fontSize:13,cursor:"pointer",fontWeight:600}}>✏️ Captura manual</button>
                   <button onClick={()=>{setShowOVMenu(false);setShowLectorNuevo(true);}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#0891b2",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid var(--border)"}}>📄 Leer remisión con IA</button>
                   <button onClick={()=>{setShowOVMenu(false);setShowChartLector(true);setChartStep("idle");setChartPlanta("");setChartFile(null);setChartPreviewUrl(null);setChartRows([]);setChartError("");setChartResumen(null);}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#0891b2",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid var(--border)"}}>📊 Leer chart corporativo</button>
-                  <button onClick={()=>{setShowOVMenu(false);gdOpen();}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#7c3aed",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid var(--border)"}}>📂 Importar desde Google Drive</button>
+                  <button onClick={()=>{setShowOVMenu(false);gdOpen();}} disabled={gdLoading} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#7c3aed",fontSize:13,cursor:gdLoading?"default":"pointer",fontWeight:600,borderTop:"1px solid var(--border)"}}>📂 Importar desde Google Drive</button>
                   <button onClick={()=>{setShowOVMenu(false);limpiarFoliosDuplicados();}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"12px 16px",color:"#f59e0b",fontSize:13,cursor:"pointer",fontWeight:600,borderTop:"1px solid var(--border)"}}>🔧 Limpiar folios duplicados</button>
                 </div>
               </>
