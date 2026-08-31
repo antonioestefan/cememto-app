@@ -1835,10 +1835,16 @@ function App() {
   const gdListRemisionFiles=async(folder,token)=>{
     const sub=await gdApi("/files",{q:`'${folder.id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'`,fields:"files(id,name)",pageSize:"50"},token);
     const remSub=(sub.files||[]).find(f=>(f.name||"").toLowerCase()==="remisiones");
-    const targetId=remSub?remSub.id:folder.id;
-    const mimeQ="(mimeType='application/pdf' or mimeType='image/jpeg' or mimeType='image/png')";
-    const fd=await gdApi("/files",{q:`'${targetId}' in parents and trashed=false and ${mimeQ}`,fields:"files(id,name,size,mimeType,modifiedTime,createdTime)",pageSize:"200",orderBy:"modifiedTime desc"},token);
-    return fd.files||[];
+    // mimeType contains 'image/' cubre HEIC/HEIF (iPhone) y cualquier otro formato de imagen, no solo jpeg/png.
+    const mimeQ="(mimeType='application/pdf' or mimeType contains 'image/')";
+    // Si existe la subcarpeta "Remisiones" igual se revisa la carpeta raíz del cliente: archivos
+    // subidos a mano desde el celular a veces quedan ahí en vez de dentro de "Remisiones".
+    const targetIds=remSub?[remSub.id,folder.id]:[folder.id];
+    const results=await Promise.all(targetIds.map(id=>gdApi("/files",{q:`'${id}' in parents and trashed=false and ${mimeQ}`,fields:"files(id,name,size,mimeType,modifiedTime,createdTime)",pageSize:"200",orderBy:"modifiedTime desc"},token)));
+    const seen=new Set(); const merged=[];
+    results.forEach(r=>(r.files||[]).forEach(f=>{ if(!seen.has(f.id)){ seen.add(f.id); merged.push(f); } }));
+    merged.sort((a,b)=>new Date(b.modifiedTime)-new Date(a.modifiedTime));
+    return merged;
   };
   const gdListPagosSubfolder=async(folder,subNombre,token)=>{
     const sub=await gdApi("/files",{q:`'${folder.id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'`,fields:"files(id,name)",pageSize:"50"},token);
@@ -1847,7 +1853,7 @@ function App() {
     const sub2=await gdApi("/files",{q:`'${pagosSub.id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'`,fields:"files(id,name)",pageSize:"50"},token);
     const targetSub=(sub2.files||[]).find(f=>(f.name||"").toLowerCase()===subNombre.toLowerCase());
     if(!targetSub) return [];
-    const mimeQ="(mimeType='application/pdf' or mimeType='image/jpeg' or mimeType='image/png')";
+    const mimeQ="(mimeType='application/pdf' or mimeType contains 'image/')";
     const fd=await gdApi("/files",{q:`'${targetSub.id}' in parents and trashed=false and ${mimeQ}`,fields:"files(id,name,size,mimeType,modifiedTime,createdTime)",pageSize:"200",orderBy:"modifiedTime desc"},token);
     return fd.files||[];
   };
