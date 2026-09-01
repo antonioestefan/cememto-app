@@ -1171,6 +1171,7 @@ function App() {
   const [showSocioForm,setShowSocioForm]       = useState(false);
   const [socioForm,setSocioForm]               = useState(emptySocio);
   const [comisionesCortes,setComisionesCortes] = useState({});
+  const [appConfig,setAppConfig]               = useState({});
   const [comisionMes,setComisionMes]           = useState(currentYM());
   const [historialExpandido,setHistorialExpandido] = useState({});
   const [showLector,setShowLector]               = useState(false);
@@ -1208,6 +1209,9 @@ function App() {
   const [gdFolders,setGdFolders]                 = useState([]);
   const [gdPendingCounts,setGdPendingCounts]     = useState({});
   const [gdSelectedFolder,setGdSelectedFolder]   = useState(null);
+  const [gdRootInfo,setGdRootInfo]               = useState(null);
+  const [showGdConfig,setShowGdConfig]           = useState(false);
+  const [gdRootInput,setGdRootInput]             = useState("");
   const [gdOvsCliente,setGdOvsCliente]           = useState([]);
   const [gdFiles,setGdFiles]                     = useState([]);
   const [gdFiltro,setGdFiltro]                   = useState("pendientes");
@@ -1304,7 +1308,8 @@ function App() {
     const u7=window.__onSnapshot(window.__col(db,"remisiones_gdrive"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data();});setProcesados(m);});
     const u8=window.__onSnapshot(window.__col(db,"socios"),snap=>{setSocios(snap.docs.map(d=>({id:d.id,...d.data()})));});
     const u9=window.__onSnapshot(window.__col(db,"comisiones_cortes"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data();});setComisionesCortes(m);});
-    return ()=>{u1();u2();u3();u4();u5();u6();u7();u8();u9();};
+    const u10=window.__onSnapshot(window.__doc(db,"config","app"),snap=>{setAppConfig(snap.exists()?snap.data():{});});
+    return ()=>{u1();u2();u3();u4();u5();u6();u7();u8();u9();u10();};
   },[dbReady,authUser]);
 
   useEffect(()=>{
@@ -1814,7 +1819,16 @@ function App() {
       client.requestCode();
     });
   };
-  const GD_ROOT_FOLDER_NAME="Cruz Azul - Interno";
+  // Carpeta raíz de Drive donde viven todas las carpetas de clientes ("Cruz Azul - Interno" u otra).
+  // Configurable desde el panel de importación (Configuración) y guardada en Firestore (config/app).
+  // Si Antonio nunca la configuró, se usa este ID como valor por defecto.
+  const GD_ROOT_FOLDER_ID_DEFAULT="1QXi24pSDmTMFI3plglGX1nMY2F0NOVXA";
+  const gdParseFolderId=(input)=>{
+    const v=(input||"").trim();
+    if(!v) return "";
+    const m=v.match(/\/folders\/([a-zA-Z0-9_-]+)/)||v.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    return m?m[1]:v;
+  };
   const gdApi=async(path,params,token)=>{
     const sp=new URLSearchParams(params||{});
     if(window.__GOOGLE_API_KEY) sp.set("key",window.__GOOGLE_API_KEY);
@@ -1823,10 +1837,15 @@ function App() {
     return r.json();
   };
   const gdFindRootFolder=async(token)=>{
-    const data=await gdApi("/files",{q:`name='${GD_ROOT_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,fields:"files(id,name)",pageSize:"10"},token);
-    const found=(data.files||[])[0];
-    if(!found) throw new Error(`No se encontró la carpeta "${GD_ROOT_FOLDER_NAME}" en tu Google Drive`);
-    return found;
+    const rootId=appConfig.gdRootFolderId||GD_ROOT_FOLDER_ID_DEFAULT;
+    try{
+      const data=await gdApi(`/files/${rootId}`,{fields:"id,name,mimeType,trashed"},token);
+      if(data.trashed) throw new Error(`la carpeta "${data.name}" está en la papelera de Drive`);
+      if(data.mimeType!=="application/vnd.google-apps.folder") throw new Error("el ID configurado no corresponde a una carpeta de Drive");
+      return {id:data.id,name:data.name};
+    }catch(e){
+      throw new Error(`No se pudo abrir la carpeta raíz de Google Drive (id: ${rootId}). Revisa la "Carpeta raíz de Google Drive" en Configuración. ${e.message||""}`);
+    }
   };
   const gdListClientFolders=async(rootId,token)=>{
     const data=await gdApi("/files",{q:`'${rootId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,fields:"files(id,name)",pageSize:"200"},token);
@@ -1923,11 +1942,12 @@ function App() {
       setGdLoading(true);
       setGdToken(token);
       const root=await gdFindRootFolder(token);
+      setGdRootInfo(root);
       const folders=await gdListClientFolders(root.id,token);
       setGdFolders(folders);
       setGdStep("folders");
       gdScanPendientes(folders,token);
-    }catch{ setGdStep("auth"); }
+    }catch(e){ setGdStep("auth"); setGdError(e.message||"Error al conectar"); }
     setGdLoading(false);
   };
   const gdLogin=async()=>{
@@ -1935,11 +1955,31 @@ function App() {
     try{
       const token=await gdGetToken(true); setGdToken(token);
       const root=await gdFindRootFolder(token);
+      setGdRootInfo(root);
       const folders=await gdListClientFolders(root.id,token);
       setGdFolders(folders);
       setGdStep("folders");
       gdScanPendientes(folders,token);
     }catch(e){setGdError(e.message||"Error al conectar");}
+    setGdLoading(false);
+  };
+  const gdGuardarRootFolder=async()=>{
+    const id=gdParseFolderId(gdRootInput);
+    if(!id){ setGdError("Pega el link o el ID de la carpeta raíz de Google Drive."); return; }
+    setGdLoading(true); setGdError("");
+    try{
+      await saveToDb("config","app",{gdRootFolderId:id});
+      setShowGdConfig(false);
+      setGdRootInput("");
+      if(gdToken){
+        const root=await gdFindRootFolder(gdToken);
+        setGdRootInfo(root);
+        const folders=await gdListClientFolders(root.id,gdToken);
+        setGdFolders(folders);
+        setGdStep("folders");
+        gdScanPendientes(folders,gdToken);
+      }
+    }catch(e){ setGdError(e.message||"No se pudo guardar la carpeta raíz"); }
     setGdLoading(false);
   };
   const gdSelectFolder=async(folder)=>{
@@ -2477,7 +2517,7 @@ function App() {
     setGdSelectedFolder(null); setGdOvsCliente([]); setGdFiles([]); setGdSelected(new Set()); setGdFiltro("pendientes");
     setGdResults([]); setGdFechaEntrega({}); setGdConfirmandoTodos(false); setGdLoading(false); setGdError(""); setGdProgress({cur:0,tot:0}); setGdStatusMsg("");
     setGdEditImages(null); setGdEditingResKey(null); setGdCleaningDups(false); setGdLightbox(null);
-    setGdEmparejarManual(null);
+    setGdEmparejarManual(null); setShowGdConfig(false); setGdRootInfo(null);
     setGdTransfFiles([]); setGdFactFiles([]); setGdTransfSelected(new Set()); setGdFactSelected(new Set());
     setGdTransfResults([]); setGdFactResults([]); setGdFilesTab("remisiones"); setGdPendingFacturaFile(null); setGdManualEdits({});
   };
@@ -5925,8 +5965,24 @@ function App() {
                   <div style={{fontWeight:800,fontSize:17}}>📂 Importar desde Google Drive</div>
                   {gdSelectedFolder&&<div style={{fontSize:12,color:"var(--text-tertiary)",marginTop:2}}>📁 {gdSelectedFolder.name}{gdSelectedFolder.clienteNombre&&<span style={{color:"var(--accent)"}}> → {gdSelectedFolder.clienteNombre}</span>}</div>}
                 </div>
-                <button onClick={gdCerrar} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"var(--text-sec)"}}>✕</button>
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <button onClick={()=>{setGdRootInput(appConfig.gdRootFolderId||GD_ROOT_FOLDER_ID_DEFAULT); setShowGdConfig(v=>!v);}} title="Configurar carpeta raíz de Google Drive" style={{background:"none",border:"none",fontSize:18,cursor:"pointer",color:"var(--text-sec)"}}>⚙️</button>
+                  <button onClick={gdCerrar} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"var(--text-sec)"}}>✕</button>
+                </div>
               </div>
+              {showGdConfig&&(
+                <div style={{background:"var(--bg-card-alt)",border:"1px solid var(--border)",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+                  <div style={{fontWeight:700,fontSize:13,marginBottom:4}}>Carpeta raíz de Google Drive</div>
+                  <div style={{fontSize:11,color:"var(--text-tertiary)",marginBottom:8}}>
+                    Actual: {gdRootInfo?`"${gdRootInfo.name}" (id: ${gdRootInfo.id})`:(appConfig.gdRootFolderId||GD_ROOT_FOLDER_ID_DEFAULT)}
+                  </div>
+                  <input value={gdRootInput} onChange={e=>setGdRootInput(e.target.value)} placeholder="Pega el link o el ID de la carpeta de Drive" style={{...inS,marginBottom:8}}/>
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={gdGuardarRootFolder} disabled={gdLoading} style={{flex:1,background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"9px 12px",fontWeight:700,cursor:gdLoading?"default":"pointer",fontSize:13}}>Guardar</button>
+                    <button onClick={()=>setShowGdConfig(false)} style={{flex:1,background:"var(--bg-card)",color:"var(--text-sec)",border:"1px solid var(--border)",borderRadius:8,padding:"9px 12px",fontWeight:700,cursor:"pointer",fontSize:13}}>Cancelar</button>
+                  </div>
+                </div>
+              )}
               {gdError&&<div style={{background:"#ef444422",color:"#dc2626",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:8,border:"1px solid #fecaca"}}>{gdError}</div>}
               {gdStep==="folders"&&<div style={{fontSize:12,color:"var(--text-sec)"}}>Selecciona la carpeta del cliente:</div>}
               {gdStep==="files"&&(()=>{
@@ -5981,7 +6037,7 @@ function App() {
 
             {gdStep==="folders"&&(
               <div>
-                {gdFolders.length===0&&<div style={{color:"var(--text-tertiary)",fontSize:13,textAlign:"center",padding:"24px 0"}}>No se encontraron subcarpetas en "{GD_ROOT_FOLDER_NAME}"</div>}
+                {gdFolders.length===0&&<div style={{color:"var(--text-tertiary)",fontSize:13,textAlign:"center",padding:"24px 0"}}>No se encontraron subcarpetas de clientes en "{gdRootInfo?.name||"la carpeta raíz configurada"}"</div>}
                 {gdFolders.map(f=>{
                   const match=clientes.find(c=>(c.nombre||"").trim().toLowerCase()===f.name.trim().toLowerCase());
                   const pend=gdPendingCounts[f.id];
