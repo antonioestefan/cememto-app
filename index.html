@@ -24,7 +24,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getFirestore, collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, deleteField } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-    import { getAuth, signInAnonymously, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
     const firebaseConfig = {
       apiKey: "AIzaSyBXxj2MnF5AGfs46FTe7FN3Gl3iiXjT8gk",
       authDomain: "cemento-antonio.firebaseapp.com",
@@ -38,12 +38,9 @@
     const auth = getAuth(app);
     window.__db=db; window.__col=collection; window.__onSnapshot=onSnapshot;
     window.__doc=doc; window.__setDoc=setDoc; window.__updateDoc=updateDoc; window.__deleteDoc=deleteDoc; window.__deleteField=deleteField;
-    // Firebase Auth (sesión anónima). Para activar: Firebase Console → Authentication →
-    // Sign-in method → Anonymous → Habilitar. Luego publicar reglas de Firestore:
-    //   rules_version = '2';
-    //   service cloud.firestore { match /databases/{database}/documents {
-    //     match /{document=**} { allow read, write: if request.auth != null; } } }
-    window.__auth=auth; window.__signInAnon=signInAnonymously; window.__signOut=signOut; window.__onAuthStateChanged=onAuthStateChanged;
+    // Firebase Auth por email/contraseña. Activar en Firebase Console → Authentication →
+    // Sign-in method → Email/Password → Habilitar, y crear ahí las cuentas de cada usuario.
+    window.__auth=auth; window.__signInWithEmail=signInWithEmailAndPassword; window.__signOut=signOut; window.__onAuthStateChanged=onAuthStateChanged;
     window.__dbReady=true; window.dispatchEvent(new Event("dbReady"));
   </script>
   <style>
@@ -1069,18 +1066,19 @@ const gdGroupFiles = (files) => {
   return [...conFolio,...imgsNoFolio,...pdfsNoFolio];
 };
 
-const AUTH_KEY  = 'ca_auth_expires';
-const AUTH_PW   = 'Mari1988';
-const AUTH_DAYS = 30;
+const AUTH_KEY    = 'ca_auth_expires';
+const AUTH_DAYS   = 30;
+const ADMIN_EMAIL = 'facturasantonioestefan@gmail.com';
 
 function LoginScreen({ onSubmit }) {
+  const [email,setEmail] = useState('');
   const [pw,setPw]       = useState('');
   const [error,setError] = useState('');
   const [busy,setBusy]   = useState(false);
   const submit = async () => {
     if (busy) return;
     setBusy(true); setError('');
-    const r = await onSubmit(pw);
+    const r = await onSubmit(email, pw);
     setBusy(false);
     if (!r || !r.ok) { setError((r&&r.error)||'No se pudo iniciar sesión.'); setPw(''); }
   };
@@ -1091,14 +1089,23 @@ function LoginScreen({ onSubmit }) {
           <span style={{color:'white',fontWeight:900,fontSize:30,letterSpacing:-1}}>CA</span>
         </div>
         <div style={{fontWeight:800,fontSize:19,color:'var(--text-main)',marginBottom:4}}>Cruz Azul — Antonio</div>
-        <div style={{fontSize:13,color:'var(--text-sec)',marginBottom:26}}>Ingresa tu contraseña para continuar</div>
+        <div style={{fontSize:13,color:'var(--text-sec)',marginBottom:26}}>Ingresa tu correo y contraseña</div>
+        <input
+          type="email"
+          value={email}
+          onChange={e=>{setEmail(e.target.value);setError('');}}
+          onKeyDown={e=>e.key==='Enter'&&submit()}
+          placeholder="Correo"
+          autoFocus
+          disabled={busy}
+          style={{width:'100%',padding:'12px 14px',border:error?'1.5px solid #ef4444':'1.5px solid var(--border)',borderRadius:12,fontSize:15,outline:'none',marginBottom:10,background:'var(--bg-main)',color:'var(--text-main)'}}
+        />
         <input
           type="password"
           value={pw}
           onChange={e=>{setPw(e.target.value);setError('');}}
           onKeyDown={e=>e.key==='Enter'&&submit()}
           placeholder="Contraseña"
-          autoFocus
           disabled={busy}
           style={{width:'100%',padding:'12px 14px',border:error?'1.5px solid #ef4444':'1.5px solid var(--border)',borderRadius:12,fontSize:15,outline:'none',marginBottom:error?6:14,background:'var(--bg-main)',color:'var(--text-main)'}}
         />
@@ -1110,8 +1117,9 @@ function LoginScreen({ onSubmit }) {
 }
 
 function App() {
-  // Auth: el código de acceso (AUTH_PW) valida al usuario en localStorage; Firebase Auth (anónimo)
-  // provee la sesión real que exigen las reglas de Firestore. Entra directo solo si AMBOS existen.
+  // Auth: localStorage guarda una expiración de 30 días para no pedir login en cada visita;
+  // Firebase Auth (email/contraseña) provee la sesión real que exigen las reglas de Firestore.
+  // Entra directo solo si AMBOS existen. authUser.email identifica a la persona (ver isAdmin).
   const [codigoOk,setCodigoOk]       = useState(()=>{
     const exp=localStorage.getItem(AUTH_KEY);
     return !!(exp && parseInt(exp,10)>Date.now());
@@ -1306,8 +1314,10 @@ function App() {
     const u5=window.__onSnapshot(window.__col(db,"facturas"),snap=>{setFacturas(snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||"")));});
     const u6=window.__onSnapshot(window.__col(db,"diasHabiles"),snap=>{const ov={};snap.docs.forEach(d=>{ov[d.id]=d.data().trabajado;});setDiasHabiles(ov);});
     const u7=window.__onSnapshot(window.__col(db,"remisiones_gdrive"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data();});setProcesados(m);});
-    const u8=window.__onSnapshot(window.__col(db,"socios"),snap=>{setSocios(snap.docs.map(d=>({id:d.id,...d.data()})));});
-    const u9=window.__onSnapshot(window.__col(db,"comisiones_cortes"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data();});setComisionesCortes(m);});
+    // socios/comisiones_cortes están restringidas por reglas de Firestore al email de Antonio;
+    // para la colaboradora esto es un permission-denied esperado, no un error real — se ignora en silencio.
+    const u8=window.__onSnapshot(window.__col(db,"socios"),snap=>{setSocios(snap.docs.map(d=>({id:d.id,...d.data()})));},()=>{});
+    const u9=window.__onSnapshot(window.__col(db,"comisiones_cortes"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data();});setComisionesCortes(m);},()=>{});
     const u10=window.__onSnapshot(window.__doc(db,"config","app"),snap=>{setAppConfig(snap.exists()?snap.data():{});});
     return ()=>{u1();u2();u3();u4();u5();u6();u7();u8();u9();u10();};
   },[dbReady,authUser]);
@@ -3316,18 +3326,18 @@ function App() {
     </select>
   );
 
-  // Login: valida el código de acceso y abre sesión anónima en Firebase Auth.
-  const iniciarSesion = async (pw)=>{
-    if(pw!==AUTH_PW) return {ok:false,error:"Contraseña incorrecta. Inténtalo de nuevo."};
+  // Login: autentica contra Firebase Auth con email/contraseña.
+  const iniciarSesion = async (email,pw)=>{
     try{
-      await window.__signInAnon(window.__auth);
+      await window.__signInWithEmail(window.__auth,(email||"").trim(),pw);
       localStorage.setItem(AUTH_KEY,String(Date.now()+AUTH_DAYS*86400000));
       setCodigoOk(true);
       return {ok:true};
     }catch(e){
       // Mostrar el error real de Firebase para diagnosticar (código + mensaje).
       console.error("Firebase Auth error:",e&&e.code,e&&e.message);
-      return {ok:false,error:`${(e&&e.code)||"error"}: ${(e&&e.message)||e}`};
+      const credencialesInvalidas=["auth/invalid-credential","auth/wrong-password","auth/user-not-found","auth/invalid-email"].includes(e&&e.code);
+      return {ok:false,error:credencialesInvalidas?"Correo o contraseña incorrectos.":`${(e&&e.code)||"error"}: ${(e&&e.message)||e}`};
     }
   };
   const cerrarSesion = async ()=>{
@@ -3338,6 +3348,7 @@ function App() {
   };
 
   const autenticado = codigoOk && !!authUser;
+  const isAdmin = (authUser?.email||"").trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
 
   if(!autenticado){
     // Código validado pero aún no sabemos el estado de Firebase Auth → esperar (evita parpadeo del login al recargar).
@@ -3391,7 +3402,7 @@ function App() {
       {/* TABS — wrapper sticky sin overflow, scroll en div interno */}
       <div style={{position:"sticky",top:headerH,zIndex:98,background:"var(--bg-main)",boxShadow:"0 2px 4px rgba(0,0,0,0.2)",borderBottom:"2px solid var(--border)"}}>
         <div className="nav-tabs-scroll" style={{display:"flex",padding:"0 16px"}}>
-          {[["confirmar",`📌 Hoy${(totales.porConf+notasBadge+prospBadge)>0?` (${totales.porConf+notasBadge+prospBadge})`:""}`],["ordenes","📋 Órdenes"],["clientes","👥 Clientes"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","📅 Calendario"],["prospectos",`🎯 Prospectos${prospBadge?` (${prospBadge})`:""}`],["facturas","🧾 Facturas"],["comisiones","💵 Comisiones"],["programacion","📋 Prog. Semanal"],["inteligencia","📈 Inteligencia"]].map(([k,l])=>(
+          {[["confirmar",`📌 Hoy${(totales.porConf+notasBadge+prospBadge)>0?` (${totales.porConf+notasBadge+prospBadge})`:""}`],["ordenes","📋 Órdenes"],["clientes","👥 Clientes"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","📅 Calendario"],["prospectos",`🎯 Prospectos${prospBadge?` (${prospBadge})`:""}`],["facturas","🧾 Facturas"],["comisiones","💵 Comisiones"],["programacion","📋 Prog. Semanal"],["inteligencia","📈 Inteligencia"]].filter(([k])=>k!=="comisiones"||isAdmin).map(([k,l])=>(
             <button key={k} onClick={()=>setTab(k)} style={{background:"none",border:"none",borderBottom:tab===k?"3px solid var(--accent)":"3px solid transparent",padding:"12px 14px",cursor:"pointer",fontWeight:tab===k?700:500,color:tab===k?"var(--accent)":"var(--text-tertiary)",fontSize:13,whiteSpace:"nowrap",flexShrink:0}}>{l}</button>
           ))}
         </div>
@@ -4844,7 +4855,7 @@ function App() {
           );
         })()}
 
-        {tab==="comisiones"&&(()=>{
+        {tab==="comisiones"&&isAdmin&&(()=>{
           const corte=comisionesCortes[comisionMes]||{};
           const estatusCobro=corte.estatus_cobro||"pendiente";
           const pagosSocios=corte.pagos_socios||{};
@@ -5212,14 +5223,16 @@ function App() {
                 <input type={t} value={cliForm[k]} onChange={e=>setCliForm(f=>({...f,[k]:e.target.value}))} style={inS}/>
               </div>
             ))}
-            <div style={{marginBottom:12}}>
-              <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Socio (reparto de comisión, opcional)</label>
-              <select value={cliForm.socioId||""} onChange={e=>setCliForm(f=>({...f,socioId:e.target.value,...(!e.target.value&&{comision_socio_ton:0})}))} style={{...inS,background:"var(--bg-card)"}}>
-                <option value="">— Sin socio (100% Antonio) —</option>
-                {socios.map(s=><option key={s.id} value={s.id}>{s.nombre}</option>)}
-              </select>
-            </div>
-            {cliForm.socioId&&(
+            {isAdmin&&(
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Socio (reparto de comisión, opcional)</label>
+                <select value={cliForm.socioId||""} onChange={e=>setCliForm(f=>({...f,socioId:e.target.value,...(!e.target.value&&{comision_socio_ton:0})}))} style={{...inS,background:"var(--bg-card)"}}>
+                  <option value="">— Sin socio (100% Antonio) —</option>
+                  {socios.map(s=><option key={s.id} value={s.id}>{s.nombre}</option>)}
+                </select>
+              </div>
+            )}
+            {isAdmin&&cliForm.socioId&&(
               <div style={{marginBottom:12}}>
                 <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Comisión del socio ($/ton)</label>
                 <input type="number" step="1" value={cliForm.comision_socio_ton} onChange={e=>setCliForm(f=>({...f,comision_socio_ton:e.target.value}))} style={inS} placeholder="0"/>
