@@ -1830,17 +1830,38 @@ function App() {
   };
   const gdListClientFolders=async(rootId,token)=>{
     const data=await gdApi("/files",{q:`'${rootId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,fields:"files(id,name)",pageSize:"200"},token);
-    return data.files||[];
+    const folders=data.files||[];
+    console.log(`[GDrive] carpetas de cliente bajo root ${rootId}: ${folders.length}`,folders.map(f=>`${f.name} (id: ${f.id})`));
+    const porNombre={};
+    folders.forEach(f=>{ const k=(f.name||"").trim().toLowerCase(); (porNombre[k]=porNombre[k]||[]).push(f); });
+    Object.entries(porNombre).filter(([,fs])=>fs.length>1).forEach(([nombre,fs])=>{
+      console.warn(`[GDrive] ⚠️ carpeta duplicada — "${nombre}" aparece ${fs.length} veces:`,fs.map(f=>f.id));
+    });
+    return folders;
   };
   const gdListRemisionFiles=async(folder,token)=>{
+    console.log(`[GDrive] gdListRemisionFiles — carpeta cliente: "${folder.name}" (id: ${folder.id})`);
     const sub=await gdApi("/files",{q:`'${folder.id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'`,fields:"files(id,name)",pageSize:"50"},token);
     const remSub=(sub.files||[]).find(f=>(f.name||"").toLowerCase()==="remisiones");
+    console.log(remSub?`[GDrive] subcarpeta "Remisiones" encontrada: "${remSub.name}" (id: ${remSub.id})`:`[GDrive] no existe subcarpeta "Remisiones" dentro de "${folder.name}" — se usa la carpeta raíz del cliente`);
     // mimeType contains 'image/' cubre HEIC/HEIF (iPhone) y cualquier otro formato de imagen, no solo jpeg/png.
     const mimeQ="(mimeType='application/pdf' or mimeType contains 'image/')";
     // Si existe la subcarpeta "Remisiones" igual se revisa la carpeta raíz del cliente: archivos
     // subidos a mano desde el celular a veces quedan ahí en vez de dentro de "Remisiones".
     const targetIds=remSub?[remSub.id,folder.id]:[folder.id];
+    console.log("[GDrive] targetIds consultados:",targetIds);
     const results=await Promise.all(targetIds.map(id=>gdApi("/files",{q:`'${id}' in parents and trashed=false and ${mimeQ}`,fields:"files(id,name,size,mimeType,modifiedTime,createdTime)",pageSize:"200",orderBy:"modifiedTime desc"},token)));
+    targetIds.forEach((id,i)=>{
+      const files=results[i].files||[];
+      console.log(`[GDrive] resultado (con filtro mimeType) para targetId ${id}: ${files.length} archivo(s)`,files.map(f=>`${f.name} (${f.mimeType})`));
+    });
+    // Diagnóstico: mismo listado SIN el filtro de mimeType, para ver si el archivo faltante
+    // existe en la carpeta pero con un tipo no contemplado, o si simplemente no está en esa carpeta.
+    const unfiltered=await Promise.all(targetIds.map(id=>gdApi("/files",{q:`'${id}' in parents and trashed=false`,fields:"files(id,name,mimeType,trashed)",pageSize:"200",orderBy:"modifiedTime desc"},token)));
+    targetIds.forEach((id,i)=>{
+      const files=unfiltered[i].files||[];
+      console.log(`[GDrive] diagnóstico SIN filtro de mimeType para targetId ${id}: ${files.length} archivo(s) total`,files.map(f=>`${f.name} (${f.mimeType})`));
+    });
     const seen=new Set(); const merged=[];
     results.forEach(r=>(r.files||[]).forEach(f=>{ if(!seen.has(f.id)){ seen.add(f.id); merged.push(f); } }));
     merged.sort((a,b)=>new Date(b.modifiedTime)-new Date(a.modifiedTime));
@@ -1923,9 +1944,11 @@ function App() {
   };
   const gdSelectFolder=async(folder)=>{
     setGdLoading(true); setGdError(""); setGdEmparejarManual(null);
+    console.log(`[GDrive] gdSelectFolder — carpeta seleccionada: "${folder.name}" (id: ${folder.id})`);
     try{
       const token=gdToken||await gdGetToken(false);
       const match=clientes.find(c=>(c.nombre||"").trim().toLowerCase()===folder.name.trim().toLowerCase());
+      console.log(`[GDrive] cliente emparejado por nombre: ${match?`"${match.nombre}" (id: ${match.id})`:"(ninguno)"}`);
       setGdSelectedFolder({...folder,clienteId:match?.id||null,clienteNombre:match?.nombre||null});
       const ovsCliente=gdClienteCandidatas(folder);
       setGdOvsCliente(ovsCliente);
