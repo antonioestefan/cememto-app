@@ -8,7 +8,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
@@ -2913,24 +2912,144 @@ function App() {
   const prospSeguimientoHoy= prospectos.filter(p=>ETAPAS_ACTIVAS.includes(p.etapa)&&p.fecha_seguimiento&&p.fecha_seguimiento<=todayISO()).sort((a,b)=>(a.fecha_seguimiento||"").localeCompare(b.fecha_seguimiento||""));
   const prospBadge         = prospSeguimientoHoy.length;
 
-  const exportExcel = (clienteId)=>{
+  const exportExcel = async (clienteId)=>{
     if(clienteId){ const c=estadoCuenta.find(ec=>ec.id===clienteId); if(c) exportExcelCliente(c); return; }
-    const wb=XLSX.utils.book_new();
-    const ws=XLSX.utils.json_to_sheet(filtrarPeriodo(ovs).map(p=>({
-      "No. OV":p.num_ov, Cliente:cliById(p.clienteId)?.nombre||"(sin asignar)",
-      Planta:plantaDeSerie(p.serie), Serie:p.serie, Folio:p.folio,
-      Toneladas:p.toneladas, "Precio/ton":parseFloat(p.precio_ton)||(parseFloat(cliById(p.clienteId)?.precio_ton)||0), Valor:valorOV(p),
-      "Fecha carga":p.fecha_carga, "Fecha entrega":p.fecha_entrega,
-      Estatus:getS(p.status).label, "Remisión firmada":p.remision_firmada?"Sí":"No", Notas:p.notas,
-    })));
-    XLSX.utils.book_append_sheet(wb,ws,"Órdenes de venta");
-    const wc=XLSX.utils.json_to_sheet(estadoCuenta.map(c=>({
-      Cliente:c.nombre,"Precio/ton":c.precio_ton,"Ton entregadas":c.ton_entregadas,
-      "Valor entregado":c.valor_entregado,Anticipo:c.anticipo,
-      "Saldo a favor":c.saldo>0?c.saldo:0,Adeudo:c.saldo<0?-c.saldo:0,
-    })));
-    XLSX.utils.book_append_sheet(wb,wc,"Estado de cuenta");
-    XLSX.writeFile(wb,`Reporte_Todos_${todayISO()}.xlsx`);
+    try{
+      const EXCLUIR_STATUS=["ov_asignada","fletera_planta"];
+      const base=filtrarPeriodo(ovs).filter(p=>!EXCLUIR_STATUS.includes(p.status));
+      const precioDe=(p)=>{
+        const precioOV=parseFloat(p.precio_ton)||0;
+        return (p.status==="entregado")?precioOV:(precioOV>0?precioOV:(parseFloat(cliById(p.clienteId)?.precio_ton)||0));
+      };
+
+      const wb=new ExcelJS.Workbook(); wb.creator="Cruz Azul — Antonio";
+      const fill=(hex)=>({type:"pattern",pattern:"solid",fgColor:{argb:"FF"+hex}});
+      const fw=(hex,sz=10,bold=false)=>({bold,color:{argb:"FF"+hex},size:sz});
+      const mid={horizontal:"center",vertical:"middle"};
+      const thin={style:"thin",color:{argb:"FFD1D5DB"}};
+      const brd={top:thin,bottom:thin,left:thin,right:thin};
+      const ALTGRAY="F8FAFC", SUBHEAD="EEF2FF";
+      const N=10;
+      const PLANTAS_REPORTE=[{planta:"Puebla",hex:"4C1D95"},{planta:"Aguascalientes",hex:"0369A1"}];
+
+      for(const {planta,hex} of PLANTAS_REPORTE){
+        const remisiones=base
+          .filter(p=>plantaDeSerie(p.serie)===planta)
+          .slice()
+          .sort((a,b)=>{
+            const na=cliById(a.clienteId)?.nombre||"(sin asignar)", nb=cliById(b.clienteId)?.nombre||"(sin asignar)";
+            return na.localeCompare(nb,"es")||(a.fecha_carga||"").localeCompare(b.fecha_carga||"");
+          });
+
+        const ws=wb.addWorksheet(planta);
+        ws.columns=[{width:10},{width:26},{width:16},{width:13},{width:13},{width:12},{width:12},{width:14},{width:14},{width:28}];
+        const mergeRow=(rn)=>ws.mergeCells(rn,1,rn,N);
+
+        // Título
+        let r=ws.addRow([`CA  ·  ${planta.toUpperCase()}  ·  ${periodoLabel().toUpperCase()}  ·  ${todayISO()}`]);
+        mergeRow(r.number); r.height=34;
+        Object.assign(r.getCell(1),{font:fw("FFFFFF",14,true),fill:fill(hex),alignment:mid});
+
+        ws.addRow([]).height=6;
+
+        // Encabezados de detalle
+        r=ws.addRow(["No. OV","Cliente","Serie-Folio","Fecha carga","Fecha entrega","Toneladas","Precio/ton","Valor","Remisión firmada","Notas"]);
+        r.height=22;
+        for(let c=1;c<=N;c++) Object.assign(r.getCell(c),{font:fw("FFFFFF",10,true),fill:fill(hex),alignment:{...mid,wrapText:false},border:brd});
+
+        let firstDataRow=null,lastDataRow=null;
+
+        if(remisiones.length===0){
+          r=ws.addRow(["Sin remisiones en este período"]); mergeRow(r.number);
+          Object.assign(r.getCell(1),{font:{...fw("94A3B8",10),italic:true},alignment:mid});
+        } else {
+          remisiones.forEach((p,i)=>{
+            const nombreCli=cliById(p.clienteId)?.nombre||"(sin asignar)";
+            const ton=parseFloat(p.toneladas)||0;
+            const precio=precioDe(p);
+            const rowNum=ws.rowCount+1;
+            if(firstDataRow===null) firstDataRow=rowNum;
+            lastDataRow=rowNum;
+            r=ws.addRow([
+              p.num_ov||"—", nombreCli, serieFolio(p.serie,p.folio,"s/f"),
+              p.fecha_carga||"—", p.fecha_entrega||"—",
+              ton, precio, {formula:`F${rowNum}*G${rowNum}`},
+              p.remision_firmada?"Sí":"No", p.notas||"",
+            ]);
+            r.height=16;
+            const bg=i%2===1?ALTGRAY:"FFFFFF";
+            for(let c=1;c<=N;c++){
+              r.getCell(c).fill=fill(bg); r.getCell(c).border=brd;
+              if(c===6){r.getCell(c).numFmt="0.00"; r.getCell(c).alignment={horizontal:"right"};}
+              if(c===7||c===8){r.getCell(c).numFmt='"$"#,##0'; r.getCell(c).alignment={horizontal:"right"};}
+              if(c===9){r.getCell(c).alignment={horizontal:"center"};}
+            }
+          });
+        }
+
+        ws.addRow([]).height=8;
+
+        // Subtotal por cliente
+        r=ws.addRow(["SUBTOTAL POR CLIENTE"]); mergeRow(r.number); r.height=20;
+        Object.assign(r.getCell(1),{font:fw("FFFFFF",11,true),fill:fill(hex),alignment:mid});
+
+        r=ws.addRow(["","Cliente","","","","Toneladas","","Valor","",""]); r.height=18;
+        for(let c=1;c<=N;c++){
+          r.getCell(c).fill=fill(SUBHEAD); r.getCell(c).border=brd;
+          if(c===2) r.getCell(c).font=fw("312E81",10,true);
+          if(c===6||c===8){ r.getCell(c).font=fw("312E81",10,true); r.getCell(c).alignment={horizontal:"right"}; }
+        }
+
+        if(remisiones.length===0){
+          r=ws.addRow(["Sin datos"]); mergeRow(r.number);
+          Object.assign(r.getCell(1),{font:{...fw("94A3B8",10),italic:true},alignment:mid});
+        } else {
+          const clientesUnicos=[...new Set(remisiones.map(p=>cliById(p.clienteId)?.nombre||"(sin asignar)"))].sort((a,b)=>a.localeCompare(b,"es"));
+          clientesUnicos.forEach((nombreCli,i)=>{
+            const rowNum=ws.rowCount+1;
+            r=ws.addRow([
+              "", nombreCli, "", "", "",
+              {formula:`SUMIF($B$${firstDataRow}:$B$${lastDataRow},B${rowNum},$F$${firstDataRow}:$F$${lastDataRow})`},
+              "",
+              {formula:`SUMIF($B$${firstDataRow}:$B$${lastDataRow},B${rowNum},$H$${firstDataRow}:$H$${lastDataRow})`},
+              "", "",
+            ]);
+            r.height=16;
+            const bg=i%2===1?ALTGRAY:"FFFFFF";
+            for(let c=1;c<=N;c++){
+              r.getCell(c).fill=fill(bg); r.getCell(c).border=brd;
+              if(c===6){r.getCell(c).numFmt="0.00"; r.getCell(c).alignment={horizontal:"right"};}
+              if(c===8){r.getCell(c).numFmt='"$"#,##0'; r.getCell(c).alignment={horizontal:"right"};}
+            }
+          });
+        }
+
+        ws.addRow([]).height=6;
+
+        // Total planta
+        r=ws.addRow([
+          `TOTAL ${planta.toUpperCase()}`,"","","","",
+          remisiones.length?{formula:`SUM(F${firstDataRow}:F${lastDataRow})`}:0,
+          "",
+          remisiones.length?{formula:`SUM(H${firstDataRow}:H${lastDataRow})`}:0,
+          "","",
+        ]);
+        r.height=26;
+        ws.mergeCells(r.number,1,r.number,5);
+        ws.mergeCells(r.number,9,r.number,10);
+        for(let c=1;c<=N;c++){ r.getCell(c).font=fw("FFFFFF",13,true); r.getCell(c).fill=fill(hex); r.getCell(c).border=brd; }
+        r.getCell(1).alignment=mid;
+        r.getCell(6).numFmt="0.00"; r.getCell(6).alignment={horizontal:"right",vertical:"middle"};
+        r.getCell(8).numFmt='"$"#,##0'; r.getCell(8).alignment={horizontal:"right",vertical:"middle"};
+        r.getCell(9).alignment=mid;
+      }
+
+      const buf=await wb.xlsx.writeBuffer();
+      const blob=new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a"); a.href=url; a.download=`Reporte_Todos_${todayISO()}.xlsx`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    } catch(e){ await notify(`Error al generar Excel: ${e.message}`); }
   };
 
   const exportExcelCliente = async (cuenta)=>{ try {
