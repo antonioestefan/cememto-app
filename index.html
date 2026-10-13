@@ -68,8 +68,8 @@
       --radius-lg:    24px;
       --shadow:       0 4px 24px rgba(0,0,0,.4);
       /* Variables heredadas: la app las usa en ~930 estilos inline; se conservan para no romper la UI */
-      --bg-main:#0F172A; --bg-card:#1e293b; --bg-card-alt:#243447; --bg-zebra:#182032;
-      --border:#334155; --border-soft:#243447;
+      --bg-main:#0A0F1E; --bg-card:#151B2E; --bg-card-alt:#1C2338; --bg-zebra:#111729;
+      --border:#2A3248; --border-soft:#1C2338;
       --text-main:#f8fafc; --text-sec:#94a3b8; --text-muted:#475569; --text-tertiary:#64748b;
       --accent:#10B981; --accent-soft:#10B98122;
     }
@@ -137,6 +137,153 @@
     body.light .nav-item:hover { background:#F1F5F9; color:#0F172A; }
     body.light .nav-item.active { color:#0F172A; }
     body.light .nav-section-label, body.light .sidebar-brand-sub, body.light .sidebar-user-role { color:#94A3B8; }
+
+    /* ── MAIN CONTENT AREA ─────────────────────────────────── */
+    .main-content, .content, main, .main {
+      background: transparent;
+    }
+
+    /* ── GLASS CARDS ────────────────────────────────────────── */
+    .card, .kpi-card, .ov-card, .cliente-card,
+    .remision-card, .nota-card, .prospecto-card,
+    [class*="-card"], [class*="card-"] {
+      background: var(--glass) !important;
+      border: 1px solid var(--glass-border) !important;
+      border-radius: var(--radius) !important;
+      backdrop-filter: blur(12px) !important;
+      -webkit-backdrop-filter: blur(12px) !important;
+      box-shadow: var(--shadow) !important;
+      color: var(--fg) !important;
+    }
+
+    /* KPI tiles de la fila superior */
+    .kpi-row > div,
+    .stats-row > div,
+    .resumen-row > div,
+    div[class*="kpi"],
+    div[class*="stat-tile"],
+    div[class*="metric"] {
+      background: var(--glass) !important;
+      border: 1px solid var(--glass-border) !important;
+      border-radius: var(--radius) !important;
+      backdrop-filter: blur(12px) !important;
+      -webkit-backdrop-filter: blur(12px) !important;
+      box-shadow: var(--shadow) !important;
+      color: var(--fg) !important;
+    }
+
+    /* Filas de tabla */
+    tbody tr {
+      border-bottom: 1px solid var(--glass-border) !important;
+      transition: background .15s !important;
+    }
+    tbody tr:hover {
+      background: var(--glass-hover) !important;
+    }
+
+    /* Header top bar — integrar al dark */
+    .topbar, header, .header, .app-header,
+    div[class*="header"]:not(.sidebar-brand) {
+      background: rgba(10,15,30,.85) !important;
+      border-bottom: 1px solid var(--glass-border) !important;
+      backdrop-filter: blur(16px) !important;
+      -webkit-backdrop-filter: blur(16px) !important;
+      box-shadow: none !important;
+    }
+
+    /* Chips / badges de estado */
+    .chip, .badge, .tag,
+    [class*="chip-"], [class*="badge-"], [class*="estado-"] {
+      border-radius: 20px !important;
+      font-size: 11px !important;
+      font-weight: 600 !important;
+      padding: 2px 10px !important;
+      letter-spacing: .2px !important;
+    }
+
+    /* Alertas y banners */
+    .alert, .aviso, .banner,
+    [class*="alert-"], [class*="aviso-"] {
+      background: rgba(255,255,255,.05) !important;
+      border: 1px solid var(--glass-border) !important;
+      border-radius: var(--radius-sm) !important;
+      backdrop-filter: blur(8px) !important;
+    }
+
+    /* Secciones con borde izquierdo de color */
+    [class*="section-title"], .section-header, h3, h4 {
+      color: var(--fg) !important;
+    }
+
+    /* Textos secundarios */
+    .text-muted, .subtitle, .sub, small,
+    [class*="muted"], [class*="dim"] {
+      color: var(--fg-mid) !important;
+    }
+
+    /* Botones primarios — solo por clase; NO por color inline, para no
+       volver azules los botones rojos (eliminar), verdes (Excel/WhatsApp), etc. */
+    button[class*="primary"], .btn-primary, .btn-green {
+      background: var(--blue) !important;
+      border: none !important;
+      border-radius: 10px !important;
+      color: #fff !important;
+      font-weight: 600 !important;
+      box-shadow: 0 0 20px var(--blue-glow) !important;
+    }
+    button[class*="primary"]:hover, .btn-primary:hover {
+      background: #5AABFF !important;
+    }
+
+    /* Inputs y selects (sin checkbox/radio/file) */
+    input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
+    select, textarea {
+      background: var(--glass) !important;
+      border: 1px solid var(--glass-border) !important;
+      border-radius: 10px !important;
+      color: var(--fg) !important;
+      padding: 8px 12px !important;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--blue) !important;
+      outline: none !important;
+      box-shadow: 0 0 0 3px var(--blue-glow) !important;
+    }
+    select option { background: var(--bg-base); color: var(--fg); }
+    body.light input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
+    body.light select, body.light textarea {
+      background: #FFFFFF !important;
+      border-color: #E2E8F0 !important;
+    }
+    body.light tbody tr { border-bottom-color: #E2E8F0 !important; }
+    body.light tbody tr:hover { background: #F1F5F9 !important; }
+
+    /* Tarjetas reales de la app (className="glass-card"). El borde se dibuja con
+       sombra inset para no pisar los bordes de color (borderLeft/borderTop) de cada tarjeta. */
+    .glass-card {
+      background: var(--glass) !important;
+      border-radius: var(--radius) !important;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: var(--shadow), inset 0 0 0 1px var(--glass-border) !important;
+    }
+    body.light .glass-card {
+      background: #FFFFFF !important;
+      box-shadow: 0 1px 4px rgba(15,23,42,.08), inset 0 0 0 1px #E2E8F0 !important;
+    }
+    /* Barra de pestañas (celular) */
+    .nav-tabs-bar {
+      background: rgba(10,15,30,.85) !important;
+      border-bottom: 1px solid var(--glass-border) !important;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: none !important;
+    }
+    body.light .nav-tabs-bar { background: rgba(248,250,252,.9) !important; border-bottom-color:#E2E8F0 !important; }
+    /* En modo claro el encabezado conserva su color de acento */
+    body.light .app-header { background: var(--accent) !important; border-bottom: none !important; }
+
+    /* ── /GLASS CARDS ────────────────────────────────────────── */
   </style>
 </head>
 <body>
@@ -577,7 +724,7 @@ function LectorRemision({inS,titulo,subtitulo,encabezadoConfirm,mostrarPlanta,no
 // Selector de período (Mensual / Histórico / Rango) reutilizado en Reportes y Plantas.
 function SelectorPeriodo({value,onChange,mes,onMes,meses,rangoInicio,onRangoInicio,rangoFin,onRangoFin,inS}){
   return (
-    <div style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
+    <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
       <div style={{fontSize:11,color:"var(--text-tertiary)",fontWeight:700,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Período del reporte</div>
       <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
         {[["mensual","📅 Mensual"],["historico","📂 Histórico"],["rango","📆 Rango"]].map(([k,l])=>(
@@ -815,7 +962,7 @@ function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV
       <div style={{padding:"16px 16px",maxWidth:700,margin:"0 auto"}}>
 
         {/* 1 — ENCABEZADO */}
-        <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 6px #00000050",marginBottom:14,borderLeft:`5px solid ${saldo>=0?"#16a34a":"#ef4444"}`}}>
+        <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 6px #00000050",marginBottom:14,borderLeft:`5px solid ${saldo>=0?"#16a34a":"#ef4444"}`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10}}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontWeight:800,fontSize:17,color:"var(--text-main)",marginBottom:3}}>{cliente.nombre}</div>
@@ -838,7 +985,7 @@ function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV
         </div>
 
         {/* SELECTOR DE MES */}
-        <div style={{background:"var(--bg-card)",borderRadius:12,padding:"10px 14px",boxShadow:"0 1px 4px #00000040",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"10px 14px",boxShadow:"0 1px 4px #00000040",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <button onClick={irMesAnterior} disabled={!puedeRetroceder} style={{background:"var(--bg-card-alt)",border:"none",borderRadius:8,padding:"6px 14px",fontWeight:700,fontSize:17,cursor:puedeRetroceder?"pointer":"default",opacity:puedeRetroceder?1:0.35,lineHeight:1}}>‹</button>
           <div style={{textAlign:"center"}}>
             <div style={{fontWeight:800,fontSize:14,color:"var(--text-main)"}}>{mesLabel(curYM)}</div>
@@ -857,7 +1004,7 @@ function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV
               {label:"Saldo anterior",val:saldoAnt>=0?fmt(saldoAnt):"-"+fmt(-saldoAnt),sub:"al inicio del mes",color:saldoAnt>=0?"#2563eb":"#ef4444",bg:"var(--text-main)"},
               {label:"Saldo del mes",val:saldoMes>=0?fmt(saldoMes):"-"+fmt(-saldoMes),sub:"ant + dep − entregado",color:saldoMes>=0?"#2563eb":"#ef4444",bg:saldoMes>=0?"#eff6ff":"#fef2f2"},
             ].map(({label,val,sub,color,bg})=>(
-              <div key={label} style={{background:"var(--bg-card)",borderRadius:12,padding:"12px 14px",boxShadow:"0 1px 4px #00000040",borderTop:`3px solid ${color}`}}>
+              <div key={label} className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"12px 14px",boxShadow:"0 1px 4px #00000040",borderTop:`3px solid ${color}`}}>
                 <div style={{fontSize:10,color:"var(--text-sec)",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>{label}</div>
                 <div style={{fontWeight:800,fontSize:17,color}}>{val}</div>
                 <div style={{fontSize:11,color:"var(--text-tertiary)",marginTop:2}}>{sub}</div>
@@ -867,7 +1014,7 @@ function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV
         </div>
 
         {/* 3 — GRÁFICA TENDENCIA */}
-        <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
+        <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
           {secH("📊 Volumen — últimos 3 meses")}
           <div style={{fontSize:11,color:"var(--text-tertiary)",marginBottom:12}}>{esMesActual?`Al mismo día hábil (${diasActual} días hábiles transcurridos en el mes)`:`Mes completo (${diasActual} días hábiles en el mes)`}</div>
           <GraficaDashboardCliente antYM={antYM} prevYM={prevYM} curYM={curYM} tonAnte={tonAnte} tonPrev={tonPrev} tonActual={tonActual} antDay={antDay} prevDay={prevDay} tema={tema}/>
@@ -886,7 +1033,7 @@ function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV
         </div>
 
         {/* 4 — ENTREGAS DEL MES */}
-        <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
+        <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
           {secH(`🚚 Entregas — ${mesLabel(curYM)}`)}
           {ovsEntMes.length===0
             ?<div style={{fontSize:13,color:"var(--text-sec)",textAlign:"center",padding:"20px 0"}}>Sin entregas este mes</div>
@@ -933,7 +1080,7 @@ function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV
         </div>
 
         {/* 5 — ANTICIPOS / PAGOS */}
-        <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
+        <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
           {secH("💰 Anticipos y pagos")}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid var(--border)",fontSize:12,color:"var(--text-tertiary)"}}>
             <span>Saldo al inicio del mes</span>
@@ -970,7 +1117,7 @@ function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV
         </div>
 
         {/* 6 — FACTURAS */}
-        <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:28}}>
+        <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:28}}>
           {secH("🧾 Facturas emitidas (histórico total)")}
           {facturasCliente.length===0
             ?<div style={{fontSize:13,color:"var(--text-sec)",textAlign:"center",padding:"20px 0"}}>Sin facturas registradas</div>
@@ -3601,7 +3748,7 @@ function App() {
   const userInitials = isAdmin ? "AE" : userName.slice(0,2).toUpperCase();
 
   return (
-    <div className="app-shell" style={{fontFamily:"'Inter','Segoe UI',system-ui,sans-serif",background:"var(--bg-main)",minHeight:"100vh",color:"var(--text-main)",paddingBottom:(selected||selectedProsp)?380:40}}>
+    <div className="app-shell" style={{fontFamily:"'Inter','Segoe UI',system-ui,sans-serif",background:"transparent",minHeight:"100vh",color:"var(--text-main)",paddingBottom:(selected||selectedProsp)?380:40}}>
 
       {/* SIDEBAR — solo escritorio (ver media query .sidebar) */}
       <div className="sidebar">
@@ -3644,7 +3791,7 @@ function App() {
       </div>
 
       {/* HEADER */}
-      <div ref={headerRef} style={{background:"var(--accent)",color:"white",padding:"calc(16px + env(safe-area-inset-top, 0px)) 20px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,boxShadow:"0 2px 12px #00000070",position:"sticky",top:0,zIndex:100}}>
+      <div ref={headerRef} className="app-header" style={{background:"var(--accent)",color:"white",padding:"calc(16px + env(safe-area-inset-top, 0px)) 20px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,boxShadow:"0 2px 12px #00000070",position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{background:"#e63946",borderRadius:8,padding:"6px 10px",fontWeight:900,fontSize:13}}>CA</div>
           <div><div style={{fontWeight:700,fontSize:16}}>Distribuidora Cruz Azul</div><div style={{fontSize:11,opacity:0.7}}>Panel de Operaciones — Antonio</div></div>
@@ -3692,7 +3839,7 @@ function App() {
             {l:"Valor entregado",     v:fmt(totales.entVal),    a:"#2563eb"},
             {l:"Saldo neto clientes", v:fmt(totales.saldo),     a:totales.saldo>=0?"#16a34a":"#ef4444"},
           ].map(c=>(
-            <div key={c.l} style={{background:"var(--bg-card)",borderRadius:12,padding:"13px 15px",boxShadow:"0 1px 4px #00000040",borderLeft:`4px solid ${c.a}`}}>
+            <div key={c.l} className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"13px 15px",boxShadow:"0 1px 4px #00000040",borderLeft:`4px solid ${c.a}`}}>
               <div style={{fontSize:11,color:"var(--text-tertiary)",marginBottom:4}}>{c.l}</div>
               <div style={{fontWeight:800,fontSize:18,color:c.a}}>{c.v}</div>
             </div>
@@ -3763,7 +3910,7 @@ function App() {
                     {ovsFiltrados.map(p=>{
                       const c=cliById(p.clienteId);
                       return(
-                        <div key={p.id} onClick={()=>setSelected(p)} style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",cursor:"pointer",border:selected?.id===p.id?"2px solid var(--accent)":"2px solid transparent"}}>
+                        <div key={p.id} onClick={()=>setSelected(p)} className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",cursor:"pointer",border:selected?.id===p.id?"2px solid var(--accent)":"2px solid transparent"}}>
                           <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                             <div style={{flex:1,minWidth:200}}>
                               <div style={{fontWeight:800,fontSize:14,color:"#7c3aed"}}>{p.num_ov}</div>
@@ -3807,7 +3954,7 @@ function App() {
                   {porConfirmar.map(p=>{
                     const c=cliById(p.clienteId);
                     return(
-                      <div key={p.id} style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",borderLeft:`4px solid ${(CONFIRM[p.confirm]||{}).color}`}}>
+                      <div key={p.id} className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",borderLeft:`4px solid ${(CONFIRM[p.confirm]||{}).color}`}}>
                         <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                           <div>
                             <div style={{fontWeight:800,fontSize:13,color:"#7c3aed"}}>{p.num_ov}</div>
@@ -3844,7 +3991,7 @@ function App() {
                   {entregasHoy.map(p=>{
                     const c=cliById(p.clienteId);
                     return(
-                      <div key={p.id} style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",borderLeft:`4px solid ${getS(p.status).color}`}}>
+                      <div key={p.id} className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",borderLeft:`4px solid ${getS(p.status).color}`}}>
                         <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                           <div>
                             <div style={{fontWeight:800,fontSize:13,color:"#7c3aed"}}>{p.num_ov}</div>
@@ -3878,7 +4025,7 @@ function App() {
                     const c=cliById(p.clienteId);
                     const dias=Math.max(0,Math.floor((new Date(todayISO()+"T12:00")-new Date((p.fecha_carga||todayISO())+"T12:00"))/86400000));
                     return(
-                      <div key={p.id} style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",borderLeft:"4px solid #b45309"}}>
+                      <div key={p.id} className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",borderLeft:"4px solid #b45309"}}>
                         <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                           <div>
                             <div style={{fontWeight:800,fontSize:13,color:"#7c3aed"}}>{p.num_ov}</div>
@@ -3990,7 +4137,7 @@ function App() {
                 {clientesFiltrados.length===0
                   ?<EmptyState icon="🔍" msg="Ningún cliente coincide con la búsqueda."/>
                   :clientesFiltrados.map(c=>(
-                  <div key={c.id} style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",borderLeft:`4px solid ${c.saldo>=0?"#16a34a":"#ef4444"}`}}>
+                  <div key={c.id} className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",borderLeft:`4px solid ${c.saldo>=0?"#16a34a":"#ef4444"}`}}>
                     <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                       <div>
                         <div style={{fontWeight:700,fontSize:16,color:"var(--text-main)"}}>{c.nombre}</div>
@@ -4104,7 +4251,7 @@ function App() {
           const buscando=pagosBusqueda.replace(/[^0-9.]/g,"")!=="";
           return(
           <>
-            <div style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
+            <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
               <div style={{fontSize:11,color:"var(--text-tertiary)",fontWeight:700,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Período</div>
               <select value={pagosMes} onChange={e=>setPagosMes(e.target.value)} style={{...inS,background:"var(--bg-card)",marginBottom:10}}>
                 {pagosMesesDisp.map(ym=><option key={ym} value={ym}>{mesLabel(ym)}</option>)}
@@ -4122,7 +4269,7 @@ function App() {
                 {label:"Pendiente de facturar",val:pendiente,sub:`${lista.filter(f=>f.estatus!=="facturado").length} pago${lista.filter(f=>f.estatus!=="facturado").length!==1?"s":""}`,color:"#16a34a"},
                 {label:"Facturado",val:facturado,sub:`${lista.filter(f=>f.estatus==="facturado").length} pago${lista.filter(f=>f.estatus==="facturado").length!==1?"s":""}`,color:"#6b7280"},
               ].map(k=>(
-                <div key={k.label} style={{background:"var(--bg-card)",borderRadius:12,padding:"12px 14px",boxShadow:"0 1px 4px #00000040",borderLeft:`4px solid ${k.color}`}}>
+                <div key={k.label} className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"12px 14px",boxShadow:"0 1px 4px #00000040",borderLeft:`4px solid ${k.color}`}}>
                   <div style={{fontSize:10,color:"var(--text-tertiary)",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>{k.label}</div>
                   <div style={{fontSize:18,fontWeight:800,color:k.color,marginTop:2}}>{fmtC(k.val)}</div>
                   <div style={{fontSize:11,color:"var(--text-sec)"}}>{k.sub}</div>
@@ -4133,7 +4280,7 @@ function App() {
             {/* LISTADO */}
             {lista.length===0
               ?<EmptyState icon="💰" msg={buscando?`Ningún pago de ${mesLabel(pagosMes)} coincide con ese monto.`:`Sin anticipos registrados en ${mesLabel(pagosMes)}.`}/>
-              :<div style={{background:"var(--bg-card)",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px #00000040",marginBottom:20}}>
+              :<div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px #00000040",marginBottom:20}}>
                 <div style={{display:"grid",gridTemplateColumns:"80px 2fr 1.3fr 1fr",gap:6,background:"var(--accent)",color:"white",padding:"10px 14px",fontSize:11,fontWeight:700}}>
                   <div>Fecha</div><div>Cliente</div><div style={{textAlign:"right"}}>Monto</div><div style={{textAlign:"right"}}>Estatus</div>
                 </div>
@@ -4182,7 +4329,7 @@ function App() {
             </div>
             {clientes.length===0
               ?<EmptyState icon="📊" msg="Agrega clientes para ver el reporte."/>
-              :<div style={{background:"var(--bg-card)",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px #00000040"}}>
+              :<div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px #00000040"}}>
                 <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",background:"var(--accent)",color:"white",padding:"10px 14px",fontSize:11,fontWeight:700}}>
                   <div>Cliente</div><div style={{textAlign:"right"}}>Entregado</div><div style={{textAlign:"right"}}>Anticipo</div><div style={{textAlign:"right"}}>Saldo</div>
                 </div>
@@ -4220,7 +4367,7 @@ function App() {
 
             {/* GRÁFICA VOLUMEN POR CLIENTE */}
             {graficaVolumenClientes.labels.length>0&&(
-              <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:20,marginTop:8}}>
+              <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:20,marginTop:8}}>
                 <div style={{fontWeight:700,fontSize:13,color:"var(--text-main)",marginBottom:2}}>📊 Volumen por cliente — últimos 3 meses</div>
                 <div style={{fontSize:11,color:"var(--text-tertiary)",marginBottom:12}}>Mismo día hábil ({graficaVolumenClientes.diasActual} días hábiles)</div>
                 <GraficaVolumenClientes
@@ -4290,7 +4437,7 @@ function App() {
                   {detalleClienteMes.map(g=>{
                     const exp=!!clienteExpandido[g.cid];
                     return(
-                      <div key={g.cid} style={{background:"var(--bg-card)",borderRadius:12,boxShadow:"0 1px 4px #00000015",overflow:"hidden"}}>
+                      <div key={g.cid} className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,boxShadow:"0 1px 4px #00000015",overflow:"hidden"}}>
                         <div onClick={()=>setClienteExpandido(prev=>({...prev,[g.cid]:!prev[g.cid]}))}
                           style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",cursor:"pointer",userSelect:"none",background:exp?"var(--bg-card-alt)":"var(--bg-card)"}}>
                           <div>
@@ -4361,7 +4508,7 @@ function App() {
               if(!puE&&!agE) return null;
               const tg=(puE?.total_ton||0)+(agE?.total_ton||0);
               return(
-                <div style={{background:"var(--bg-card)",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
+                <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",background:"var(--bg-card-alt)"}}>
                     <div>
                       <div style={{fontWeight:800,fontSize:15,color:"var(--accent)"}}>⚡ Total Granel</div>
@@ -4420,7 +4567,7 @@ function App() {
               if(!totalTon) return null;
               const puPct=Math.round(puTon/totalTon*100), agPct=100-puPct;
               return(
-                <div style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",marginBottom:12}}>
+                <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",marginBottom:12}}>
                   <div style={{fontSize:11,fontWeight:700,color:"var(--text-sec)",marginBottom:10,textTransform:"uppercase",letterSpacing:.6}}>Proporción entre plantas</div>
                   <div style={{display:"flex",height:20,borderRadius:10,overflow:"hidden"}}>
                     <div style={{width:`${puPct}%`,background:"linear-gradient(90deg,#4c1d95,#7c3aed)",transition:"width .4s"}}/>
@@ -4441,12 +4588,12 @@ function App() {
             })()}
 
             {/* GRÁFICA ÚLTIMOS 6 MESES */}
-            <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:10}}>
+            <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:10}}>
               <div style={{fontWeight:700,fontSize:13,color:"var(--text-main)",marginBottom:12}}>📈 Granel — últimos 6 meses (Puebla + Aguascalientes)</div>
               <GraficaPlantas meses={graficaPlantas.meses} data={graficaPlantas.data} plantasConfig={GRANEL_CONFIG} tema={tema}/>
             </div>
             {/* COMPARATIVO 3 MESES */}
-            <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:10}}>
+            <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:10}}>
               <div style={{fontWeight:700,fontSize:13,color:"var(--text-main)",marginBottom:2}}>📊 Tendencia mensual — últimos 3 meses</div>
               <div style={{fontSize:11,color:"var(--text-tertiary)",marginBottom:10}}>
                 Puebla + Aguascalientes · mismo día hábil ({comparativoMes.diasActual} días hábiles)
@@ -4473,7 +4620,7 @@ function App() {
               )}
             </div>
 
-            <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:12}}>
+            <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:12}}>
               <div style={{fontWeight:700,fontSize:13,color:"var(--text-main)",marginBottom:12}}>📦 Saco — últimos 6 meses (Bodega Querétaro)</div>
               <GraficaPlantas meses={graficaPlantas.meses} data={graficaPlantas.data} plantasConfig={SACO_CONFIG} tema={tema}/>
             </div>
@@ -4525,7 +4672,7 @@ function App() {
                   const hasGranel=!!(puEntry||agEntry);
                   const totalGranel=(puEntry?.total_ton||0)+(agEntry?.total_ton||0);
                   const card=({planta,remisiones,total_ton})=>(
-                    <div key={planta} style={{background:"var(--bg-card)",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px #00000040"}}>
+                    <div key={planta} className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px #00000040"}}>
                       <div onClick={()=>setPlantaExpandida(p=>({...p,[planta]:!p[planta]}))} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",background:plantaBg[planta]||"var(--bg-card-alt)",cursor:"pointer"}}>
                         <div>
                           <div style={{fontWeight:800,fontSize:15,color:plantaColor[planta]||"var(--bg-card)"}}>🏭 {planta}</div>
@@ -4608,7 +4755,7 @@ function App() {
                             const venc=p.fecha_seguimiento&&p.fecha_seguimiento<todayISO();
                             const hoy=p.fecha_seguimiento===todayISO();
                             return(
-                              <div key={p.id} onClick={()=>{setSelectedProsp(p);setSelected(null);}} style={{background:"var(--bg-card)",borderRadius:12,padding:"12px 14px",boxShadow:"0 1px 4px #00000012",cursor:"pointer",borderLeft:`4px solid ${et.color}`,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                              <div key={p.id} onClick={()=>{setSelectedProsp(p);setSelected(null);}} className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"12px 14px",boxShadow:"0 1px 4px #00000012",cursor:"pointer",borderLeft:`4px solid ${et.color}`,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
                                 <div style={{flex:1}}>
                                   <div style={{fontWeight:700,fontSize:14}}>{p.nombre}</div>
                                   {p.contacto&&<div style={{fontSize:12,color:"var(--text-tertiary)"}}>👤 {p.contacto}</div>}
@@ -4633,7 +4780,7 @@ function App() {
                           {cerradosPerdidos.map(p=>{
                             const et=getEtapa(p.etapa);
                             return(
-                              <div key={p.id} onClick={()=>{setSelectedProsp(p);setSelected(null);}} style={{background:"var(--bg-card)",borderRadius:12,padding:"12px 14px",boxShadow:"0 1px 4px #00000012",cursor:"pointer",borderLeft:`4px solid ${et.color}`,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,opacity:0.7}}>
+                              <div key={p.id} onClick={()=>{setSelectedProsp(p);setSelected(null);}} className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"12px 14px",boxShadow:"0 1px 4px #00000012",cursor:"pointer",borderLeft:`4px solid ${et.color}`,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,opacity:0.7}}>
                                 <div style={{flex:1}}>
                                   <div style={{fontWeight:700,fontSize:14}}>{p.nombre}</div>
                                   {p.contacto&&<div style={{fontSize:12,color:"var(--text-tertiary)"}}>👤 {p.contacto}</div>}
@@ -4762,7 +4909,7 @@ function App() {
               </div>
 
               {calView==="mes"&&(
-                <div style={{background:"var(--bg-card)",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px #00000040"}}>
+                <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px #00000040"}}>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",background:"var(--accent)"}}>
                     {["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"].map(d=>(
                       <div key={d} style={{padding:"8px 2px",textAlign:"center",fontSize:11,fontWeight:700,color:"white"}}>{d}</div>
@@ -4797,7 +4944,7 @@ function App() {
               )}
 
               {calView==="semana"&&(
-                <div style={{background:"var(--bg-card)",borderRadius:12,boxShadow:"0 1px 4px #00000040",overflowX:"auto"}}>
+                <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,boxShadow:"0 1px 4px #00000040",overflowX:"auto"}}>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(100px,1fr))",gap:8,padding:12,minWidth:560}}>
                     {wDays.map(iso=>{
                       const dayCargas=showCargas?ovs.filter(p=>p.fecha_carga===iso):[];
@@ -4853,7 +5000,7 @@ function App() {
               ?<EmptyState icon="📋" msg="Agrega entregas para generar la programación semanal."/>
               :<div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
                 {progEntradas.map(ent=>(
-                  <div key={ent.id} style={{background:"var(--bg-card)",borderRadius:12,padding:"14px",boxShadow:"0 1px 4px #00000040"}}>
+                  <div key={ent.id} className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"14px",boxShadow:"0 1px 4px #00000040"}}>
                     <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap"}}>
                       <select value={ent.clienteId} onChange={e=>setProgEntradas(prev=>prev.map(x=>x.id===ent.id?{...x,clienteId:e.target.value}:x))} style={{...inS,flex:"2 1 160px"}}>
                         <option value="">— Selecciona cliente —</option>
@@ -4890,7 +5037,7 @@ function App() {
               </div>
             )}
             {progMensaje&&(
-              <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",borderLeft:"4px solid var(--accent)"}}>
+              <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",borderLeft:"4px solid var(--accent)"}}>
                 <div style={{fontSize:11,color:"var(--text-sec)",fontWeight:700,textTransform:"uppercase",marginBottom:8,letterSpacing:.6}}>Mensaje generado</div>
                 <pre style={{fontFamily:"'Segoe UI',sans-serif",fontSize:13,whiteSpace:"pre-wrap",color:"var(--text-main)",margin:0,lineHeight:1.6}}>{progMensaje}</pre>
               </div>
@@ -4981,7 +5128,7 @@ function App() {
             </div>
 
             {/* TERMÓMETRO 20K */}
-            <div style={{background:"var(--bg-card)",borderRadius:12,padding:"18px 16px",marginBottom:12,boxShadow:"0 1px 4px #00000040"}}>
+            <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"18px 16px",marginBottom:12,boxShadow:"0 1px 4px #00000040"}}>
               <div style={{fontWeight:800,fontSize:14,color:"var(--text-main)",marginBottom:2}}>🎯 Termómetro Plan 20,000 ton/mes</div>
               <div style={{fontSize:11,color:"var(--text-tertiary)",marginBottom:14}}>Progreso hacia la meta mensual de volumen</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
@@ -5018,7 +5165,7 @@ function App() {
             </div>
 
             {/* PROYECCIÓN CIERRE */}
-            <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",marginBottom:12,boxShadow:"0 1px 4px #00000040"}}>
+            <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",marginBottom:12,boxShadow:"0 1px 4px #00000040"}}>
               <div style={{fontWeight:800,fontSize:14,color:"var(--text-main)",marginBottom:12}}>📊 Proyección de cierre de mes</div>
               <div style={{background:proyeccion>=META?"var(--accent-soft)":"#f59e0b22",borderRadius:10,padding:"14px 16px",marginBottom:12,borderLeft:`4px solid ${proyeccion>=META?"var(--accent)":"#f59e0b"}`}}>
                 <div style={{fontSize:11,color:"var(--text-sec)",marginBottom:4}}>A este ritmo cerrarás el mes con:</div>
@@ -5048,7 +5195,7 @@ function App() {
             </div>
 
             {/* SEMÁFORO DE CLIENTES */}
-            <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",marginBottom:12,boxShadow:"0 1px 4px #00000040"}}>
+            <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",marginBottom:12,boxShadow:"0 1px 4px #00000040"}}>
               <div style={{fontWeight:800,fontSize:14,color:"var(--text-main)",marginBottom:4}}>🚦 Semáforo de clientes</div>
               <div style={{fontSize:11,color:"var(--text-tertiary)",marginBottom:12}}>Ritmo de entrega comparado con el mismo período del mes anterior</div>
               {clientesSemaforo.length===0
@@ -5085,7 +5232,7 @@ function App() {
             </div>
 
             {/* ALERTAS INTELIGENTES */}
-            <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",marginBottom:20,boxShadow:"0 1px 4px #00000040"}}>
+            <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",marginBottom:20,boxShadow:"0 1px 4px #00000040"}}>
               <div style={{fontWeight:800,fontSize:14,color:"var(--text-main)",marginBottom:12}}>⚡ Alertas inteligentes</div>
               {alertas.length===0
                 ?<div style={{background:"var(--accent-soft)",borderRadius:8,padding:"12px 14px",fontSize:13,color:"var(--accent)",fontWeight:600}}>✅ Sin alertas activas — todo en orden</div>
@@ -5102,7 +5249,7 @@ function App() {
 
             {/* OVs ENTREGADAS SIN PRECIO */}
             {ovsSinPrecio.length>0&&(
-              <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",marginBottom:20,boxShadow:"0 1px 4px #00000040",borderLeft:"4px solid #f59e0b"}}>
+              <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",marginBottom:20,boxShadow:"0 1px 4px #00000040",borderLeft:"4px solid #f59e0b"}}>
                 <div onClick={()=>setVerOVsSinPrecio(v=>!v)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",userSelect:"none"}}>
                   <div style={{fontWeight:800,fontSize:14,color:"#d97706"}}>⚠️ {ovsSinPrecio.length} OV{ovsSinPrecio.length!==1?"s":""} entregada{ovsSinPrecio.length!==1?"s":""} sin precio asignado</div>
                   <span style={{fontSize:13,color:"var(--text-sec)",padding:"0 2px"}}>{verOVsSinPrecio?"▲":"▼"}</span>
@@ -5170,7 +5317,7 @@ function App() {
                   {factFiltradas.map(f=>{
                     const cli=cliById(f.clienteId);
                     return(
-                      <div key={f.id} style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",borderLeft:`4px solid ${f.estatus==="Cancelada"?"#ef4444":"var(--accent)"}`}}>
+                      <div key={f.id} className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",borderLeft:`4px solid ${f.estatus==="Cancelada"?"#ef4444":"var(--accent)"}`}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
                           <div style={{flex:1}}>
                             <div style={{fontWeight:800,fontSize:16,color:"var(--text-main)",lineHeight:1.2}}>{cli?.nombre||"—"}</div>
@@ -5206,7 +5353,7 @@ function App() {
           return(
             <>
               {/* SELECTOR DE MES */}
-              <div style={{background:"var(--bg-card)",borderRadius:12,padding:"10px 14px",boxShadow:"0 1px 4px #00000040",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"10px 14px",boxShadow:"0 1px 4px #00000040",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                 <button onClick={()=>setComisionMes(m=>addMonthsYM(m,-1))} style={{background:"var(--bg-card-alt)",border:"none",borderRadius:8,padding:"6px 14px",fontWeight:700,fontSize:17,cursor:"pointer",lineHeight:1}}>‹</button>
                 <div style={{fontWeight:800,fontSize:14,color:"var(--text-main)"}}>{mesLabel(comisionMes)}</div>
                 <button onClick={()=>{ if(puedeAvanzarCom) setComisionMes(m=>addMonthsYM(m,1)); }} disabled={!puedeAvanzarCom} style={{background:"var(--bg-card-alt)",border:"none",borderRadius:8,padding:"6px 14px",fontWeight:700,fontSize:17,cursor:puedeAvanzarCom?"pointer":"default",opacity:puedeAvanzarCom?1:0.35,lineHeight:1}}>›</button>
@@ -5226,7 +5373,7 @@ function App() {
               </div>
 
               {/* CUENTA 2 — PAGO A SOCIOS */}
-              <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
+              <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
                 <div style={{fontWeight:700,fontSize:13,color:"var(--text-main)",marginBottom:10}}>🤝 Pago a socios — {mesLabel(comisionMes)}</div>
                 {sociosConPago.length===0
                   ?<div style={{fontSize:13,color:"var(--text-sec)",textAlign:"center",padding:"14px 0"}}>Ningún cliente con socio asignado tuvo anticipos este mes</div>
@@ -5252,7 +5399,7 @@ function App() {
               </div>
 
               {/* DETALLE POR CLIENTE */}
-              <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
+              <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
                 <div style={{fontWeight:700,fontSize:13,color:"var(--text-main)",marginBottom:10}}>📋 Detalle por cliente — {mesLabel(comisionMes)}</div>
                 {comisionData.rows.length===0
                   ?<EmptyState icon="💵" msg="Ningún cliente registró anticipos este mes."/>
@@ -5299,7 +5446,7 @@ function App() {
               </div>
 
               {/* CATÁLOGO DE SOCIOS */}
-              <div style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
+              <div className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"16px",boxShadow:"0 1px 4px #00000040",marginBottom:14}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                   <div style={{fontWeight:700,fontSize:13,color:"var(--text-main)"}}>👥 Socios</div>
                   <button onClick={()=>{setSocioForm(emptySocio);setShowSocioForm(true);}} style={{background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"6px 14px",fontWeight:700,cursor:"pointer",fontSize:12}}>+ Nuevo socio</button>
