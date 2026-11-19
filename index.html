@@ -46,97 +46,115 @@
   <style>
     :root {
       color-scheme: dark;
-      --bg-base:      #0A0F1E;
-      --glass:        rgba(255,255,255,.06);
-      --glass-hover:  rgba(255,255,255,.10);
-      --glass-border: rgba(255,255,255,.10);
-      --glass-strong: rgba(255,255,255,.13);
-      --fg:           #F2F4F8;
-      --fg-mid:       rgba(242,244,248,.55);
-      --fg-dim:       rgba(242,244,248,.30);
-      --blue:         #4A9EFF;
-      --blue-glow:    rgba(74,158,255,.25);
-      --gold:         #FFB340;
-      --gold-glow:    rgba(255,179,64,.20);
-      --green:        #34C759;
-      --green-glow:   rgba(52,199,89,.20);
-      --red:          #FF453A;
-      --red-lt:       rgba(255,69,58,.15);
-      --purple:       #BF5AF2;
-      --radius-sm:    12px;
-      --radius:       18px;
-      --radius-lg:    24px;
-      --shadow:       0 4px 24px rgba(0,0,0,.4);
-      /* Variables heredadas: la app las usa en ~930 estilos inline; se conservan para no romper la UI */
-      --bg-main:#0A0F1E; --bg-card:#151B2E; --bg-card-alt:#1C2338; --bg-zebra:#111729;
-      --border:#2A3248; --border-soft:#1C2338;
-      --text-main:#f8fafc; --text-sec:#94a3b8; --text-muted:#475569; --text-tertiary:#64748b;
-      --accent:#10B981; --accent-soft:#10B98122;
+      /* ── Tokens: dark industrial premium ─────────────────── */
+      --bg-base: #0A0A0B;
+      --bg-surface: #111113;
+      --bg-elevated: #18181B;
+      --bg-overlay: #1C1C1F;
+      --glass-bg: rgba(255,255,255,0.04);
+      --glass-bg-hover: rgba(255,255,255,0.07);
+      --glass-border: rgba(255,255,255,0.08);
+      --glass-border-hover: rgba(255,255,255,0.14);
+      --glass-shadow: 0 1px 3px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.3);
+      --text-primary: rgba(255,255,255,0.95);
+      --text-secondary: rgba(255,255,255,0.55);
+      --text-tertiary: rgba(255,255,255,0.30);
+      --text-disabled: rgba(255,255,255,0.18);
+      --accent: #10B981;
+      --accent-dim: rgba(16,185,129,0.15);
+      --accent-glow: rgba(16,185,129,0.25);
+      --amber: #F59E0B;
+      --amber-dim: rgba(245,158,11,0.15);
+      --danger: #EF4444;
+      --danger-dim: rgba(239,68,68,0.15);
+      --sidebar-bg: #0D0D0F;
+      --sidebar-border: rgba(255,255,255,0.06);
+      --sidebar-item-hover: rgba(255,255,255,0.05);
+      --sidebar-item-active: rgba(16,185,129,0.12);
+      --divider: rgba(255,255,255,0.06);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --radius-xl: 20px;
+
+      /* Alias del diseño anterior → apuntan a los tokens nuevos */
+      --glass:        var(--glass-bg);
+      --glass-hover:  var(--glass-bg-hover);
+      --glass-strong: rgba(255,255,255,0.10);
+      --fg:           var(--text-primary);
+      --fg-mid:       var(--text-secondary);
+      --fg-dim:       var(--text-tertiary);
+      --blue:         var(--accent);
+      --blue-glow:    var(--accent-glow);
+      --gold:         var(--amber);
+      --gold-glow:    var(--amber-dim);
+      --green:        var(--accent);
+      --green-glow:   var(--accent-dim);
+      --red:          var(--danger);
+      --red-lt:       var(--danger-dim);
+      --purple:       #8B5CF6;
+      --radius:       var(--radius-lg);
+      --shadow:       var(--glass-shadow);
+      /* Variables heredadas: la app las usa en ~930 estilos inline */
+      --bg-main: var(--bg-base); --bg-card: var(--bg-surface); --bg-card-alt: var(--bg-elevated); --bg-zebra: #0E0E10;
+      --border: rgba(255,255,255,0.08); --border-soft: rgba(255,255,255,0.05);
+      --text-main: var(--text-primary); --text-sec: var(--text-secondary); --text-muted: var(--text-tertiary);
+      --accent-soft: var(--accent-dim);
     }
     body.light{
-      color-scheme: light; --bg-base:#F8FAFC; --fg:#0F172A;
-      --bg-main:#F8FAFC; --bg-card:#FFFFFF; --bg-card-alt:#F1F5F9; --bg-zebra:#F1F5F9;
-      --border:#E2E8F0; --border-soft:#E2E8F0;
-      --text-main:#0F172A; --text-sec:#475569; --text-muted:#94A3B8; --text-tertiary:#64748b;
-      --accent:#10B981; --accent-soft:#10B98115;
+      color-scheme: light;
+      --bg-base:#F8FAFC; --bg-surface:#FFFFFF; --bg-elevated:#F1F5F9; --bg-overlay:#FFFFFF;
+      --glass-bg:#FFFFFF; --glass-bg-hover:#F1F5F9; --glass-border:#E2E8F0; --glass-border-hover:#CBD5E1;
+      --glass-shadow: 0 1px 4px rgba(15,23,42,.08);
+      --text-primary:#0F172A; --text-secondary:#475569; --text-tertiary:#94A3B8; --text-disabled:#CBD5E1;
+      --sidebar-bg:#FFFFFF; --sidebar-border:#E2E8F0; --sidebar-item-hover:#F1F5F9;
+      --divider:#E2E8F0;
+      --bg-zebra:#F1F5F9; --border:#E2E8F0; --border-soft:#E2E8F0;
     }
     * { box-sizing:border-box; margin:0; padding:0; }
-    body {
-      background: var(--bg-base);
-      color: var(--fg);
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    }
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background:
-        radial-gradient(ellipse 60% 50% at 15% 20%, rgba(74,158,255,.12) 0%, transparent 70%),
-        radial-gradient(ellipse 50% 40% at 80% 70%, rgba(191,90,242,.10) 0%, transparent 60%),
-        radial-gradient(ellipse 40% 40% at 60% 10%, rgba(255,179,64,.08) 0%, transparent 60%);
-      pointer-events: none;
-      z-index: 0;
-    }
+    html, body { background: var(--bg-base); color: var(--text-primary); -webkit-font-smoothing: antialiased; }
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
     #root { position: relative; z-index: 1; }
     input,select,button { font-family:inherit; }
-    input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
+    input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity:.6; }
     body.light input[type="date"]::-webkit-calendar-picker-indicator { filter: none; }
     .nav-tabs-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
     .nav-tabs-scroll::-webkit-scrollbar { display:none; }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+
+    .app-shell { background: var(--bg-base); color: var(--text-primary); }
 
     /* Sidebar: visible solo en escritorio; en celular se usan las pestañas horizontales */
     .sidebar { display:none; }
     @media (min-width: 900px) {
       .app-shell { padding-left: 240px; }
-      .nav-tabs-bar { display:none; }
+      .nav-tabs-bar { display:none !important; }
       .sidebar {
         display:flex; flex-direction:column;
         position:fixed; top:0; left:0; bottom:0; width:240px; z-index:150;
-        background: var(--glass); border-right:1px solid var(--glass-border);
-        backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
       }
     }
-    .sidebar-brand { display:flex; align-items:center; gap:12px; padding:22px 18px 18px; border-bottom:1px solid var(--glass-border); }
-    .sidebar-brand-icon { width:40px; height:40px; border-radius:var(--radius-sm); display:flex; align-items:center; justify-content:center; font-size:20px; background:var(--blue-glow); }
-    .sidebar-brand-name { font-weight:700; font-size:15px; color:var(--fg); }
-    .sidebar-brand-sub { font-size:11px; color:var(--fg-mid); }
-    .sidebar-nav { flex:1; overflow-y:auto; padding:10px 10px; }
-    .nav-section-label { font-size:10px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--fg-dim); padding:14px 10px 6px; }
-    .nav-item { display:flex; align-items:center; gap:10px; padding:9px 12px; margin-bottom:2px; border-radius:var(--radius-sm); font-size:13px; font-weight:500; color:var(--fg-mid); cursor:pointer; transition:background .15s, color .15s; }
-    .nav-item:hover { background:var(--glass-hover); color:var(--fg); }
-    .nav-item.active { background:var(--blue-glow); color:var(--fg); font-weight:600; box-shadow: inset 3px 0 0 var(--blue); }
+    .sidebar { background: var(--sidebar-bg); border-right: 1px solid var(--sidebar-border); }
+    .sidebar-brand { display:flex; align-items:center; gap:12px; padding:22px 18px 18px; border-bottom:1px solid var(--sidebar-border); }
+    .sidebar-brand-icon { width:40px; height:40px; border-radius:var(--radius-md); display:flex; align-items:center; justify-content:center; font-size:20px; background:var(--accent-dim); }
+    .sidebar-brand-name { font-weight:700; font-size:15px; color:var(--text-primary); }
+    .sidebar-brand-sub { font-size:11px; color:var(--text-secondary); }
+    .sidebar-nav { flex:1; overflow-y:auto; padding:10px 0; }
+    .nav-section-label { font-size:10px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--text-tertiary); padding:14px 20px 6px; }
+    .nav-item { display:flex; align-items:center; gap:10px; padding:9px 12px; font-size:13px; font-weight:400; cursor:pointer; }
+    .nav-item { color: var(--text-secondary); border-left: 2px solid transparent; border-radius: 8px; margin: 1px 8px; width: calc(100% - 16px); transition: background 0.15s, color 0.15s; }
+    .nav-item:hover { background: var(--sidebar-item-hover); color: var(--text-primary); }
+    .nav-item.active { background: var(--sidebar-item-active); color: var(--accent); font-weight: 500; border-left-color: var(--accent); }
     .nav-icon { width:20px; text-align:center; font-size:15px; }
-    .nav-badge { margin-left:auto; background:var(--red); color:#fff; font-size:10px; font-weight:700; border-radius:10px; padding:1px 7px; }
-    .sidebar-footer { padding:14px; border-top:1px solid var(--glass-border); }
+    .nav-badge { margin-left:auto; background:var(--danger); color:#fff; font-size:10px; font-weight:700; border-radius:10px; padding:1px 7px; }
+    .sidebar-footer { padding:14px; border-top:1px solid var(--sidebar-border); }
     .sidebar-user { display:flex; align-items:center; gap:10px; }
-    .sidebar-avatar { width:34px; height:34px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; background:linear-gradient(135deg, var(--blue), var(--purple)); }
-    .sidebar-user-name { font-size:13px; font-weight:600; color:var(--fg); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .sidebar-user-role { font-size:11px; color:var(--fg-mid); }
-    body.light .sidebar { background:#FFFFFFcc; border-right-color:#E2E8F0; }
-    body.light .nav-item { color:#475569; }
-    body.light .nav-item:hover { background:#F1F5F9; color:#0F172A; }
-    body.light .nav-item.active { color:#0F172A; }
-    body.light .nav-section-label, body.light .sidebar-brand-sub, body.light .sidebar-user-role { color:#94A3B8; }
+    .sidebar-avatar { width:34px; height:34px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; background:linear-gradient(135deg, #10B981, #047857); }
+    .sidebar-user-name { font-size:13px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .sidebar-user-role { font-size:11px; color:var(--text-secondary); }
 
     /* ── MAIN CONTENT AREA ─────────────────────────────────── */
     .main-content, .content, main, .main {
@@ -146,15 +164,26 @@
     /* ── GLASS CARDS ────────────────────────────────────────── */
     .card, .kpi-card, .ov-card, .cliente-card,
     .remision-card, .nota-card, .prospecto-card,
-    [class*="-card"], [class*="card-"] {
-      background: var(--glass) !important;
+    [class*="-card"]:not(.glass-card), [class*="card-"] {
+      background: var(--glass-bg) !important;
       border: 1px solid var(--glass-border) !important;
-      border-radius: var(--radius) !important;
-      backdrop-filter: blur(12px) !important;
-      -webkit-backdrop-filter: blur(12px) !important;
-      box-shadow: var(--shadow) !important;
-      color: var(--fg) !important;
+      border-radius: var(--radius-lg) !important;
+      backdrop-filter: blur(16px) !important;
+      -webkit-backdrop-filter: blur(16px) !important;
+      box-shadow: var(--glass-shadow) !important;
+      color: var(--text-primary) !important;
     }
+
+    /* Tarjetas reales de la app (className="glass-card"). El borde se dibuja con
+       sombra inset para no pisar los bordes de color (borderLeft/borderTop) de cada tarjeta. */
+    .glass-card { background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: var(--radius-lg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: var(--glass-shadow); }
+    .glass-card {
+      background: var(--glass-bg) !important;
+      border-radius: var(--radius-lg) !important;
+      box-shadow: var(--glass-shadow), inset 0 0 0 1px var(--glass-border) !important;
+      transition: background .15s, box-shadow .15s;
+    }
+    .glass-card:hover { box-shadow: var(--glass-shadow), inset 0 0 0 1px var(--glass-border-hover) !important; }
 
     /* KPI tiles de la fila superior */
     .kpi-row > div,
@@ -163,33 +192,43 @@
     div[class*="kpi"],
     div[class*="stat-tile"],
     div[class*="metric"] {
-      background: var(--glass) !important;
+      background: var(--glass-bg) !important;
       border: 1px solid var(--glass-border) !important;
-      border-radius: var(--radius) !important;
-      backdrop-filter: blur(12px) !important;
-      -webkit-backdrop-filter: blur(12px) !important;
-      box-shadow: var(--shadow) !important;
-      color: var(--fg) !important;
-    }
-
-    /* Filas de tabla */
-    tbody tr {
-      border-bottom: 1px solid var(--glass-border) !important;
-      transition: background .15s !important;
-    }
-    tbody tr:hover {
-      background: var(--glass-hover) !important;
-    }
-
-    /* Header top bar — integrar al dark */
-    .topbar, header, .header, .app-header,
-    div[class*="header"]:not(.sidebar-brand) {
-      background: rgba(10,15,30,.85) !important;
-      border-bottom: 1px solid var(--glass-border) !important;
+      border-radius: var(--radius-lg) !important;
       backdrop-filter: blur(16px) !important;
       -webkit-backdrop-filter: blur(16px) !important;
+      box-shadow: var(--glass-shadow) !important;
+      color: var(--text-primary) !important;
+    }
+
+    /* Tablas */
+    thead th { color: var(--text-tertiary) !important; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 1px solid var(--divider); }
+    tbody td { color: var(--text-primary); border-bottom: 1px solid var(--divider); }
+    tbody tr:hover td { background: rgba(255,255,255,0.025); }
+    tbody tr { transition: background .15s; }
+
+    /* Encabezado superior */
+    .app-header { background: rgba(10,10,11,0.85) !important; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid var(--divider) !important; box-shadow: none !important; }
+    .topbar, header, .header {
+      background: rgba(10,10,11,0.85) !important;
+      border-bottom: 1px solid var(--divider) !important;
+      backdrop-filter: blur(20px) !important;
+      -webkit-backdrop-filter: blur(20px) !important;
       box-shadow: none !important;
     }
+
+    /* Barra de pestañas (celular) */
+    .nav-tabs-bar { background: rgba(10,10,11,0.85) !important; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid var(--divider) !important; box-shadow: none !important; }
+    .nav-tab { background:none; border:none; padding:12px 14px; cursor:pointer; font-size:13px; font-weight:500; white-space:nowrap; flex-shrink:0; transition: color .15s, border-color .15s; }
+    .nav-tab { color: var(--text-secondary); border-bottom: 2px solid transparent; }
+    .nav-tab:hover { color: var(--text-primary); }
+    .nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+    /* Badges */
+    .badge-success { background: rgba(16,185,129,0.15); color: #10B981; }
+    .badge-warning { background: rgba(245,158,11,0.15); color: #F59E0B; }
+    .badge-danger { background: rgba(239,68,68,0.15); color: #EF4444; }
+    .badge-neutral { background: rgba(255,255,255,0.08); color: var(--text-secondary); }
 
     /* Chips / badges de estado */
     .chip, .badge, .tag,
@@ -204,91 +243,68 @@
     /* Alertas y banners */
     .alert, .aviso, .banner,
     [class*="alert-"], [class*="aviso-"] {
-      background: rgba(255,255,255,.05) !important;
+      background: var(--glass-bg) !important;
       border: 1px solid var(--glass-border) !important;
-      border-radius: var(--radius-sm) !important;
-      backdrop-filter: blur(8px) !important;
+      border-radius: var(--radius-md) !important;
     }
 
-    /* Secciones con borde izquierdo de color */
     [class*="section-title"], .section-header, h3, h4 {
-      color: var(--fg) !important;
+      color: var(--text-primary) !important;
     }
 
     /* Textos secundarios */
     .text-muted, .subtitle, .sub, small,
     [class*="muted"], [class*="dim"] {
-      color: var(--fg-mid) !important;
+      color: var(--text-secondary) !important;
     }
 
     /* Botones primarios — solo por clase; NO por color inline, para no
-       volver azules los botones rojos (eliminar), verdes (Excel/WhatsApp), etc. */
+       volver verdes los botones rojos (eliminar), etc. */
     button[class*="primary"], .btn-primary, .btn-green {
-      background: var(--blue) !important;
+      background: var(--accent) !important;
       border: none !important;
-      border-radius: 10px !important;
+      border-radius: var(--radius-md) !important;
       color: #fff !important;
       font-weight: 600 !important;
-      box-shadow: 0 0 20px var(--blue-glow) !important;
+      box-shadow: 0 0 20px var(--accent-glow) !important;
     }
-    button[class*="primary"]:hover, .btn-primary:hover {
-      background: #5AABFF !important;
-    }
+    button[class*="primary"]:hover, .btn-primary:hover { background: #34D399 !important; }
 
-    /* Inputs y selects (sin checkbox/radio/file) */
+    /* Inputs y selects (sin checkbox/radio/file). !important porque inS y otros estilos inline fijan fondo. */
     input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
     select, textarea {
-      background: var(--glass) !important;
+      background: var(--bg-elevated) !important;
       border: 1px solid var(--glass-border) !important;
-      border-radius: 10px !important;
-      color: var(--fg) !important;
-      padding: 8px 12px !important;
+      color: var(--text-primary) !important;
+      border-radius: var(--radius-sm) !important;
+      padding: 9px 12px !important;
+      outline: none !important;
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
     input:focus, select:focus, textarea:focus {
-      border-color: var(--blue) !important;
-      outline: none !important;
-      box-shadow: 0 0 0 3px var(--blue-glow) !important;
+      border-color: var(--accent) !important;
+      box-shadow: 0 0 0 3px var(--accent-glow) !important;
     }
-    select option { background: var(--bg-base); color: var(--fg); }
-    body.light input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
-    body.light select, body.light textarea {
-      background: #FFFFFF !important;
-      border-color: #E2E8F0 !important;
-    }
-    body.light tbody tr { border-bottom-color: #E2E8F0 !important; }
-    body.light tbody tr:hover { background: #F1F5F9 !important; }
+    input::placeholder, textarea::placeholder { color: var(--text-disabled); }
+    select option { background: var(--bg-elevated); color: var(--text-primary); }
 
-    /* Tarjetas reales de la app (className="glass-card"). El borde se dibuja con
-       sombra inset para no pisar los bordes de color (borderLeft/borderTop) de cada tarjeta. */
-    .glass-card {
-      background: var(--glass) !important;
-      border-radius: var(--radius) !important;
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      box-shadow: var(--shadow), inset 0 0 0 1px var(--glass-border) !important;
-    }
-    body.light .glass-card {
-      background: #FFFFFF !important;
-      box-shadow: 0 1px 4px rgba(15,23,42,.08), inset 0 0 0 1px #E2E8F0 !important;
-    }
-    /* Barra de pestañas (celular) */
-    .nav-tabs-bar {
-      background: rgba(10,15,30,.85) !important;
-      border-bottom: 1px solid var(--glass-border) !important;
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      box-shadow: none !important;
-    }
-    body.light .nav-tabs-bar { background: rgba(248,250,252,.9) !important; border-bottom-color:#E2E8F0 !important; }
-    /* En modo claro el encabezado conserva su color de acento */
+    /* Modales */
+    .modal-content, .modal-panel { background: var(--bg-overlay); border: 1px solid var(--glass-border); border-radius: var(--radius-xl); box-shadow: 0 24px 60px rgba(0,0,0,0.6); }
+    .modal-overlay { background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+
+    /* Modo claro (opcional, vía botón ☀️) */
     body.light .app-header { background: var(--accent) !important; border-bottom: none !important; }
+    body.light .nav-tabs-bar { background: rgba(248,250,252,.9) !important; }
+    body.light tbody tr:hover td { background: #F1F5F9; }
+    body.light ::-webkit-scrollbar-thumb { background: rgba(15,23,42,0.18); }
 
     /* ── /GLASS CARDS ────────────────────────────────────────── */
   </style>
 </head>
 <body>
 <script>
-  document.body.className = localStorage.getItem("tema") || "dark";
+  localStorage.removeItem("tema"); localStorage.removeItem("tema_v2");
+  document.body.className = localStorage.getItem("tema_v3") || "dark";
   // Limpiar token de Google Drive expirado antes de que cualquier código lo use.
   // Un token expirado en localStorage puede provocar que gdTrySilentRenew() cuelgue
   // la inicialización si algo lo invoca antes de que Firebase esté listo.
@@ -608,8 +624,8 @@ function LectorRemision({inS,titulo,subtitulo,encabezadoConfirm,mostrarPlanta,no
   );
 
   return (
-    <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-      <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"90vh",overflowY:"auto"}}>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(4px)",WebkitBackdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+      <div className="modal-panel" style={{background:"var(--bg-overlay)",borderRadius:"20px 20px 0 0",border:"1px solid var(--glass-border)",borderBottom:"none",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"90vh",overflowY:"auto"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
           <div style={{fontWeight:800,fontSize:17}}>{titulo}</div>
           <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"var(--text-sec)"}}>✕</button>
@@ -659,7 +675,7 @@ function LectorRemision({inS,titulo,subtitulo,encabezadoConfirm,mostrarPlanta,no
                     <div style={{fontSize:11,color:"var(--text-sec)"}}>Ctrl+C sobre la imagen, o "Copiar imagen" en el menú contextual</div>
                   </div>
                 )}
-                {error&&<div style={{background:"#ef444422",color:"#dc2626",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:12,border:"1px solid #fecaca"}}>{error}</div>}
+                {error&&<div style={{background:"#ef444422",color:"#dc2626",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:12,border:"1px solid rgba(239,68,68,0.3)"}}>{error}</div>}
                 <button onClick={leerRemision} style={{width:"100%",background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:"pointer",fontSize:14}}>
                   {mode==="clipboard"?"📋 Leer imagen del portapapeles":"🔍 Analizar con IA"}
                 </button>
@@ -976,7 +992,7 @@ function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV
                 {cliente.telefono&&<span style={{fontSize:11,color:"var(--text-tertiary)"}}>📞 {cliente.telefono}</span>}
               </div>
             </div>
-            <div style={{background:saldo>=0?"#f0fdf4":"#fef2f2",borderRadius:12,padding:"12px 16px",textAlign:"center",minWidth:120,flexShrink:0}}>
+            <div style={{background:saldo>=0?"rgba(16,185,129,0.15)":"rgba(239,68,68,0.15)",borderRadius:12,padding:"12px 16px",textAlign:"center",minWidth:120,flexShrink:0}}>
               <div style={{fontSize:10,color:"var(--text-tertiary)",fontWeight:700,marginBottom:2}}>{saldo>=0?"Saldo a favor":"Adeudo"} (histórico)</div>
               <div style={{fontWeight:900,fontSize:22,color:saldo>=0?"#16a34a":"#ef4444"}}>{fmt(Math.abs(saldo))}</div>
               <div style={{fontSize:10,color:"var(--text-sec)",marginTop:2}}>acumulado total</div>
@@ -1055,7 +1071,7 @@ function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV
                       <tr key={p.id} style={{borderTop:"1px solid var(--border-soft)",background:i%2?"var(--bg-zebra)":"var(--bg-card)"}}>
                         <td style={{padding:"7px 8px",fontWeight:700,color:"#0891b2"}}>
                           {p.folio||p.num_ov||"—"}
-                          {!p.folio&&<span style={{marginLeft:5,fontSize:9,background:"#fef3c7",color:"#d97706",borderRadius:4,padding:"1px 5px",fontWeight:700,whiteSpace:"nowrap"}}>⚠️ Sin remisión</span>}
+                          {!p.folio&&<span style={{marginLeft:5,fontSize:9,background:"var(--amber-dim)",color:"var(--amber)",borderRadius:4,padding:"1px 5px",fontWeight:700,whiteSpace:"nowrap"}}>⚠️ Sin remisión</span>}
                         </td>
                         <td style={{padding:"7px 8px",textAlign:"center",color:"var(--text-sec)"}}>{(p.fecha_carga||"").slice(5).replace("-","/")}</td>
                         <td style={{padding:"7px 8px",textAlign:"center",color:"var(--text-sec)"}}>{p.fecha_entrega?(p.fecha_entrega.slice(5).replace("-","/")):"—"}</td>
@@ -1092,7 +1108,7 @@ function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV
               <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid var(--border-soft)",fontSize:12}}>
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
                   <span style={{color:"var(--text-tertiary)"}}>{a.fecha}</span>
-                  <span style={{fontSize:10,background:a.estatus_factura==="facturado"?"#dcfce7":"#fff7ed",color:a.estatus_factura==="facturado"?"#15803d":"#c2410c",borderRadius:4,padding:"1px 6px",fontWeight:700}}>
+                  <span style={{fontSize:10,background:a.estatus_factura==="facturado"?"rgba(16,185,129,0.15)":"rgba(249,115,22,0.15)",color:a.estatus_factura==="facturado"?"#34D399":"#FB923C",borderRadius:4,padding:"1px 6px",fontWeight:700}}>
                     {a.estatus_factura==="facturado"?"✅ Facturado":"🟠 Pendiente"}
                   </span>
                 </div>
@@ -1139,7 +1155,7 @@ function DashboardCliente({cliente,ovs,facturas,diasHabiles,estadoCuenta,valorOV
                         <td style={{padding:"7px 8px",textAlign:"center",color:"var(--text-sec)"}}>{(f.fecha||"").slice(5).replace("-","/")}</td>
                         <td style={{padding:"7px 8px",textAlign:"right",fontWeight:600}}>{fmt(parseFloat(f.total_con_iva)||parseFloat(f.monto_total)||0)}</td>
                         <td style={{padding:"7px 8px",textAlign:"right"}}>
-                          <span style={{fontSize:10,background:f.estatus==="Cancelada"?"#fef2f2":f.estatus==="Pagada"?"#f0fdf4":"#eff6ff",color:f.estatus==="Cancelada"?"#dc2626":f.estatus==="Pagada"?"#16a34a":"#2563eb",borderRadius:4,padding:"2px 7px",fontWeight:700}}>{f.estatus||"Emitida"}</span>
+                          <span style={{fontSize:10,background:f.estatus==="Cancelada"?"rgba(239,68,68,0.15)":f.estatus==="Pagada"?"rgba(16,185,129,0.15)":"rgba(59,130,246,0.15)",color:f.estatus==="Cancelada"?"#F87171":f.estatus==="Pagada"?"#34D399":"#60A5FA",borderRadius:4,padding:"2px 7px",fontWeight:700}}>{f.estatus||"Emitida"}</span>
                         </td>
                       </tr>
                     ))}
@@ -1188,7 +1204,7 @@ function CalendarioHabiles({diasHabiles, onToggle}){
           const day=parseInt(iso.slice(8));
           return(
             <div key={iso} onClick={()=>onToggle(iso)} style={{
-              background:actual?"#dcfce7":"#fee2e2",color:actual?"#15803d":"#dc2626",
+              background:actual?"rgba(16,185,129,0.15)":"rgba(239,68,68,0.15)",color:actual?"#34D399":"#F87171",
               borderRadius:6,textAlign:"center",padding:"7px 2px",fontSize:12,fontWeight:700,cursor:"pointer",
               border:isToday?"2px solid var(--accent)":hasOverride?"2px solid currentColor":"2px solid transparent",
               position:"relative",opacity:iso>today?0.5:1,userSelect:"none",
@@ -1202,7 +1218,7 @@ function CalendarioHabiles({diasHabiles, onToggle}){
       </div>
       <div style={{marginTop:12,display:"flex",gap:12,flexWrap:"wrap",fontSize:11,color:"var(--text-tertiary)"}}>
         <div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:12,height:12,background:"#16a34a22",border:"1px solid #16a34a",borderRadius:2}}/> Trabajado</div>
-        <div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:12,height:12,background:"#fee2e2",border:"1px solid #dc2626",borderRadius:2}}/> No trabajado</div>
+        <div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:12,height:12,background:"var(--danger-dim)",border:"1px solid var(--danger)",borderRadius:2}}/> No trabajado</div>
         <div style={{display:"flex",alignItems:"center",gap:4}}>★ Festivo oficial</div>
         <div style={{display:"flex",alignItems:"center",gap:4}}>✎ Ajustado manualmente</div>
       </div>
@@ -1347,7 +1363,7 @@ function App() {
   });
   const [authUser,setAuthUser]       = useState(null);
   const [authReady,setAuthReady]     = useState(false);
-  const [tema,setTema]               = useState(()=>localStorage.getItem("tema")||"dark");
+  const [tema,setTema]               = useState(()=>localStorage.getItem("tema_v3")||"dark");
   const [dbReady,setDbReady]         = useState(!!window.__dbReady);
   const [clientes,setClientes]       = useState([]);
   const [ovs,setOVs]                 = useState([]);
@@ -1548,7 +1564,7 @@ function App() {
 
   useEffect(()=>{
     document.body.className=tema;
-    localStorage.setItem("tema",tema);
+    localStorage.setItem("tema_v3",tema);
   },[tema]);
 
   const procesarArchivoChart = (file) => {
@@ -3819,10 +3835,10 @@ function App() {
       </div>
 
       {/* TABS — wrapper sticky sin overflow, scroll en div interno */}
-      <div className="nav-tabs-bar" style={{position:"sticky",top:headerH,zIndex:98,background:"var(--bg-main)",boxShadow:"0 2px 4px rgba(0,0,0,0.2)",borderBottom:"2px solid var(--border)"}}>
+      <div className="nav-tabs-bar" style={{position:"sticky",top:headerH,zIndex:98}}>
         <div className="nav-tabs-scroll" style={{display:"flex",padding:"0 16px"}}>
           {[["confirmar",`📌 Hoy${hoyBadge>0?` (${hoyBadge})`:""}`],["ordenes","📋 Órdenes"],["clientes","👥 Clientes"],["reporte","📊 Reporte"],["plantas","🏭 Plantas"],["notas",`📝 Notas${notasBadge?` (${notasBadge})`:""}`],["calendario","📅 Calendario"],["prospectos",`🎯 Prospectos${prospBadge?` (${prospBadge})`:""}`],["facturas","🧾 Facturas"],["comisiones","💵 Comisiones"],["programacion","📋 Prog. Semanal"],["inteligencia","📈 Inteligencia"]].filter(([k])=>k!=="comisiones"||isAdmin).map(([k,l])=>(
-            <button key={k} onClick={()=>setTab(k)} style={{background:"none",border:"none",borderBottom:tab===k?"3px solid var(--accent)":"3px solid transparent",padding:"12px 14px",cursor:"pointer",fontWeight:tab===k?700:500,color:tab===k?"var(--accent)":"var(--text-tertiary)",fontSize:13,whiteSpace:"nowrap",flexShrink:0}}>{l}</button>
+            <button key={k} onClick={()=>setTab(k)} className={`nav-tab${tab===k?" active":""}`}>{l}</button>
           ))}
         </div>
       </div>
@@ -3849,8 +3865,8 @@ function App() {
             <div onClick={()=>setTab("clientes")} style={{background:"#ef444422",borderRadius:12,padding:"13px 15px",boxShadow:"0 1px 4px #00000040",borderLeft:"4px solid #ef4444",cursor:"pointer",gridColumn:"1/-1"}}>
               <div style={{fontSize:11,color:"#ef4444",marginBottom:4,fontWeight:700}}>⚠️ Anticipo bajo — toca para ver</div>
               <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                {totales.adeudos.map(c=><span key={c.id} style={{background:"#fecaca",color:"#991b1b",borderRadius:20,padding:"3px 10px",fontSize:12,fontWeight:700}}>🔴 {c.nombre}: adeuda {fmt(-c.saldo)}</span>)}
-                {totales.anticipoBajo.map(c=><span key={c.id} style={{background:"#fed7aa",color:"#92400e",borderRadius:20,padding:"3px 10px",fontSize:12,fontWeight:700}}>🟠 {c.nombre}: {fmt(c.saldo)} restante</span>)}
+                {totales.adeudos.map(c=><span key={c.id} style={{background:"var(--danger-dim)",color:"#F87171",borderRadius:20,padding:"3px 10px",fontSize:12,fontWeight:700}}>🔴 {c.nombre}: adeuda {fmt(-c.saldo)}</span>)}
+                {totales.anticipoBajo.map(c=><span key={c.id} style={{background:"var(--amber-dim)",color:"#FBBF24",borderRadius:20,padding:"3px 10px",fontSize:12,fontWeight:700}}>🟠 {c.nombre}: {fmt(c.saldo)} restante</span>)}
               </div>
             </div>
           )}
@@ -3898,7 +3914,7 @@ function App() {
                       ✍️ Sin firma{ovsSinFirma.length>0?` (${ovsSinFirma.length})`:""}
                     </button>
                     {(busqueda||filtroCliente||filtroPlanta||filtroSinRemision||filtroSinCliente||filtroSinFirma)&&(
-                      <button onClick={()=>{setBusqueda("");setFiltroCliente("");setFiltroPlanta("");setFiltroSinRemision(false);setFiltroSinCliente(false);setFiltroSinFirma(false);}} style={{background:"#ef444422",color:"#dc2626",border:"1.5px solid #fecaca",borderRadius:20,padding:"5px 14px",fontWeight:700,fontSize:12,cursor:"pointer",transition:"all .15s"}}>
+                      <button onClick={()=>{setBusqueda("");setFiltroCliente("");setFiltroPlanta("");setFiltroSinRemision(false);setFiltroSinCliente(false);setFiltroSinFirma(false);}} style={{background:"#ef444422",color:"#dc2626",border:"1.5px solid rgba(239,68,68,0.3)",borderRadius:20,padding:"5px 14px",fontWeight:700,fontSize:12,cursor:"pointer",transition:"all .15s"}}>
                         ✕ Limpiar filtros
                       </button>
                     )}
@@ -3967,7 +3983,7 @@ function App() {
                         {p.confirm!=="confirmado"&&(
                           <div style={{display:"flex",gap:8,marginTop:10}}>
                             <button onClick={()=>confirmar(p.id)} style={{background:"#16a34a",color:"white",border:"none",borderRadius:6,padding:"7px 14px",fontSize:12,cursor:"pointer",fontWeight:700}}>✓ Confirmar</button>
-                            <button onClick={()=>reprogramar(p.id)} style={{background:"#ef444422",color:"#dc2626",border:"1px solid #fecaca",borderRadius:6,padding:"7px 14px",fontSize:12,cursor:"pointer",fontWeight:700}}>↻ Reprogramar</button>
+                            <button onClick={()=>reprogramar(p.id)} style={{background:"#ef444422",color:"#dc2626",border:"1px solid rgba(239,68,68,0.3)",borderRadius:6,padding:"7px 14px",fontSize:12,cursor:"pointer",fontWeight:700}}>↻ Reprogramar</button>
                           </div>
                         )}
                       </div>
@@ -4046,7 +4062,7 @@ function App() {
 
             {/* SECCIÓN 4 — AVISOS DEL DÍA */}
             <div style={{marginBottom:8}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,paddingBottom:8,borderBottom:"2px solid #fecaca"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,paddingBottom:8,borderBottom:"2px solid rgba(239,68,68,0.3)"}}>
                 <div style={{background:"#dc2626",borderRadius:4,width:4,height:20,flexShrink:0}}/>
                 <div style={{fontWeight:800,fontSize:14,color:"#dc2626"}}>Avisos del día</div>
                 {(notasUrgentes.length+prospSeguimientoHoy.length)>0&&<span style={{marginLeft:"auto",background:"#ef444422",color:"#dc2626",borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700}}>{notasUrgentes.length+prospSeguimientoHoy.length}</span>}
@@ -4181,7 +4197,7 @@ function App() {
                               <div style={{fontSize:9,color:"var(--text-sec)"}}>Facturado</div>
                               <div style={{fontWeight:700,fontSize:12,color:"#16a34a"}}>{fmt(fac.totalFacturado)}</div>
                             </div>
-                            <div style={{background:fac.pendiente>0?"#fff7ed":"#f0fdf4",borderRadius:6,padding:"6px 8px"}}>
+                            <div style={{background:fac.pendiente>0?"rgba(249,115,22,0.15)":"rgba(16,185,129,0.15)",borderRadius:6,padding:"6px 8px"}}>
                               <div style={{fontSize:9,color:"var(--text-sec)"}}>Pendiente</div>
                               <div style={{fontWeight:700,fontSize:12,color:fac.pendiente>0?"#c2410c":"#16a34a"}}>{fmt(Math.max(0,fac.pendiente))}</div>
                             </div>
@@ -4212,7 +4228,7 @@ function App() {
                           );
                           const epago=estatusPagos[c.id]?.[realIdx]||{estatus:"pendiente",pendiente:parseFloat(a.monto)||0};
                           const estatusColor=epago.estatus==="facturado"?"#15803d":epago.estatus==="parcial"?"#b45309":"#c2410c";
-                          const estatusBg=epago.estatus==="facturado"?"#dcfce7":epago.estatus==="parcial"?"#fefce8":"#fff7ed";
+                          const estatusBg=epago.estatus==="facturado"?"rgba(16,185,129,0.15)":epago.estatus==="parcial"?"rgba(245,158,11,0.15)":"rgba(249,115,22,0.15)";
                           const estatusLabel=epago.estatus==="facturado"?"✅ Facturado":epago.estatus==="parcial"?`🟡 Parcial (${fmt(epago.pendiente)})`: "🟠 Pendiente";
                           return(
                             <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"4px 0",borderTop:i>0?"1px solid var(--border-soft)":"none",gap:4}}>
@@ -4455,7 +4471,7 @@ function App() {
                               <div key={p.id} style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 0.9fr 1fr 0.8fr 1fr",padding:"8px 14px",fontSize:11,borderTop:"1px solid var(--border-soft)",background:i%2?"var(--bg-zebra)":"var(--bg-card)",gap:4}}>
                                 <div style={{color:"var(--accent)",fontWeight:500}}>
                                   {serieFolio(p.serie,p.folio)||p.num_ov||"—"}
-                                  {!p.folio&&<span style={{marginLeft:4,fontSize:9,background:"#fef3c7",color:"#d97706",borderRadius:4,padding:"1px 4px",fontWeight:700,whiteSpace:"nowrap"}}>⚠️ S/R</span>}
+                                  {!p.folio&&<span style={{marginLeft:4,fontSize:9,background:"var(--amber-dim)",color:"var(--amber)",borderRadius:4,padding:"1px 4px",fontWeight:700,whiteSpace:"nowrap"}}>⚠️ S/R</span>}
                                 </div>
                                 <div style={{color:"var(--text-sec)"}}>{p.fecha_carga||"—"}</div>
                                 <div style={{color:"var(--text-sec)"}}>{p.num_ov||"—"}</div>
@@ -5033,7 +5049,7 @@ function App() {
               <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
                 <button onClick={generarMensajeProg} style={{background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13}}>📋 Generar mensaje</button>
                 {progMensaje&&<button onClick={()=>{if(navigator.clipboard) navigator.clipboard.writeText(progMensaje);}} style={{background:"#16a34a",color:"white",border:"none",borderRadius:8,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13}}>📋 Copiar</button>}
-                <button onClick={()=>{setProgEntradas([]);setProgMensaje("");}} style={{background:"#ef444422",color:"#dc2626",border:"1px solid #fecaca",borderRadius:8,padding:"10px 14px",fontWeight:700,cursor:"pointer",fontSize:13}}>Limpiar</button>
+                <button onClick={()=>{setProgEntradas([]);setProgMensaje("");}} style={{background:"#ef444422",color:"#dc2626",border:"1px solid rgba(239,68,68,0.3)",borderRadius:8,padding:"10px 14px",fontWeight:700,cursor:"pointer",fontSize:13}}>Limpiar</button>
               </div>
             )}
             {progMensaje&&(
@@ -5324,8 +5340,8 @@ function App() {
                             <div style={{fontWeight:600,fontSize:13,color:"var(--text-sec)",marginTop:3}}>{f.folio_fiscal||"(sin folio)"}</div>
                             <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap",alignItems:"center"}}>
                               <span style={{fontSize:11,color:"var(--text-sec)"}}>{f.fecha}</span>
-                              <span style={{fontSize:11,background:f.tipo==="Complemento"?"#f5f3ff":"#eff6ff",color:f.tipo==="Complemento"?"#7c3aed":"#1e40af",borderRadius:20,padding:"2px 8px",fontWeight:600}}>{f.tipo}</span>
-                              <span style={{fontSize:11,background:f.estatus==="Cancelada"?"#fef2f2":"#f0fdf4",color:f.estatus==="Cancelada"?"#dc2626":"#16a34a",borderRadius:20,padding:"2px 8px",fontWeight:600}}>{f.estatus}</span>
+                              <span style={{fontSize:11,background:f.tipo==="Complemento"?"rgba(139,92,246,0.15)":"rgba(59,130,246,0.15)",color:f.tipo==="Complemento"?"#A78BFA":"#60A5FA",borderRadius:20,padding:"2px 8px",fontWeight:600}}>{f.tipo}</span>
+                              <span style={{fontSize:11,background:f.estatus==="Cancelada"?"rgba(239,68,68,0.15)":"rgba(16,185,129,0.15)",color:f.estatus==="Cancelada"?"#F87171":"#34D399",borderRadius:20,padding:"2px 8px",fontWeight:600}}>{f.estatus}</span>
                               <span style={{fontSize:14,fontWeight:800,color:f.estatus==="Cancelada"?"var(--text-sec)":"var(--accent)",marginLeft:"auto"}}>{fmt(f.total_con_iva)}</span>
                             </div>
                           </div>
@@ -5479,7 +5495,7 @@ function App() {
         const nextKey=ETAPA_NEXT[p.etapa];
         const nextLabel=ETAPA_NEXT_LABEL[p.etapa];
         return(
-          <div style={{position:"fixed",bottom:0,left:0,right:0,background:"var(--bg-card)",borderTop:"2px solid var(--border)",padding:"18px 20px",boxShadow:"0 -4px 20px #00000060",maxHeight:"62vh",overflowY:"auto",zIndex:100}}>
+          <div style={{position:"fixed",bottom:0,left:0,right:0,background:"var(--bg-overlay)",borderTop:"1px solid var(--glass-border)",borderRadius:"20px 20px 0 0",padding:"18px 20px",boxShadow:"0 -12px 40px rgba(0,0,0,0.6)",maxHeight:"62vh",overflowY:"auto",zIndex:100}}>
             <div style={{maxWidth:700,margin:"0 auto"}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
                 <div>
@@ -5514,7 +5530,7 @@ function App() {
       {selected&&!showForm&&(()=>{
         const c=cliById(selected.clienteId);
         return(
-          <div style={{position:"fixed",bottom:0,left:0,right:0,background:"var(--bg-card)",borderTop:"2px solid var(--border)",padding:"18px 20px",boxShadow:"0 -4px 20px #00000060",maxHeight:"62vh",overflowY:"auto",zIndex:100}}>
+          <div style={{position:"fixed",bottom:0,left:0,right:0,background:"var(--bg-overlay)",borderTop:"1px solid var(--glass-border)",borderRadius:"20px 20px 0 0",padding:"18px 20px",boxShadow:"0 -12px 40px rgba(0,0,0,0.6)",maxHeight:"62vh",overflowY:"auto",zIndex:100}}>
             <div style={{maxWidth:700,margin:"0 auto"}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
                 <div>
@@ -5534,7 +5550,7 @@ function App() {
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                 {selected.confirm!=="confirmado"&&["ov_asignada","fletera_planta"].includes(selected.status)&&<button onClick={()=>confirmar(selected.id)} style={{background:"#16a34a",color:"white",border:"none",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>✓ Confirmar</button>}
                 {NEXT[selected.status]&&<button onClick={()=>advance(selected.id)} style={{background:"var(--accent)",color:"white",border:"none",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>{NEXT_LABEL[selected.status]}</button>}
-                <button onClick={()=>reprogramar(selected.id)} style={{background:"#ef444422",color:"#dc2626",border:"1px solid #fecaca",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>↻ Reprogramar</button>
+                <button onClick={()=>reprogramar(selected.id)} style={{background:"#ef444422",color:"#dc2626",border:"1px solid rgba(239,68,68,0.3)",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>↻ Reprogramar</button>
                 {selected.status==="entregado"&&<button onClick={()=>upd(selected.id,{remision_firmada:!selected.remision_firmada})} style={{background:selected.remision_firmada?"var(--bg-card-alt)":"#7c3aed",color:selected.remision_firmada?"var(--text-tertiary)":"white",border:"none",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>{selected.remision_firmada?"↩ Quitar firma":"✓ Remisión firmada"}</button>}
                 <button onClick={()=>{setLectorOV(selected);setShowLector(true);}} style={{background:"#0891b222",color:"#0891b2",border:"1px solid #0891b244",borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>📄 Leer remisión</button>
                 {selected.folio&&Object.values(procesados).some(r=>r.ovId===selected.id)&&(
@@ -5543,7 +5559,7 @@ function App() {
                   </button>
                 )}
                 <button onClick={()=>{const precioActual=parseFloat(selected.precio_ton)||parseFloat(cliById(selected.clienteId)?.precio_ton)||0;setForm({...selected,precio_ton:precioActual});setShowForm(true);setSelected(null);}} style={{background:"var(--bg-card-alt)",color:"var(--accent)",border:"1px solid var(--border)",borderRadius:8,padding:"9px 16px",fontWeight:600,cursor:"pointer",fontSize:13}}>✏️ Editar</button>
-                <button onClick={()=>deleteOV(selected.id)} style={{background:"#ef444422",color:"#dc2626",border:"1px solid #fecaca",borderRadius:8,padding:"9px 16px",fontWeight:600,cursor:"pointer",fontSize:13}}>🗑 Eliminar</button>
+                <button onClick={()=>deleteOV(selected.id)} style={{background:"#ef444422",color:"#dc2626",border:"1px solid rgba(239,68,68,0.3)",borderRadius:8,padding:"9px 16px",fontWeight:600,cursor:"pointer",fontSize:13}}>🗑 Eliminar</button>
               </div>
             </div>
           </div>
@@ -5552,8 +5568,8 @@ function App() {
 
       {/* OV FORM */}
       {showForm&&!gdEditImages&&(
-        <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:350,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-          <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"92vh",overflowY:"auto"}}>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(4px)",WebkitBackdropFilter:"blur(4px)",zIndex:350,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div className="modal-panel" style={{background:"var(--bg-overlay)",borderRadius:"20px 20px 0 0",border:"1px solid var(--glass-border)",borderBottom:"none",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"92vh",overflowY:"auto"}}>
             <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>{form.id?"Editar OV":"Nueva Orden de Venta"}</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
               <div><label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>No. de OV</label><input value={form.num_ov} onChange={e=>setForm(f=>({...f,num_ov:e.target.value}))} style={inS} placeholder="OV-XXXXX"/></div>
@@ -5703,8 +5719,8 @@ function App() {
 
       {/* CLIENTE FORM */}
       {showCliForm&&(
-        <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-          <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:500,padding:"22px 20px"}}>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(4px)",WebkitBackdropFilter:"blur(4px)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div className="modal-panel" style={{background:"var(--bg-overlay)",borderRadius:"20px 20px 0 0",border:"1px solid var(--glass-border)",borderBottom:"none",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",width:"100%",maxWidth:500,padding:"22px 20px"}}>
             <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>{cliForm.id?"Editar cliente":"Nuevo cliente"}</div>
             {[["nombre","Nombre comercial","text"],["nombre_fiscal","Nombre fiscal (para comprobantes)","text"],["rfc","RFC (opcional)","text"],["ciudad","Ciudad (opcional)","text"],["telefono","Teléfono (opcional)","tel"],["precio_ton","Precio por tonelada ($)","number"],["anticipo","Anticipo inicial ($)","number"]].map(([k,l,t])=>(
               <div key={k} style={{marginBottom:12}}>
@@ -5744,8 +5760,8 @@ function App() {
 
       {/* SOCIO FORM */}
       {showSocioForm&&(
-        <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-          <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:500,padding:"22px 20px"}}>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(4px)",WebkitBackdropFilter:"blur(4px)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div className="modal-panel" style={{background:"var(--bg-overlay)",borderRadius:"20px 20px 0 0",border:"1px solid var(--glass-border)",borderBottom:"none",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",width:"100%",maxWidth:500,padding:"22px 20px"}}>
             <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>{socioForm.id?"Editar socio":"Nuevo socio"}</div>
             {[["nombre","Nombre","text"],["telefono","Teléfono (opcional)","tel"]].map(([k,l,t])=>(
               <div key={k} style={{marginBottom:12}}>
@@ -5763,8 +5779,8 @@ function App() {
 
       {/* NOTA FORM */}
       {showNotaForm&&(
-        <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-          <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"92vh",overflowY:"auto"}}>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(4px)",WebkitBackdropFilter:"blur(4px)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div className="modal-panel" style={{background:"var(--bg-overlay)",borderRadius:"20px 20px 0 0",border:"1px solid var(--glass-border)",borderBottom:"none",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"92vh",overflowY:"auto"}}>
             <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>{notaForm.id?"Editar nota":"Nueva nota"}</div>
             <div style={{marginBottom:12}}>
               <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Nota / recordatorio</label>
@@ -5805,8 +5821,8 @@ function App() {
 
       {/* PROSP FORM */}
       {showProspForm&&(
-        <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-          <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"92vh",overflowY:"auto"}}>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(4px)",WebkitBackdropFilter:"blur(4px)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div className="modal-panel" style={{background:"var(--bg-overlay)",borderRadius:"20px 20px 0 0",border:"1px solid var(--glass-border)",borderBottom:"none",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",width:"100%",maxWidth:600,padding:"22px 20px",maxHeight:"92vh",overflowY:"auto"}}>
             <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>{prospForm.id?"Editar prospecto":"Nuevo prospecto"}</div>
             <div style={{marginBottom:12}}>
               <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Empresa / nombre *</label>
@@ -5859,8 +5875,8 @@ function App() {
         const ivaVal=totalConIVA-sinIVA;
         const formOk=facturaForm.clienteId&&facturaForm.folio_fiscal.trim()&&facturaForm.fecha&&totalConIVA>0;
         return(
-          <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:1200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-            <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:520,padding:"22px 20px",maxHeight:"92vh",overflowY:"auto"}}>
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(4px)",WebkitBackdropFilter:"blur(4px)",zIndex:1200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+            <div className="modal-panel" style={{background:"var(--bg-overlay)",borderRadius:"20px 20px 0 0",border:"1px solid var(--glass-border)",borderBottom:"none",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",width:"100%",maxWidth:520,padding:"22px 20px",maxHeight:"92vh",overflowY:"auto"}}>
               <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>{facturaForm.id?"Editar factura":"Nueva factura"}</div>
               <div style={{marginBottom:12}}>
                 <label style={{fontSize:11,color:"var(--text-tertiary)",display:"block",marginBottom:3}}>Cliente *</label>
@@ -5921,7 +5937,7 @@ function App() {
                         <input type="checkbox" checked={ligado} onChange={e=>{const newLigados=e.target.checked?[...facturaForm.pagos_ligados,key]:facturaForm.pagos_ligados.filter(l=>l!==key);const suma=sumaLigados(hist,newLigados);setFacturaForm(f=>({...f,pagos_ligados:newLigados,...(!montoEditadoManualmente&&{monto_total:String(suma)})}));}}/>
                         <span style={{flex:"0 0 86px",fontSize:12,color:"var(--text-tertiary)"}}>{a.fecha}</span>
                         <span style={{flex:1,fontSize:12,fontWeight:600}}>{fmt(a.monto)}</span>
-                        <span style={{fontSize:10,fontWeight:700,color:ep.estatus==="parcial"?"#b45309":"#c2410c",background:ep.estatus==="parcial"?"#fefce8":"#fff7ed",borderRadius:4,padding:"2px 5px",whiteSpace:"nowrap"}}>{ep.estatus==="parcial"?"🟡 Parcial":"🟠 Pendiente"}</span>
+                        <span style={{fontSize:10,fontWeight:700,color:ep.estatus==="parcial"?"#FBBF24":"#FB923C",background:ep.estatus==="parcial"?"rgba(245,158,11,0.15)":"rgba(249,115,22,0.15)",borderRadius:4,padding:"2px 5px",whiteSpace:"nowrap"}}>{ep.estatus==="parcial"?"🟡 Parcial":"🟠 Pendiente"}</span>
                       </label>
                       );
                     })}
@@ -5948,8 +5964,8 @@ function App() {
         const facsCli=facturas.filter(f=>f.clienteId===verFacturasClienteId);
         const totalEmitido=facsCli.filter(f=>f.estatus!=="Cancelada").reduce((s,f)=>s+(parseFloat(f.total_con_iva)||0),0);
         return(
-          <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-            <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:520,padding:"22px 20px",maxHeight:"88vh",overflowY:"auto"}}>
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(4px)",WebkitBackdropFilter:"blur(4px)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+            <div className="modal-panel" style={{background:"var(--bg-overlay)",borderRadius:"20px 20px 0 0",border:"1px solid var(--glass-border)",borderBottom:"none",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",width:"100%",maxWidth:520,padding:"22px 20px",maxHeight:"88vh",overflowY:"auto"}}>
               <div style={{fontWeight:800,fontSize:17,marginBottom:2}}>📋 Facturas</div>
               <div style={{fontSize:12,color:"var(--text-tertiary)",marginBottom:4}}>{cli.nombre}{cli.rfc?` · RFC: ${cli.rfc}`:""}</div>
               {totalEmitido>0&&<div style={{fontSize:12,color:"var(--accent)",fontWeight:700,marginBottom:14}}>Total emitido: {fmt(totalEmitido)}</div>}
@@ -6016,8 +6032,8 @@ function App() {
           return prec>0&&tot>0?(tot/prec).toFixed(5):"";
         };
         return(
-          <div style={{position:"fixed",inset:0,background:"#00000070",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-            <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:520,padding:"22px 20px",maxHeight:"94vh",overflowY:"auto"}}>
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(4px)",WebkitBackdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+            <div className="modal-panel" style={{background:"var(--bg-overlay)",borderRadius:"20px 20px 0 0",border:"1px solid var(--glass-border)",borderBottom:"none",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",width:"100%",maxWidth:520,padding:"22px 20px",maxHeight:"94vh",overflowY:"auto"}}>
               <div style={{fontWeight:800,fontSize:17,marginBottom:2}}>🧾 Generar comprobante</div>
               <div style={{fontSize:12,color:"var(--text-tertiary)",marginBottom:14}}>{cli.nombre}{cli.rfc?` · RFC: ${cli.rfc}`:""}</div>
 
@@ -6057,7 +6073,7 @@ function App() {
                                 <span>IVA: {fmt(iv)}</span>
                               </div>
                             </div>
-                            <span style={{fontSize:10,fontWeight:700,color:yaFacturado?"#15803d":a._epago.estatus==="parcial"?"#b45309":"#c2410c",background:yaFacturado?"#dcfce7":a._epago.estatus==="parcial"?"#fefce8":"#fff7ed",borderRadius:4,padding:"2px 6px",whiteSpace:"nowrap",marginTop:2}}>{yaFacturado?"Ya facturado":a._epago.estatus==="parcial"?"🟡 Parcial":"🟠 Pendiente"}</span>
+                            <span style={{fontSize:10,fontWeight:700,color:yaFacturado?"#34D399":a._epago.estatus==="parcial"?"#FBBF24":"#FB923C",background:yaFacturado?"rgba(16,185,129,0.15)":a._epago.estatus==="parcial"?"rgba(245,158,11,0.15)":"rgba(249,115,22,0.15)",borderRadius:4,padding:"2px 6px",whiteSpace:"nowrap",marginTop:2}}>{yaFacturado?"Ya facturado":a._epago.estatus==="parcial"?"🟡 Parcial":"🟠 Pendiente"}</span>
                           </div>
                         );
                       })}
@@ -6316,8 +6332,8 @@ function App() {
         };
 
         return (
-          <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-            <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:700,padding:"22px 20px",maxHeight:"90vh",overflowY:"auto"}}>
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(4px)",WebkitBackdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+            <div className="modal-panel" style={{background:"var(--bg-overlay)",borderRadius:"20px 20px 0 0",border:"1px solid var(--glass-border)",borderBottom:"none",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",width:"100%",maxWidth:700,padding:"22px 20px",maxHeight:"90vh",overflowY:"auto"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
                 <div style={{fontWeight:800,fontSize:17}}>📊 Leer chart corporativo</div>
                 <button onClick={cerrarChartLector} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"var(--text-sec)"}}>✕</button>
@@ -6372,7 +6388,7 @@ function App() {
                           )}
                         </div>
                       </div>
-                      {chartError&&<div style={{background:"#ef444422",color:"#dc2626",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:12,border:"1px solid #fecaca"}}>{chartError}</div>}
+                      {chartError&&<div style={{background:"#ef444422",color:"#dc2626",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:12,border:"1px solid rgba(239,68,68,0.3)"}}>{chartError}</div>}
                       <button onClick={leerChart} disabled={!chartFile||!chartPlanta} style={{width:"100%",background:(chartFile&&chartPlanta)?"var(--accent)":"var(--border)",color:"white",border:"none",borderRadius:8,padding:"11px",fontWeight:700,cursor:(chartFile&&chartPlanta)?"pointer":"default",fontSize:14}}>🔍 Analizar con IA</button>
                     </>
                   )}
@@ -6440,8 +6456,8 @@ function App() {
 
       {/* MODAL CALENDARIO DÍAS HÁBILES */}
       {showCalHabiles&&(
-        <div style={{position:"fixed",inset:0,background:"#00000060",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setShowCalHabiles(false);}}>
-          <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:500,padding:"22px 20px 30px",maxHeight:"88vh",overflowY:"auto"}}>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(4px)",WebkitBackdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setShowCalHabiles(false);}}>
+          <div className="modal-panel" style={{background:"var(--bg-overlay)",borderRadius:"20px 20px 0 0",border:"1px solid var(--glass-border)",borderBottom:"none",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",width:"100%",maxWidth:500,padding:"22px 20px 30px",maxHeight:"88vh",overflowY:"auto"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
               <div>
                 <div style={{fontWeight:800,fontSize:16,color:"var(--text-main)"}}>📅 Días hábiles</div>
@@ -6459,8 +6475,8 @@ function App() {
 
       {/* ONEDRIVE IMPORT */}
       {showGDrive&&(
-        <div style={{position:"fixed",inset:0,background:"#00000090",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-          <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,maxHeight:"92vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(4px)",WebkitBackdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div className="modal-panel" style={{background:"var(--bg-overlay)",borderRadius:"20px 20px 0 0",border:"1px solid var(--glass-border)",borderBottom:"none",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",width:"100%",maxWidth:600,maxHeight:"92vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
             <div style={{position:"sticky",top:0,zIndex:10,background:"var(--bg-card)",padding:"22px 20px 12px",borderRadius:"16px 16px 0 0",boxShadow:"0 2px 4px rgba(0,0,0,0.08)"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
                 <div>
@@ -6485,7 +6501,7 @@ function App() {
                   </div>
                 </div>
               )}
-              {gdError&&<div style={{background:"#ef444422",color:"#dc2626",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:8,border:"1px solid #fecaca"}}>{gdError}</div>}
+              {gdError&&<div style={{background:"#ef444422",color:"#dc2626",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:8,border:"1px solid rgba(239,68,68,0.3)"}}>{gdError}</div>}
               {gdStep==="folders"&&<div style={{fontSize:12,color:"var(--text-sec)"}}>Selecciona la carpeta del cliente:</div>}
               {gdStep==="files"&&(()=>{
                 const _gce=gdGroups.map(g=>({g,info:gdProcesadoInfo(g)}));
@@ -6586,7 +6602,7 @@ function App() {
                     <button onClick={()=>setGdFiltro("todas")} style={{flex:1,background:gdFiltro==="todas"?"var(--accent)":"var(--bg-card-alt)",color:gdFiltro==="todas"?"white":"var(--text-sec)",border:`1px solid ${gdFiltro==="todas"?"var(--accent)":"var(--border)"}`,borderRadius:6,padding:"6px 10px",fontSize:12,fontWeight:700,cursor:"pointer"}}>Todas</button>
                   </div>
                   {gdDupFiles.length>0&&(
-                    <div style={{background:"#ef444415",border:"1px solid #fecaca",borderRadius:8,padding:"10px 12px",marginBottom:12}}>
+                    <div style={{background:"#ef444415",border:"1px solid rgba(239,68,68,0.3)",borderRadius:8,padding:"10px 12px",marginBottom:12}}>
                       <div style={{display:"flex",alignItems:"center",gap:8}}>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{fontSize:12,fontWeight:700,color:"#dc2626"}}>⚠ {gdDupFiles.length} archivo{gdDupFiles.length!==1?"s":""} duplicado{gdDupFiles.length!==1?"s":""} detectado{gdDupFiles.length!==1?"s":""}</div>
@@ -6880,8 +6896,8 @@ function App() {
       {gdEmparejarManual&&(()=>{
         const candidatos=gdCandidatosEmparejar(gdEmparejarManual);
         return (
-        <div style={{position:"fixed",inset:0,background:"#00000090",zIndex:350,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setGdEmparejarManual(null);}}>
-          <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:600,maxHeight:"80vh",display:"flex",flexDirection:"column",overflow:"hidden",padding:"20px"}}>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(4px)",WebkitBackdropFilter:"blur(4px)",zIndex:350,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setGdEmparejarManual(null);}}>
+          <div className="modal-panel" style={{background:"var(--bg-overlay)",borderRadius:"20px 20px 0 0",border:"1px solid var(--glass-border)",borderBottom:"none",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",width:"100%",maxWidth:600,maxHeight:"80vh",display:"flex",flexDirection:"column",overflow:"hidden",padding:"20px"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
               <div style={{fontWeight:800,fontSize:16}}>🔗 Emparejar imagen suelta</div>
               <button onClick={()=>setGdEmparejarManual(null)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"var(--text-sec)"}}>✕</button>
@@ -6922,7 +6938,7 @@ function App() {
           </div>
         );
         return(
-          <div style={{position:"fixed",inset:0,background:"#00000088",zIndex:610,display:"flex",alignItems:"center",justifyContent:"center",padding:mobile?0:16}}>
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(4px)",WebkitBackdropFilter:"blur(4px)",zIndex:610,display:"flex",alignItems:"center",justifyContent:"center",padding:mobile?0:16}}>
             <div style={{background:"var(--bg-card)",borderRadius:mobile?0:16,width:mobile?"100%":"90vw",height:mobile?"100%":"90vh",maxWidth:1100,display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 8px 40px #000000a0"}}>
               {/* Header */}
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 18px",borderBottom:"1px solid var(--border)",flexShrink:0}}>
@@ -6960,8 +6976,8 @@ function App() {
 
       {/* DIÁLOGO (confirm / prompt / alert) — bottom-sheet, reemplaza los nativos del navegador */}
       {dialog&&(
-        <div onClick={e=>{if(e.target===e.currentTarget)resolveDialog(dialog.kind==="prompt"?null:dialog.kind==="alert"?undefined:false);}} style={{position:"fixed",inset:0,background:"#00000070",zIndex:9000,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-          <div style={{background:"var(--bg-card)",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:480,padding:"22px 20px calc(22px + env(safe-area-inset-bottom, 0px))",maxHeight:"80vh",overflowY:"auto",boxShadow:"0 -4px 24px #00000060"}}>
+        <div onClick={e=>{if(e.target===e.currentTarget)resolveDialog(dialog.kind==="prompt"?null:dialog.kind==="alert"?undefined:false);}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(4px)",WebkitBackdropFilter:"blur(4px)",zIndex:9000,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div className="modal-panel" style={{background:"var(--bg-overlay)",borderRadius:"20px 20px 0 0",border:"1px solid var(--glass-border)",borderBottom:"none",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",width:"100%",maxWidth:480,padding:"22px 20px calc(22px + env(safe-area-inset-bottom, 0px))",maxHeight:"80vh",overflowY:"auto",boxShadow:"0 -4px 24px #00000060"}}>
             <div style={{fontSize:14,color:"var(--text-main)",lineHeight:1.5,whiteSpace:"pre-wrap",marginBottom:16}}>{dialog.message}</div>
             {dialog.kind==="prompt"&&(
               <input
