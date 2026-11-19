@@ -46,36 +46,44 @@
   <style>
     :root {
       color-scheme: dark;
-      /* ── Tokens: dark industrial premium ─────────────────── */
-      --bg-base: #0A0A0B;
-      --bg-surface: #111113;
-      --bg-elevated: #18181B;
-      --bg-overlay: #1C1C1F;
-      --glass-bg: rgba(255,255,255,0.04);
-      --glass-bg-hover: rgba(255,255,255,0.07);
-      --glass-border: rgba(255,255,255,0.08);
-      --glass-border-hover: rgba(255,255,255,0.14);
-      --glass-shadow: 0 1px 3px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.3);
-      --text-primary: rgba(255,255,255,0.95);
-      --text-secondary: rgba(255,255,255,0.55);
-      --text-tertiary: rgba(255,255,255,0.30);
+      /* ── Tokens: iOS dark glassmorphism v2 ───────────────── */
+      --bg-base: #000000;
+      --bg-gradient: radial-gradient(ellipse at 30% 0%, #0a1f14 0%, #040d08 60%, #000000 100%);
+      --bg-surface: rgba(255, 255, 255, 0.05);
+      --bg-elevated: rgba(255, 255, 255, 0.08);
+      --bg-modal: rgba(15, 25, 20, 0.95);
+      --bg-overlay: var(--bg-modal);
+      --glass-bg: rgba(255, 255, 255, 0.06);
+      --glass-bg-hover: rgba(255, 255, 255, 0.09);
+      --glass-border: rgba(255, 255, 255, 0.1);
+      --glass-border-hover: rgba(255, 255, 255, 0.16);
+      --glass-border-accent: rgba(16, 185, 129, 0.25);
+      --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+      --glass-shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      --text-primary: rgba(255, 255, 255, 0.95);
+      --text-secondary: rgba(255, 255, 255, 0.55);
+      --text-tertiary: rgba(255, 255, 255, 0.3);
       --text-disabled: rgba(255,255,255,0.18);
       --accent: #10B981;
-      --accent-dim: rgba(16,185,129,0.15);
-      --accent-glow: rgba(16,185,129,0.25);
+      --accent-glow: rgba(16, 185, 129, 0.2);
+      --accent-muted: rgba(16, 185, 129, 0.12);
       --amber: #F59E0B;
-      --amber-dim: rgba(245,158,11,0.15);
+      --amber-muted: rgba(245, 158, 11, 0.12);
       --danger: #EF4444;
-      --danger-dim: rgba(239,68,68,0.15);
-      --sidebar-bg: #0D0D0F;
-      --sidebar-border: rgba(255,255,255,0.06);
+      --danger-muted: rgba(239, 68, 68, 0.12);
+      --blue-muted: rgba(59, 130, 246, 0.12);
+      --accent-dim: var(--accent-muted);
+      --amber-dim: var(--amber-muted);
+      --danger-dim: var(--danger-muted);
+      --sidebar-bg: rgba(0, 0, 0, 0.6);
+      --sidebar-border: rgba(16, 185, 129, 0.12);
       --sidebar-item-hover: rgba(255,255,255,0.05);
       --sidebar-item-active: rgba(16,185,129,0.12);
       --divider: rgba(255,255,255,0.06);
-      --radius-sm: 8px;
-      --radius-md: 12px;
-      --radius-lg: 16px;
-      --radius-xl: 20px;
+      --radius-sm: 10px;
+      --radius-md: 14px;
+      --radius-lg: 18px;
+      --radius-xl: 22px;
 
       /* Alias del diseño anterior → apuntan a los tokens nuevos */
       --glass:        var(--glass-bg);
@@ -84,7 +92,7 @@
       --fg:           var(--text-primary);
       --fg-mid:       var(--text-secondary);
       --fg-dim:       var(--text-tertiary);
-      --blue:         var(--accent);
+      --blue:         #3B82F6;
       --blue-glow:    var(--accent-glow);
       --gold:         var(--amber);
       --gold-glow:    var(--amber-dim);
@@ -96,13 +104,15 @@
       --radius:       var(--radius-lg);
       --shadow:       var(--glass-shadow);
       /* Variables heredadas: la app las usa en ~930 estilos inline */
-      --bg-main: var(--bg-base); --bg-card: var(--bg-surface); --bg-card-alt: var(--bg-elevated); --bg-zebra: #0E0E10;
+      /* --bg-card casi opaco: lo usan modales, menús y hojas inferiores (las tarjetas .glass-card lo sobreescriben) */
+      --bg-main: var(--bg-base); --bg-card: var(--bg-modal); --bg-card-alt: var(--bg-elevated); --bg-zebra: rgba(255,255,255,0.025);
       --border: rgba(255,255,255,0.08); --border-soft: rgba(255,255,255,0.05);
       --text-main: var(--text-primary); --text-sec: var(--text-secondary); --text-muted: var(--text-tertiary);
       --accent-soft: var(--accent-dim);
     }
     body.light{
       color-scheme: light;
+      --bg-gradient:#F8FAFC; --bg-modal:#FFFFFF; --bg-card:#FFFFFF; --bg-card-alt:#F1F5F9;
       --bg-base:#F8FAFC; --bg-surface:#FFFFFF; --bg-elevated:#F1F5F9; --bg-overlay:#FFFFFF;
       --glass-bg:#FFFFFF; --glass-bg-hover:#F1F5F9; --glass-border:#E2E8F0; --glass-border-hover:#CBD5E1;
       --glass-shadow: 0 1px 4px rgba(15,23,42,.08);
@@ -125,7 +135,8 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
 
-    .app-shell { background: var(--bg-base); color: var(--text-primary); }
+    body.dark, body.dark #root { background: #000000; }
+    .app-shell { background: var(--bg-gradient) !important; background-attachment: fixed !important; min-height: 100vh; color: var(--text-primary); }
 
     /* Sidebar: visible solo en escritorio; en celular se usan las pestañas horizontales */
     .sidebar { display:none; }
@@ -137,7 +148,8 @@
         position:fixed; top:0; left:0; bottom:0; width:240px; z-index:150;
       }
     }
-    .sidebar { background: var(--sidebar-bg); border-right: 1px solid var(--sidebar-border); }
+    .sidebar { background: rgba(0, 8, 4, 0.75) !important; backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border-right: 1px solid rgba(16, 185, 129, 0.12); box-shadow: 2px 0 20px rgba(0, 0, 0, 0.6); }
+    body.light .sidebar { background: var(--sidebar-bg) !important; border-right-color: var(--sidebar-border); box-shadow: none; }
     .sidebar-brand { display:flex; align-items:center; gap:12px; padding:22px 18px 18px; border-bottom:1px solid var(--sidebar-border); }
     .sidebar-brand-icon { width:40px; height:40px; border-radius:var(--radius-md); display:flex; align-items:center; justify-content:center; font-size:20px; background:var(--accent-dim); }
     .sidebar-brand-name { font-weight:700; font-size:15px; color:var(--text-primary); }
@@ -147,7 +159,7 @@
     .nav-item { display:flex; align-items:center; gap:10px; padding:9px 12px; font-size:13px; font-weight:400; cursor:pointer; }
     .nav-item { color: var(--text-secondary); border-left: 2px solid transparent; border-radius: 8px; margin: 1px 8px; width: calc(100% - 16px); transition: background 0.15s, color 0.15s; }
     .nav-item:hover { background: var(--sidebar-item-hover); color: var(--text-primary); }
-    .nav-item.active { background: var(--sidebar-item-active); color: var(--accent); font-weight: 500; border-left-color: var(--accent); }
+    .nav-item.active { background: linear-gradient(90deg, rgba(16, 185, 129, 0.18), rgba(16, 185, 129, 0.05)) !important; color: #10B981 !important; font-weight: 500; border-left: 2px solid #10B981; }
     .nav-icon { width:20px; text-align:center; font-size:15px; }
     .nav-badge { margin-left:auto; background:var(--danger); color:#fff; font-size:10px; font-weight:700; border-radius:10px; padding:1px 7px; }
     .sidebar-footer { padding:14px; border-top:1px solid var(--sidebar-border); }
@@ -177,13 +189,59 @@
     /* Tarjetas reales de la app (className="glass-card"). El borde se dibuja con
        sombra inset para no pisar los bordes de color (borderLeft/borderTop) de cada tarjeta. */
     .glass-card { background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: var(--radius-lg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: var(--glass-shadow); }
+    /* El borde va sin !important para que los borderLeft de color inline (estatus) sigan ganando en su lado. */
     .glass-card {
       background: var(--glass-bg) !important;
       border-radius: var(--radius-lg) !important;
-      box-shadow: var(--glass-shadow), inset 0 0 0 1px var(--glass-border) !important;
-      transition: background .15s, box-shadow .15s;
+      box-shadow: var(--glass-shadow) !important;
+      transition: background .15s, border-color .15s;
     }
-    .glass-card:hover { box-shadow: var(--glass-shadow), inset 0 0 0 1px var(--glass-border-hover) !important; }
+    .glass-card:hover { background: var(--glass-bg-hover) !important; border-color: var(--glass-border-hover); }
+
+    /* ── Vista "Hoy" ─────────────────────────────────────────── */
+    .hoy-tile {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: var(--radius-md);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+      padding: 16px 18px;
+    }
+    .hoy-tile-label { font-size: 11px; color: var(--text-tertiary); font-weight: 500; letter-spacing: 0.3px; margin-bottom: 6px; }
+    .hoy-tile-value { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; line-height: 1; }
+    .hoy-alerta-anticipo {
+      background: rgba(239, 68, 68, 0.07); border: 1px solid rgba(239, 68, 68, 0.2);
+      border-radius: var(--radius-md); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      padding: 14px 16px; cursor: pointer; grid-column: 1 / -1;
+    }
+    .hoy-section-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+    .hoy-section-title { font-weight: 600; font-size: 15px; color: var(--text-primary); }
+    .hoy-section-date { font-size: 12px; color: var(--text-tertiary); }
+    .hoy-ok {
+      background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.2);
+      border-radius: var(--radius-md); color: #34D399; padding: 12px 16px; font-weight: 500; font-size: 13px;
+    }
+    .hoy-item {
+      background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: var(--radius-md); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); padding: 14px 16px;
+      transition: background .15s, border-color .15s;
+    }
+    .hoy-item:hover { background: rgba(255, 255, 255, 0.07); border-color: rgba(255, 255, 255, 0.12); }
+    .hoy-espera { background: rgba(245, 158, 11, 0.07) !important; border: 1px solid rgba(245, 158, 11, 0.2); border-radius: var(--radius-md) !important; }
+    .hoy-espera:hover { background: rgba(245, 158, 11, 0.11) !important; border-color: rgba(245, 158, 11, 0.3); }
+    .hoy-tag { border-radius: 6px; font-size: 10px; font-weight: 600; padding: 2px 7px; border: 1px solid transparent; letter-spacing: .3px; }
+    .hoy-tag--prospecto { background: rgba(59, 130, 246, 0.15); color: #93C5FD; border-color: rgba(59, 130, 246, 0.25); }
+    .hoy-tag--nota { background: rgba(255, 255, 255, 0.08); color: var(--text-secondary); border-color: rgba(255, 255, 255, 0.12); }
+    .hoy-tag--amber { background: rgba(245, 158, 11, 0.12); color: #FCD34D; border-color: rgba(245, 158, 11, 0.25); }
+    .hoy-tag--green { background: rgba(16, 185, 129, 0.12); color: #34D399; border-color: rgba(16, 185, 129, 0.25); }
+    .hoy-tag--blue { background: rgba(59, 130, 246, 0.12); color: #93C5FD; border-color: rgba(59, 130, 246, 0.25); }
+    .hoy-tag--red { background: rgba(239, 68, 68, 0.12); color: #FCA5A5; border-color: rgba(239, 68, 68, 0.25); }
+    .hoy-listo { background: rgba(245, 158, 11, 0.15); color: #FCD34D; border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 3px 10px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .btn-ver { background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; font-weight: 600; font-size: 13px; padding: 6px 14px; cursor: pointer; flex-shrink: 0; transition: background .15s; }
+    .btn-ver:hover { background: rgba(16, 185, 129, 0.25); }
+    .btn-ov { background: linear-gradient(135deg, #10B981, #059669); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35); border: none; color: #fff; border-radius: 8px; padding: 8px 14px; font-weight: 700; cursor: pointer; font-size: 13px; }
+    .btn-ov:hover { box-shadow: 0 6px 18px rgba(16, 185, 129, 0.5); }
+    body.light .hoy-tile, body.light .hoy-item { background: #FFFFFF; border-color: #E2E8F0; box-shadow: 0 1px 4px rgba(15,23,42,.08); }
 
     /* KPI tiles de la fila superior */
     .kpi-row > div,
@@ -208,7 +266,7 @@
     tbody tr { transition: background .15s; }
 
     /* Encabezado superior */
-    .app-header { background: rgba(10,10,11,0.85) !important; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid var(--divider) !important; box-shadow: none !important; }
+    .app-header { background: rgba(0, 10, 6, 0.85) !important; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid rgba(16, 185, 129, 0.15) !important; box-shadow: 0 1px 0 rgba(16, 185, 129, 0.1), 0 4px 24px rgba(0, 0, 0, 0.5) !important; }
     .topbar, header, .header {
       background: rgba(10,10,11,0.85) !important;
       border-bottom: 1px solid var(--divider) !important;
@@ -218,7 +276,7 @@
     }
 
     /* Barra de pestañas (celular) */
-    .nav-tabs-bar { background: rgba(10,10,11,0.85) !important; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid var(--divider) !important; box-shadow: none !important; }
+    .nav-tabs-bar { background: rgba(0, 10, 6, 0.85) !important; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid var(--divider) !important; box-shadow: none !important; }
     .nav-tab { background:none; border:none; padding:12px 14px; cursor:pointer; font-size:13px; font-weight:500; white-space:nowrap; flex-shrink:0; transition: color .15s, border-color .15s; }
     .nav-tab { color: var(--text-secondary); border-bottom: 2px solid transparent; }
     .nav-tab:hover { color: var(--text-primary); }
@@ -286,7 +344,9 @@
       box-shadow: 0 0 0 3px var(--accent-glow) !important;
     }
     input::placeholder, textarea::placeholder { color: var(--text-disabled); }
-    select option { background: var(--bg-elevated); color: var(--text-primary); }
+    /* Opciones nativas: necesitan color sólido (un rgba translúcido se ve blanco en Windows) */
+    select option { background: #0F1A15; color: var(--text-primary); }
+    body.light select option { background: #FFFFFF; }
 
     /* Modales */
     .modal-content, .modal-panel { background: var(--bg-overlay); border: 1px solid var(--glass-border); border-radius: var(--radius-xl); box-shadow: 0 24px 60px rgba(0,0,0,0.6); }
@@ -303,8 +363,8 @@
 </head>
 <body>
 <script>
-  localStorage.removeItem("tema"); localStorage.removeItem("tema_v2");
-  document.body.className = localStorage.getItem("tema_v3") || "dark";
+  localStorage.removeItem("tema"); localStorage.removeItem("tema_v2"); localStorage.removeItem("tema_v3");
+  document.body.className = localStorage.getItem("tema_v4") || "dark";
   // Limpiar token de Google Drive expirado antes de que cualquier código lo use.
   // Un token expirado en localStorage puede provocar que gdTrySilentRenew() cuelgue
   // la inicialización si algo lo invoca antes de que Firebase esté listo.
@@ -503,7 +563,7 @@ function ImageViewer({images}){
   };
   const onTE=()=>{pinch.current=null;};
 
-  const btnS={background:"#2a2a2a",color:"#e0e0e0",border:"1px solid #444",borderRadius:6,padding:"5px 11px",cursor:"pointer",fontSize:13,fontWeight:700};
+  const btnS={background:"rgba(255,255,255,0.08)",color:"#e0e0e0",border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,padding:"5px 11px",cursor:"pointer",fontSize:13,fontWeight:700};
   return(
     <div style={{display:"flex",flexDirection:"column",height:"100%",background:"#0d0d0d"}}>
       {images.length>1&&(
@@ -1363,7 +1423,7 @@ function App() {
   });
   const [authUser,setAuthUser]       = useState(null);
   const [authReady,setAuthReady]     = useState(false);
-  const [tema,setTema]               = useState(()=>localStorage.getItem("tema_v3")||"dark");
+  const [tema,setTema]               = useState(()=>localStorage.getItem("tema_v4")||"dark");
   const [dbReady,setDbReady]         = useState(!!window.__dbReady);
   const [clientes,setClientes]       = useState([]);
   const [ovs,setOVs]                 = useState([]);
@@ -1564,7 +1624,7 @@ function App() {
 
   useEffect(()=>{
     document.body.className=tema;
-    localStorage.setItem("tema_v3",tema);
+    localStorage.setItem("tema_v4",tema);
   },[tema]);
 
   const procesarArchivoChart = (file) => {
@@ -3764,7 +3824,7 @@ function App() {
   const userInitials = isAdmin ? "AE" : userName.slice(0,2).toUpperCase();
 
   return (
-    <div className="app-shell" style={{fontFamily:"'Inter','Segoe UI',system-ui,sans-serif",background:"transparent",minHeight:"100vh",color:"var(--text-main)",paddingBottom:(selected||selectedProsp)?380:40}}>
+    <div className="app-shell" style={{fontFamily:"'Inter','Segoe UI',system-ui,sans-serif",minHeight:"100vh",color:"var(--text-main)",paddingBottom:(selected||selectedProsp)?380:40}}>
 
       {/* SIDEBAR — solo escritorio (ver media query .sidebar) */}
       <div className="sidebar">
@@ -3815,7 +3875,7 @@ function App() {
         <div style={{display:"flex",gap:8}}>
           <button onClick={()=>exportExcel("")} style={{background:"#16a34a",color:"white",border:"none",borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13}}>⬇ Excel</button>
           <div style={{position:"relative"}}>
-            <button onClick={()=>setShowOVMenu(v=>!v)} style={{background:"#e63946",color:"white",border:"none",borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13}}>+ OV ▾</button>
+            <button onClick={()=>setShowOVMenu(v=>!v)} className="btn-ov">+ OV ▾</button>
             {showOVMenu&&(
               <>
                 <div style={{position:"fixed",inset:0,zIndex:199}} onClick={()=>setShowOVMenu(false)}/>
@@ -3848,25 +3908,25 @@ function App() {
         {/* KPIs */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:18}}>
           {[
-            {l:"Por confirmar mañana",v:totales.porConf,           a:totales.porConf>0?"#d97706":"#16a34a"},
-            {l:"Sin cliente asignado",v:totales.sinCli,            a:totales.sinCli>0?"#0891b2":"#16a34a"},
-            {l:"Sin remisión",        v:totales.sinRemision,        a:totales.sinRemision>0?"#d97706":"#16a34a"},
-            {l:"Ton entregadas",      v:fmtT(totales.ton),      a:"var(--accent)"},
-            {l:"Valor entregado",     v:fmt(totales.entVal),    a:"#2563eb"},
-            {l:"Saldo neto clientes", v:fmt(totales.saldo),     a:totales.saldo>=0?"#16a34a":"#ef4444"},
+            {l:"Por confirmar mañana",v:totales.porConf,           a:totales.porConf>0?"var(--amber)":"var(--text-primary)"},
+            {l:"Sin cliente asignado",v:totales.sinCli,            a:totales.sinCli>0?"var(--amber)":"var(--text-primary)"},
+            {l:"Sin remisión",        v:totales.sinRemision,        a:totales.sinRemision>0?"var(--amber)":"var(--text-primary)"},
+            {l:"Ton entregadas",      v:fmtT(totales.ton),      a:"var(--text-primary)"},
+            {l:"Valor entregado",     v:fmt(totales.entVal),    a:"#34D399"},
+            {l:"Saldo neto clientes", v:fmt(totales.saldo),     a:totales.saldo>=0?"#34D399":"#FCA5A5"},
           ].map(c=>(
-            <div key={c.l} className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"13px 15px",boxShadow:"0 1px 4px #00000040",borderLeft:`4px solid ${c.a}`}}>
-              <div style={{fontSize:11,color:"var(--text-tertiary)",marginBottom:4}}>{c.l}</div>
-              <div style={{fontWeight:800,fontSize:18,color:c.a}}>{c.v}</div>
+            <div key={c.l} className="hoy-tile">
+              <div className="hoy-tile-label">{c.l}</div>
+              <div className="hoy-tile-value" style={{color:c.a}}>{c.v}</div>
             </div>
           ))}
           {/* ALERTA ANTICIPO BAJO */}
           {(totales.anticipoBajo.length>0||totales.adeudos.length>0)&&(
-            <div onClick={()=>setTab("clientes")} style={{background:"#ef444422",borderRadius:12,padding:"13px 15px",boxShadow:"0 1px 4px #00000040",borderLeft:"4px solid #ef4444",cursor:"pointer",gridColumn:"1/-1"}}>
-              <div style={{fontSize:11,color:"#ef4444",marginBottom:4,fontWeight:700}}>⚠️ Anticipo bajo — toca para ver</div>
+            <div onClick={()=>setTab("clientes")} className="hoy-alerta-anticipo">
+              <div style={{fontSize:11,color:"#FCA5A5",marginBottom:8,fontWeight:600,letterSpacing:.3}}>⚠️ Anticipo bajo — toca para ver</div>
               <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                {totales.adeudos.map(c=><span key={c.id} style={{background:"var(--danger-dim)",color:"#F87171",borderRadius:20,padding:"3px 10px",fontSize:12,fontWeight:700}}>🔴 {c.nombre}: adeuda {fmt(-c.saldo)}</span>)}
-                {totales.anticipoBajo.map(c=><span key={c.id} style={{background:"var(--amber-dim)",color:"#FBBF24",borderRadius:20,padding:"3px 10px",fontSize:12,fontWeight:700}}>🟠 {c.nombre}: {fmt(c.saldo)} restante</span>)}
+                {totales.adeudos.map(c=><span key={c.id} style={{background:"rgba(239,68,68,0.12)",color:"#FCA5A5",border:"1px solid rgba(239,68,68,0.25)",borderRadius:8,padding:"3px 10px",fontSize:12,fontWeight:600}}>🔴 {c.nombre}: adeuda {fmt(-c.saldo)}</span>)}
+                {totales.anticipoBajo.map(c=><span key={c.id} style={{background:"rgba(245,158,11,0.12)",color:"#FCD34D",border:"1px solid rgba(245,158,11,0.25)",borderRadius:8,padding:"3px 10px",fontSize:12,fontWeight:600}}>🟠 {c.nombre}: {fmt(c.saldo)} restante</span>)}
               </div>
             </div>
           )}
@@ -3958,14 +4018,13 @@ function App() {
           <>
             {/* SECCIÓN 1 — CONFIRMAR MAÑANA */}
             <div style={{marginBottom:22}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,paddingBottom:8,borderBottom:"2px solid #fde68a"}}>
-                <div style={{background:"#d97706",borderRadius:4,width:4,height:20,flexShrink:0}}/>
-                <div style={{fontWeight:800,fontSize:14,color:"#fbbf24"}}>{new Date().getDay()===6?"Confirmar cargas del lunes":"Confirmar cargas de mañana"}</div>
-                <div style={{fontSize:12,color:"#f59e0b",marginLeft:2}}>— {diaLabel(nextWorkdayISO())}</div>
-                {porConfirmar.length>0&&<span style={{marginLeft:"auto",background:"#d9770622",color:"#d97706",borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700}}>{porConfirmar.length}</span>}
+              <div className="hoy-section-head">
+                <div className="hoy-section-title">{new Date().getDay()===6?"Confirmar cargas del lunes":"Confirmar cargas de mañana"}</div>
+                <div className="hoy-section-date">{diaLabel(nextWorkdayISO())}</div>
+                {porConfirmar.length>0&&<span className="hoy-tag hoy-tag--amber" style={{marginLeft:"auto",fontSize:12}}>{porConfirmar.length}</span>}
               </div>
               {porConfirmar.length===0
-                ?<div style={{background:"#16a34a22",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#4ade80",fontWeight:600}}>✓ Todo en orden</div>
+                ?<div className="hoy-ok">✓ Todo en orden</div>
                 :<div style={{display:"flex",flexDirection:"column",gap:10}}>
                   {porConfirmar.map(p=>{
                     const c=cliById(p.clienteId);
@@ -3995,14 +4054,13 @@ function App() {
 
             {/* SECCIÓN 2 — ENTREGAS DE HOY */}
             <div style={{marginBottom:22}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,paddingBottom:8,borderBottom:"2px solid #2563eb44"}}>
-                <div style={{background:"#2563eb",borderRadius:4,width:4,height:20,flexShrink:0}}/>
-                <div style={{fontWeight:800,fontSize:14,color:"#60a5fa"}}>Entregas de hoy</div>
-                <div style={{fontSize:12,color:"#3b82f6",marginLeft:2}}>— {diaLabel(todayISO())}</div>
-                {entregasHoy.length>0&&<span style={{marginLeft:"auto",background:"var(--accent-soft)",color:"#2563eb",borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700}}>{entregasHoy.length}</span>}
+              <div className="hoy-section-head">
+                <div className="hoy-section-title">Entregas de hoy</div>
+                <div className="hoy-section-date">{diaLabel(todayISO())}</div>
+                {entregasHoy.length>0&&<span className="hoy-tag hoy-tag--blue" style={{marginLeft:"auto",fontSize:12}}>{entregasHoy.length}</span>}
               </div>
               {entregasHoy.length===0
-                ?<div style={{background:"#16a34a22",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#4ade80",fontWeight:600}}>✓ Todo en orden</div>
+                ?<div className="hoy-ok">✓ Todo en orden</div>
                 :<div style={{display:"flex",flexDirection:"column",gap:10}}>
                   {entregasHoy.map(p=>{
                     const c=cliById(p.clienteId);
@@ -4029,19 +4087,18 @@ function App() {
 
             {/* SECCIÓN 3 — EN ESPERA DE SALIDA */}
             <div style={{marginBottom:8}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,paddingBottom:8,borderBottom:"2px solid #fde68a"}}>
-                <div style={{background:"#b45309",borderRadius:4,width:4,height:20,flexShrink:0}}/>
-                <div style={{fontWeight:800,fontSize:14,color:"#fbbf24"}}>En espera de salida</div>
-                {enEspera.length>0&&<span style={{marginLeft:"auto",background:"#d9770622",color:"#f59e0b",borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700}}>{enEspera.length}</span>}
+              <div className="hoy-section-head">
+                <div className="hoy-section-title">En espera de salida</div>
+                {enEspera.length>0&&<span className="hoy-tag hoy-tag--amber" style={{marginLeft:"auto",fontSize:12}}>{enEspera.length}</span>}
               </div>
               {enEspera.length===0
-                ?<div style={{background:"#16a34a22",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#4ade80",fontWeight:600}}>✓ Todo en orden</div>
+                ?<div className="hoy-ok">✓ Todo en orden</div>
                 :<div style={{display:"flex",flexDirection:"column",gap:10}}>
                   {enEspera.map(p=>{
                     const c=cliById(p.clienteId);
                     const dias=Math.max(0,Math.floor((new Date(todayISO()+"T12:00")-new Date((p.fecha_carga||todayISO())+"T12:00"))/86400000));
                     return(
-                      <div key={p.id} className="glass-card" style={{background:"var(--bg-card)",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px #00000040",borderLeft:"4px solid #b45309"}}>
+                      <div key={p.id} className="glass-card hoy-espera" style={{padding:"14px 16px"}}>
                         <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                           <div>
                             <div style={{fontWeight:800,fontSize:13,color:"#7c3aed"}}>{p.num_ov}</div>
@@ -4049,7 +4106,7 @@ function App() {
                             <div style={{fontSize:11,color:"var(--text-sec)",marginTop:2}}>🏭 cargó: {diaLabel(p.fecha_carga)}</div>
                           </div>
                           <div style={{textAlign:"right",display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6}}>
-                            <Badge status={p.status}/>
+                            {p.status==="listo_para_envio"?<span className="hoy-listo">{getS(p.status).label}</span>:<Badge status={p.status}/>}
                             <span style={{fontSize:12,fontWeight:700,color:dias>=2?"#dc2626":dias===1?"#d97706":"var(--text-tertiary)"}}>{dias===0?"Hoy mismo":dias===1?"1 día en espera":`${dias} días en espera`}</span>
                           </div>
                         </div>
@@ -4062,27 +4119,26 @@ function App() {
 
             {/* SECCIÓN 4 — AVISOS DEL DÍA */}
             <div style={{marginBottom:8}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,paddingBottom:8,borderBottom:"2px solid rgba(239,68,68,0.3)"}}>
-                <div style={{background:"#dc2626",borderRadius:4,width:4,height:20,flexShrink:0}}/>
-                <div style={{fontWeight:800,fontSize:14,color:"#dc2626"}}>Avisos del día</div>
-                {(notasUrgentes.length+prospSeguimientoHoy.length)>0&&<span style={{marginLeft:"auto",background:"#ef444422",color:"#dc2626",borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700}}>{notasUrgentes.length+prospSeguimientoHoy.length}</span>}
+              <div className="hoy-section-head">
+                <div className="hoy-section-title">Avisos del día</div>
+                {(notasUrgentes.length+prospSeguimientoHoy.length)>0&&<span className="hoy-tag hoy-tag--red" style={{marginLeft:"auto",fontSize:12}}>{notasUrgentes.length+prospSeguimientoHoy.length}</span>}
               </div>
               {notasUrgentes.length===0&&prospSeguimientoHoy.length===0
-                ?<div style={{background:"#16a34a22",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#4ade80",fontWeight:600}}>✓ Todo en orden</div>
+                ?<div className="hoy-ok">✓ Todo en orden</div>
                 :<div style={{display:"flex",flexDirection:"column",gap:8}}>
                   {notasUrgentes.map(n=>{
                     const vencida=(n.fecha_vencimiento||"")<todayISO();
                     const pr=PRIORIDAD[n.prioridad]||PRIORIDAD.media;
                     const c=n.clienteId?cliById(n.clienteId):null;
                     return(
-                      <div key={n.id} style={{background:vencida?"#ef444422":"#d9770622",borderRadius:12,padding:"12px 14px",borderLeft:`4px solid ${vencida?"#ef4444":"#d97706"}`}}>
+                      <div key={n.id} className="hoy-item">
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
                           <div style={{flex:1}}>
-                            <div style={{fontSize:10,fontWeight:700,color:"var(--text-sec)",textTransform:"uppercase",marginBottom:2}}>📝 Nota</div>
+                            <div style={{marginBottom:6}}><span className="hoy-tag hoy-tag--nota">NOTA</span></div>
                             <div style={{fontWeight:700,fontSize:13,color:"var(--text-main)"}}>{n.texto}</div>
                             <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"center"}}>
                               <span style={{background:pr.bg,color:pr.color,borderRadius:20,padding:"1px 7px",fontSize:11,fontWeight:700}}>{pr.label}</span>
-                              <span style={{fontSize:11,color:vencida?"#dc2626":"#d97706",fontWeight:700}}>{vencida?"⚠ Vencida:":"🔔 Hoy:"} {diaLabel(n.fecha_vencimiento)}</span>
+                              <span style={{fontSize:11,color:vencida?"#FCA5A5":"#FCD34D",fontWeight:600}}>{vencida?"⚠ Vencida:":"🔔 Hoy:"} {diaLabel(n.fecha_vencimiento)}</span>
                               {c&&<span style={{fontSize:11,color:"#7c3aed"}}>👤 {c.nombre}</span>}
                               {n.num_ov&&<span style={{fontSize:11,color:"var(--text-tertiary)"}}>OV: {n.num_ov}</span>}
                             </div>
@@ -4099,18 +4155,18 @@ function App() {
                     const et=getEtapa(p.etapa);
                     const vencido=(p.fecha_seguimiento||"")<todayISO();
                     return(
-                      <div key={p.id} style={{background:vencido?"#ef444422":"#d9770622",borderRadius:12,padding:"12px 14px",borderLeft:`4px solid ${vencido?"#ef4444":"#d97706"}`}}>
+                      <div key={p.id} className="hoy-item">
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
                           <div style={{flex:1}}>
-                            <div style={{fontSize:10,fontWeight:700,color:"var(--text-sec)",textTransform:"uppercase",marginBottom:2}}>🎯 Prospecto</div>
+                            <div style={{marginBottom:6}}><span className="hoy-tag hoy-tag--prospecto">PROSPECTO</span></div>
                             <div style={{fontWeight:700,fontSize:13,color:"var(--text-main)"}}>{p.nombre}</div>
                             <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"center"}}>
-                              <span style={{background:et.bg,color:et.color,borderRadius:20,padding:"1px 7px",fontSize:11,fontWeight:700}}>{et.label}</span>
-                              <span style={{fontSize:11,color:vencido?"#dc2626":"#d97706",fontWeight:700}}>{vencido?"⚠ Seg. vencido:":"🔔 Seg. hoy:"} {diaLabel(p.fecha_seguimiento)}</span>
+                              <span className={`hoy-tag hoy-tag--${{contacto:"amber",cotizacion:"blue",negociacion:"green",cerrado:"green",perdido:"red"}[et.key]||"nota"}`}>{et.label}</span>
+                              <span style={{fontSize:11,color:vencido?"#FCA5A5":"#FCD34D",fontWeight:600}}>{vencido?"⚠ Seg. vencido:":"🔔 Seg. hoy:"} {diaLabel(p.fecha_seguimiento)}</span>
                               {p.vol_mensual>0&&<span style={{fontSize:11,color:"var(--text-tertiary)"}}>{p.vol_mensual} ton/mes</span>}
                             </div>
                           </div>
-                          <button onClick={()=>{setSelectedProsp(p);setSelected(null);setTab("prospectos");}} style={{background:"#7c3aed",color:"white",border:"none",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",fontWeight:700,flexShrink:0}}>Ver</button>
+                          <button onClick={()=>{setSelectedProsp(p);setSelected(null);setTab("prospectos");}} className="btn-ver">Ver</button>
                         </div>
                       </div>
                     );
