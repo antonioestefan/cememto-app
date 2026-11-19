@@ -257,8 +257,8 @@
     .cli-stat--pos { border-color: rgba(16, 185, 129, 0.2); }
     .cli-stat--neg { border-color: rgba(239, 68, 68, 0.2); }
     .warn-box { border-radius: 12px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
-    .warn-box--red { background: rgba(239, 68, 68, 0.07); border: 1px solid rgba(239, 68, 68, 0.2); border-left: 3px solid rgba(239, 68, 68, 0.5); }
-    .warn-box--amber { background: rgba(245, 158, 11, 0.07); border: 1px solid rgba(245, 158, 11, 0.2); border-left: 3px solid rgba(245, 158, 11, 0.5); }
+    .warn-box--red { background: rgba(239, 68, 68, 0.07); border: 1px solid rgba(239, 68, 68, 0.2); border-left: 3px solid rgba(239, 68, 68, 0.45); }
+    .warn-box--amber { background: rgba(245, 158, 11, 0.07); border: 1px solid rgba(245, 158, 11, 0.2); border-left: 3px solid rgba(245, 158, 11, 0.45); }
     /* ── Filtros de OVs ─────────────────────────────────────── */
     .filtro-pill { background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 20px; color: var(--text-secondary); padding: 5px 14px; font-weight: 600; font-size: 12px; cursor: pointer; transition: all .15s; }
     .filtro-pill:hover { color: var(--text-primary); border-color: rgba(255, 255, 255, 0.2); }
@@ -4228,13 +4228,13 @@ function App() {
               :<div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {/* ALERTAS DE ANTICIPO */}
                 {totales.adeudos.length>0&&(
-                  <div className="warn-box warn-box--red" style={{padding:"12px 16px",fontSize:13}}>
+                  <div className="warn-box warn-box--red" style={{background:'rgba(239,68,68,0.07)',border:'1px solid rgba(239,68,68,0.2)',borderLeft:'3px solid rgba(239,68,68,0.45)',borderRadius:'12px',padding:'12px 16px',marginBottom:'12px',fontSize:13}}>
                     <div style={{fontWeight:700,color:"#F87171",marginBottom:6}}>🔴 Clientes con adeudo</div>
                     {totales.adeudos.map(c=><div key={c.id} style={{color:"#fca5a5",marginBottom:2}}>{c.nombre} — adeuda <b>{fmt(-c.saldo)}</b></div>)}
                   </div>
                 )}
                 {totales.anticipoBajo.length>0&&(
-                  <div className="warn-box warn-box--amber" style={{padding:"12px 16px",fontSize:13}}>
+                  <div className="warn-box warn-box--amber" style={{background:'rgba(245,158,11,0.07)',border:'1px solid rgba(245,158,11,0.2)',borderLeft:'3px solid rgba(245,158,11,0.45)',borderRadius:'12px',padding:'12px 16px',marginBottom:'12px',fontSize:13}}>
                     <div style={{fontWeight:700,color:"#FBBF24",marginBottom:6}}>🟠 Anticipo bajo (menos de $200,000)</div>
                     {totales.anticipoBajo.map(c=><div key={c.id} style={{color:"#FCD34D",marginBottom:2}}>{c.nombre} — saldo restante: <b>{fmt(c.saldo)}</b></div>)}
                   </div>
@@ -5216,7 +5216,8 @@ function App() {
           });
 
           const semColor={verde:"var(--accent)",amarillo:"#f59e0b",rojo:"#ef4444"};
-          const semBg={verde:"var(--accent-soft)",amarillo:"#f59e0b22",rojo:"#ef444422"};
+          const semBg={verde:"rgba(16,185,129,0.07)",amarillo:"rgba(245,158,11,0.07)",rojo:"rgba(239,68,68,0.07)"};
+          const semRgb={verde:"16,185,129",amarillo:"245,158,11",rojo:"239,68,68"};
           const semLabel={verde:"✅ Al ritmo",amarillo:"⚠️ Bajo ritmo",rojo:"🔴 Crítico"};
 
           // OVs entregadas sin precio asignado (valor $0 congelado) — hay que capturarles el precio.
@@ -5343,7 +5344,7 @@ function App() {
                 ?<div style={{background:"var(--accent-soft)",borderRadius:8,padding:"12px 14px",fontSize:13,color:"var(--accent)",fontWeight:600}}>✅ Sin alertas activas — todo en orden</div>
                 :<div style={{display:"flex",flexDirection:"column",gap:8}}>
                   {alertas.map((a,i)=>(
-                    <div key={i} style={{background:semBg[a.tipo],borderRadius:10,padding:"12px 14px",borderLeft:`4px solid ${semColor[a.tipo]}`}}>
+                    <div key={i} style={{background:semBg[a.tipo],border:`1px solid rgba(${semRgb[a.tipo]},0.2)`,borderLeft:`3px solid rgba(${semRgb[a.tipo]},0.45)`,borderRadius:12,padding:"12px 14px"}}>
                       <div style={{fontWeight:700,fontSize:13,color:semColor[a.tipo]}}>{a.icon} {a.titulo}</div>
                       <div style={{fontSize:12,color:"var(--text-sec)",marginTop:3}}>{a.desc}</div>
                     </div>
